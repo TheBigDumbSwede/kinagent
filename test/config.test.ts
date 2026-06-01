@@ -18,6 +18,18 @@ describe("loadConfig", () => {
     expect(config.kindroid.firebaseProjectId).toBe("kindroid-ai");
     expect(config.bridge.sessionDir).toBe(path.resolve(process.cwd(), "./data/browser-session"));
     expect(config.hermes.enabled).toBe(false);
+    expect(config.voice).toMatchObject({
+      enabled: false,
+      provider: "none",
+      openai: {
+        model: "gpt-4o-mini-tts",
+        voice: "marin"
+      },
+      elevenlabs: {
+        model: "eleven_flash_v2_5",
+        outputFormat: "mp3_44100_128"
+      }
+    });
   });
 
   it("merges file config and environment overrides", () => {
@@ -45,7 +57,16 @@ describe("loadConfig", () => {
         '  agentId: "agent-from-file"',
         "  currentSceneUpdates:",
         "    enabled: false",
-        "    maxLength: 120"
+        "    maxLength: 120",
+        "voice:",
+        "  enabled: true",
+        '  provider: "openai"',
+        "  openai:",
+        '    model: "file-tts"',
+        '    voice: "file-voice"',
+        '    instructions: "speak warmly"',
+        "  elevenlabs:",
+        '    model: "file-eleven"'
       ].join("\n")
     );
 
@@ -54,6 +75,10 @@ describe("loadConfig", () => {
     vi.stubEnv("HERMES_ENABLED", "false");
     vi.stubEnv("HERMES_API_KEY", "env-token");
     vi.stubEnv("HERMES_CURRENT_SCENE_UPDATES_ENABLED", "true");
+    vi.stubEnv("KINAGENT_VOICE_PROVIDER", "elevenlabs");
+    vi.stubEnv("KINAGENT_OPENAI_API_KEY", "env-openai");
+    vi.stubEnv("KINAGENT_OPENAI_TTS_VOICE", "alloy");
+    vi.stubEnv("KINAGENT_ELEVENLABS_API_KEY", "env-elevenlabs");
 
     const config = loadConfig({ configPath });
 
@@ -68,6 +93,19 @@ describe("loadConfig", () => {
     expect(config.hermes.baseUrl).toBe("http://example.test");
     expect(config.hermes.apiKey).toBe("env-token");
     expect(config.hermes.currentSceneUpdates).toEqual({ enabled: true, maxLength: 120 });
+    expect(config.voice.enabled).toBe(true);
+    expect(config.voice.provider).toBe("elevenlabs");
+    expect(config.voice.openai).toMatchObject({
+      apiKey: "env-openai",
+      model: "file-tts",
+      voice: "marin",
+      instructions: "speak warmly"
+    });
+    expect(config.voice.elevenlabs).toMatchObject({
+      apiKey: "env-elevenlabs",
+      model: "file-eleven",
+      outputFormat: "mp3_44100_128"
+    });
   });
 
   it("rejects current scene limits above Kindroid's endpoint limit", () => {

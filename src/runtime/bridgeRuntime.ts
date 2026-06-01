@@ -15,6 +15,8 @@ import {
   type KinMonitorStopReason,
   type KinSubscriptionStatus
 } from "./kinSubscriptionSupervisor.js";
+import { VoiceRuntime, voiceProviderConfigured } from "../voice/voiceRuntime.js";
+import type { VoicePlaybackChunk } from "../voice/types.js";
 
 export type BridgeRuntimeEvent =
   | { channel: "session-keepalive"; payload: KindroidSessionKeepAliveEvent }
@@ -38,11 +40,13 @@ export interface BridgeRuntimeOptions {
   config: AppConfig;
   logger: Logger;
   shouldSkipSessionWarm?: () => boolean;
+  onVoicePlayback?: (chunk: VoicePlaybackChunk) => void;
   onEvent?: (event: BridgeRuntimeEvent) => void;
 }
 
 export class BridgeRuntime {
   readonly hermes: HermesAdapter;
+  readonly voice: VoiceRuntime;
   private readonly sessionKeepAlive: KindroidSessionKeepAlive;
   private readonly kinSubscriptionSupervisor: KinSubscriptionSupervisor;
   private readonly groupSubscriptionSupervisor: GroupSubscriptionSupervisor;
@@ -51,6 +55,11 @@ export class BridgeRuntime {
 
   private constructor(private readonly options: BridgeRuntimeOptions) {
     this.hermes = createHermesAdapter(options.config, options.logger);
+    this.voice = new VoiceRuntime({
+      config: options.config,
+      logger: options.logger,
+      desktopPlayback: options.onVoicePlayback
+    });
     this.sessionKeepAlive = new KindroidSessionKeepAlive({
       config: options.config,
       logger: options.logger,
@@ -199,7 +208,11 @@ export class BridgeRuntime {
       kinRefresh: this.kinSubscriptionSupervisor.refreshState(),
       groups: groupStatuses.map((subscription) => subscription.group),
       groupSubscriptions: groupStatuses,
-      groupRefresh: this.groupSubscriptionSupervisor.refreshState()
+      groupRefresh: this.groupSubscriptionSupervisor.refreshState(),
+      voice: {
+        ...voiceProviderConfigured(this.options.config),
+        desktopPlayback: Boolean(this.options.onVoicePlayback)
+      }
     };
   }
 
@@ -212,6 +225,17 @@ export class BridgeRuntime {
       signal: monitorOptions.signal,
       onMessage: async (message) => {
         this.emit({ channel: "monitor-line", payload: { ...message, kinName: kin.name } });
+        this.voice.enqueue({
+          id: message.id,
+          kinId: kin.aiId,
+          kinName: kin.name,
+          sender: message.sender,
+          role: message.role,
+          text: message.text,
+          textEncrypted: message.textEncrypted,
+          textDecrypted: message.textDecrypted,
+          textDecryptionError: message.textDecryptionError
+        });
         await this.hermes.handleChatChanged({
           type: "kindroid.chat.changed",
           kinId: kin.aiId,
@@ -274,6 +298,19 @@ export class BridgeRuntime {
             textDecryptionError: message.textDecryptionError,
             source: "firestore"
           }
+        });
+        this.voice.enqueue({
+          id: message.id,
+          kinId: aiId,
+          kinName: aiId,
+          groupId: group.groupId,
+          groupName: group.name,
+          sender: message.sender,
+          role: message.role,
+          text: message.text,
+          textEncrypted: message.textEncrypted,
+          textDecrypted: message.textDecrypted,
+          textDecryptionError: message.textDecryptionError
         });
         await this.hermes.handleChatChanged(notification);
       }
@@ -372,6 +409,7 @@ export interface BridgeRuntimeStatus {
   groups: KindroidGroup[];
   groupSubscriptions: GroupSubscriptionStatus[];
   groupRefresh: ReturnType<GroupSubscriptionSupervisor["refreshState"]>;
+  voice: ReturnType<typeof voiceProviderConfigured> & { desktopPlayback: boolean };
 }
 
 export type BridgeSessionSummary =

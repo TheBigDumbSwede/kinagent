@@ -3,11 +3,12 @@ import path from "node:path";
 import dotenv from "dotenv";
 import YAML from "yaml";
 import { z } from "zod";
-import type { AppConfig, LogLevel } from "./types.js";
+import type { AppConfig, LogLevel, VoiceProvider } from "./types.js";
 
 dotenv.config({ quiet: true });
 
 const currentSceneMaxLengthLimit = 160;
+const defaultOpenAiVoice = "marin";
 
 const defaultConfig: AppConfig = {
   kindroid: {
@@ -31,10 +32,26 @@ const defaultConfig: AppConfig = {
       enabled: true,
       maxLength: currentSceneMaxLengthLimit
     }
+  },
+  voice: {
+    enabled: false,
+    provider: "none",
+    openai: {
+      apiKey: "",
+      model: "gpt-4o-mini-tts",
+      voice: defaultOpenAiVoice,
+      instructions: ""
+    },
+    elevenlabs: {
+      apiKey: "",
+      model: "eleven_flash_v2_5",
+      outputFormat: "mp3_44100_128"
+    }
   }
 };
 
 const logLevelSchema = z.enum(["debug", "info", "warn", "error"]);
+const voiceProviderSchema = z.enum(["none", "openai", "elevenlabs"]);
 const appConfigSchema = z.object({
   kindroid: z.object({
     firebaseProjectId: z.string().min(1, "kindroid.firebaseProjectId is required."),
@@ -69,6 +86,21 @@ const appConfigSchema = z.object({
           currentSceneMaxLengthLimit,
           `hermes.currentSceneUpdates.maxLength cannot exceed ${currentSceneMaxLengthLimit}.`
         )
+    })
+  }),
+  voice: z.object({
+    enabled: z.boolean(),
+    provider: voiceProviderSchema,
+    openai: z.object({
+      apiKey: z.string(),
+      model: z.string().min(1, "voice.openai.model is required."),
+      voice: z.string().min(1, "voice.openai.voice is required."),
+      instructions: z.string()
+    }),
+    elevenlabs: z.object({
+      apiKey: z.string(),
+      model: z.string().min(1, "voice.elevenlabs.model is required."),
+      outputFormat: z.string().min(1, "voice.elevenlabs.outputFormat is required.")
     })
   })
 });
@@ -117,6 +149,18 @@ function mergeConfig(base: AppConfig, override: Partial<AppConfig>): AppConfig {
         ...base.hermes.currentSceneUpdates,
         ...override.hermes?.currentSceneUpdates
       }
+    },
+    voice: {
+      ...base.voice,
+      ...override.voice,
+      openai: {
+        ...base.voice.openai,
+        ...override.voice?.openai
+      },
+      elevenlabs: {
+        ...base.voice.elevenlabs,
+        ...override.voice?.elevenlabs
+      }
     }
   };
 }
@@ -143,6 +187,28 @@ function applyEnvOverrides(config: AppConfig): void {
     "HERMES_CURRENT_SCENE_MAX_LENGTH",
     config.hermes.currentSceneUpdates.maxLength
   );
+
+  config.voice.enabled = booleanFromEnv("KINAGENT_VOICE_ENABLED", config.voice.enabled);
+  config.voice.provider = voiceProviderFromEnv("KINAGENT_VOICE_PROVIDER", config.voice.provider);
+  config.voice.openai.apiKey =
+    process.env.KINAGENT_OPENAI_API_KEY ?? process.env.OPENAI_API_KEY ?? config.voice.openai.apiKey;
+  config.voice.openai.model =
+    process.env.KINAGENT_OPENAI_TTS_MODEL ?? process.env.OPENAI_TTS_MODEL ?? config.voice.openai.model;
+  config.voice.openai.voice = normalizeOpenAiVoice(
+    process.env.KINAGENT_OPENAI_TTS_VOICE ?? process.env.OPENAI_TTS_VOICE ?? config.voice.openai.voice
+  );
+  config.voice.openai.instructions =
+    process.env.KINAGENT_OPENAI_TTS_INSTRUCTIONS ??
+    process.env.OPENAI_TTS_INSTRUCTIONS ??
+    config.voice.openai.instructions;
+  config.voice.elevenlabs.apiKey =
+    process.env.KINAGENT_ELEVENLABS_API_KEY ?? process.env.ELEVENLABS_API_KEY ?? config.voice.elevenlabs.apiKey;
+  config.voice.elevenlabs.model =
+    process.env.KINAGENT_ELEVENLABS_MODEL ?? process.env.ELEVENLABS_MODEL ?? config.voice.elevenlabs.model;
+  config.voice.elevenlabs.outputFormat =
+    process.env.KINAGENT_ELEVENLABS_OUTPUT_FORMAT ??
+    process.env.ELEVENLABS_OUTPUT_FORMAT ??
+    config.voice.elevenlabs.outputFormat;
 }
 
 function normalizePaths(config: AppConfig): void {
@@ -186,6 +252,24 @@ function logLevelFromEnv(name: string, fallback: LogLevel): LogLevel {
   }
 
   throw new Error(`${name} must be one of debug, info, warn, or error.`);
+}
+
+function voiceProviderFromEnv(name: string, fallback: VoiceProvider): VoiceProvider {
+  const value = process.env[name];
+  if (!value) {
+    return fallback;
+  }
+
+  const parsed = voiceProviderSchema.safeParse(value);
+  if (parsed.success) {
+    return parsed.data;
+  }
+
+  throw new Error(`${name} must be one of none, openai, or elevenlabs.`);
+}
+
+function normalizeOpenAiVoice(value: string): string {
+  return value.trim().toLowerCase() === "alloy" ? defaultOpenAiVoice : value;
 }
 
 function parseConfig(config: AppConfig): AppConfig {

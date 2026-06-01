@@ -226,6 +226,26 @@ $env:HERMES_API_KEY = "<local Hermes API key>"
 npm run daemon
 ```
 
+Enable desktop-only voice sidecar playback for new AI messages:
+
+```yaml
+voice:
+  enabled: true
+  provider: "openai"
+  openai:
+    model: "gpt-4o-mini-tts"
+    voice: "marin"
+    instructions: ""
+```
+
+Store provider API keys in `.env`, for example `KINAGENT_OPENAI_API_KEY`.
+For ElevenLabs, set `voice.provider: "elevenlabs"` in `config.yaml` and
+`KINAGENT_ELEVENLABS_API_KEY` in `.env`; the ElevenLabs voice ID is set per
+Kin from that Kin's Manage > Voice tab. Voice output is off by default in
+`config.example.yaml`, runs only in the desktop app, skips startup catch-up
+messages, and only speaks new AI messages from enabled monitors whose per-Kin
+voice is enabled.
+
 Use a non-default config file:
 
 ```powershell

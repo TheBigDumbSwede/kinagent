@@ -5,8 +5,16 @@ import type { Event as ElectronEvent } from "electron";
 import { chromium, type Browser, type BrowserContext } from "playwright";
 import { ensureSessionDir, storageStatePath } from "../auth/tokenStore.js";
 import { loadConfig } from "../config/loadConfig.js";
+import { readCapturedKin } from "../capture/captureReader.js";
 import { BridgeRuntime, type BridgeRuntimeEvent } from "../runtime/bridgeRuntime.js";
 import { createLogger } from "../util/logger.js";
+import {
+  loadKinVoicePreference,
+  openAiVoiceOptions,
+  saveKinVoicePreference,
+  voiceProvidersConfigured,
+  type KinVoicePreference
+} from "../voice/voicePreferences.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -26,6 +34,7 @@ void app.whenReady().then(async () => {
     config,
     logger,
     shouldSkipSessionWarm: () => Boolean(loginSession),
+    onVoicePlayback: (chunk) => sendVoicePlayback(chunk),
     onEvent: (event) => sendRuntimeEvent(event)
   });
   createMainWindow();
@@ -139,6 +148,36 @@ function registerIpcHandlers(): void {
     await requireRuntime().refreshGroups();
     return { ok: true };
   });
+  ipcMain.handle("capture:get-kin", async (_event, input: { kinId?: string } = {}) => {
+    const kinId = input.kinId ?? "";
+    const startedAt = Date.now();
+    logger.info("Reading captured Kin state for desktop.", { kinId });
+    try {
+      const result = await readCapturedKin(kinId);
+      logger.info("Read captured Kin state for desktop.", {
+        kinId,
+        ok: result.ok,
+        fields: result.fields.length,
+        durationMs: Date.now() - startedAt
+      });
+      return result;
+    } catch (error) {
+      logger.error("Failed to read captured Kin state for desktop.", {
+        kinId,
+        error: error instanceof Error ? error.message : String(error),
+        durationMs: Date.now() - startedAt
+      });
+      throw error;
+    }
+  });
+  ipcMain.handle("voice:get-kin-preference", async (_event, input: { kinId?: string } = {}) =>
+    getKinVoicePreference(input.kinId ?? "")
+  );
+  ipcMain.handle(
+    "voice:set-kin-preference",
+    async (_event, input: { kinId?: string; preference?: Partial<KinVoicePreference> } = {}) =>
+      setKinVoicePreference(input.kinId ?? "", input.preference ?? {})
+  );
 }
 
 async function getDesktopStatus() {
@@ -208,6 +247,42 @@ async function setGroupSubscriptionEnabled(input: { groupId: string; enabled: bo
   return { ok: true };
 }
 
+function getKinVoicePreference(kinId: string) {
+  if (!kinId) {
+    throw new Error("Select a Kin before editing voice.");
+  }
+
+  return {
+    ok: true,
+    globalEnabled: config.voice.enabled,
+    configuredProviders: voiceProvidersConfigured(config),
+    openAiVoiceOptions,
+    preference: loadKinVoicePreference(config, kinId)
+  };
+}
+
+function setKinVoicePreference(kinId: string, preference: Partial<KinVoicePreference>) {
+  if (!kinId) {
+    throw new Error("Select a Kin before editing voice.");
+  }
+
+  const saved = saveKinVoicePreference(config, kinId, preference);
+  logger.info("Saved Kin voice preference.", {
+    kinId,
+    enabled: saved.enabled,
+    provider: saved.provider,
+    openaiVoice: saved.openaiVoice,
+    elevenLabsVoiceConfigured: Boolean(saved.elevenLabsVoiceId)
+  });
+  return {
+    ok: true,
+    globalEnabled: config.voice.enabled,
+    configuredProviders: voiceProvidersConfigured(config),
+    openAiVoiceOptions,
+    preference: saved
+  };
+}
+
 function showMainWindow(): void {
   if (!mainWindow) {
     createMainWindow();
@@ -223,6 +298,10 @@ function sendRendererEvent(channel: string, payload: unknown): void {
 
 function sendRuntimeEvent(event: BridgeRuntimeEvent): void {
   sendRendererEvent(event.channel, event.payload);
+}
+
+function sendVoicePlayback(chunk: unknown): void {
+  sendRendererEvent("voice-audio", chunk);
 }
 
 function requireRuntime(): BridgeRuntime {

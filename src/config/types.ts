@@ -31,8 +31,27 @@ export interface HermesConfig {
   };
 }
 
+export type VoiceProvider = "none" | "openai" | "elevenlabs";
+
+export interface VoiceConfig {
+  enabled: boolean;
+  provider: VoiceProvider;
+  openai: {
+    apiKey: string;
+    model: string;
+    voice: string;
+    instructions: string;
+  };
+  elevenlabs: {
+    apiKey: string;
+    model: string;
+    outputFormat: string;
+  };
+}
+
 export interface AppConfig {
   kindroid: KindroidConfig;
   bridge: BridgeConfig;
   hermes: HermesConfig;
+  voice: VoiceConfig;
 }

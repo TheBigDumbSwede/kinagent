@@ -12,6 +12,9 @@ contextBridge.exposeInMainWorld("kinagent", {
   refreshKins: () => ipcRenderer.invoke("kins:refresh"),
   setGroupEnabled: (input) => ipcRenderer.invoke("groups:set-enabled", input),
   refreshGroups: () => ipcRenderer.invoke("groups:refresh"),
+  getCapturedKin: (input) => ipcRenderer.invoke("capture:get-kin", input),
+  getKinVoicePreference: (input) => ipcRenderer.invoke("voice:get-kin-preference", input),
+  setKinVoicePreference: (input) => ipcRenderer.invoke("voice:set-kin-preference", input),
   onEvent: (callback) => {
     const listener = (_event, message) => callback(message);
     ipcRenderer.on("app:event", listener);

@@ -72,12 +72,90 @@
       <section class="activity">
         <div class="activity-header">
           <div>
-            <h2>Incoming Messages</h2>
+            <h2 id="activityTitle">Incoming Messages</h2>
             <p id="monitorLine">Monitor stopped</p>
           </div>
           <button id="clearButton" class="secondary" type="button">Clear</button>
         </div>
-        <div id="messageList" class="message-list"></div>
+        <div id="detailTabs" class="detail-tabs" role="tablist" aria-label="Kin detail tabs">
+          <button class="detail-tab active" type="button" data-tab="monitor" role="tab" aria-selected="true">
+            Monitor
+          </button>
+          <button class="detail-tab" type="button" data-tab="backstory" role="tab" aria-selected="false">
+            Backstory
+          </button>
+          <button class="detail-tab" type="button" data-tab="directive" role="tab" aria-selected="false">
+            Directive
+          </button>
+          <button class="detail-tab" type="button" data-tab="memory" role="tab" aria-selected="false">Memory</button>
+          <button class="detail-tab" type="button" data-tab="example" role="tab" aria-selected="false">Example</button>
+          <button class="detail-tab" type="button" data-tab="scene" role="tab" aria-selected="false">
+            Current Scene
+          </button>
+          <button class="detail-tab" type="button" data-tab="background" role="tab" aria-selected="false">
+            Background
+          </button>
+          <button class="detail-tab" type="button" data-tab="journal" role="tab" aria-selected="false">Journal</button>
+          <button class="detail-tab" type="button" data-tab="profile" role="tab" aria-selected="false">Profile</button>
+          <button class="detail-tab" type="button" data-tab="voice" role="tab" aria-selected="false">Voice</button>
+        </div>
+        <div class="activity-body">
+          <div id="monitorPane" class="activity-pane">
+            <div id="messageList" class="message-list"></div>
+          </div>
+          <div id="detailPane" class="activity-pane detail-pane" hidden>
+            <div id="kinDetailEmpty" class="detail-empty">Select Manage on a Kin to inspect captured settings.</div>
+            <div id="kinDetailContent" class="detail-content" hidden>
+              <div class="detail-main">
+                <div id="detailStats" class="detail-stats"></div>
+                <pre id="fieldContent" class="field-content"></pre>
+                <form id="voiceForm" class="voice-form" hidden>
+                  <label class="checkbox-label">
+                    <input id="voiceEnabledInput" type="checkbox" />
+                    <span>Enable voice for this Kin</span>
+                  </label>
+                  <label class="checkbox-label">
+                    <input id="filterNarrationInput" type="checkbox" />
+                    <span>Strip narration from speech</span>
+                  </label>
+                  <div class="voice-grid">
+                    <label>
+                      Provider
+                      <select id="voiceProviderInput">
+                        <option value="openai">OpenAI</option>
+                        <option value="elevenlabs">ElevenLabs</option>
+                      </select>
+                    </label>
+                    <label id="openAiVoiceLabel">
+                      OpenAI voice
+                      <select id="openAiVoiceInput"></select>
+                    </label>
+                    <label id="elevenLabsVoiceLabel">
+                      ElevenLabs voice ID
+                      <input id="elevenLabsVoiceInput" type="text" autocomplete="off" />
+                    </label>
+                    <label>
+                      Narration delimiter
+                      <input id="narrationDelimiterInput" type="text" maxlength="8" autocomplete="off" />
+                    </label>
+                  </div>
+                  <label>
+                    OpenAI voice instructions
+                    <textarea id="openAiInstructionsInput" rows="5"></textarea>
+                  </label>
+                  <p id="voiceStatusLine" class="panel-note"></p>
+                  <div class="button-row narrow">
+                    <button id="voiceSaveButton" type="submit">Save Voice</button>
+                  </div>
+                </form>
+              </div>
+              <aside class="timeline">
+                <h2>Timeline</h2>
+                <div id="timelineList" class="timeline-list"></div>
+              </aside>
+            </div>
+          </div>
+        </div>
       </section>
     </main>
     <script src="./renderer.js"></script>

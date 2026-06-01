@@ -7,8 +7,19 @@ const state = {
   kinRefresh: null,
   groupRefresh: null,
   kinsExpanded: false,
-  groupsExpanded: false
+  groupsExpanded: false,
+  selectedKinId: null,
+  selectedKinCapture: null,
+  selectedKinVoice: null,
+  captureLoading: false,
+  captureError: null,
+  voiceLoading: false,
+  voiceError: null,
+  voiceSaving: false,
+  activeTab: "monitor"
 };
+
+const captureRequestTimeoutMs = 12_000;
 
 const elements = {
   sessionLine: document.querySelector("#sessionLine"),
@@ -19,6 +30,28 @@ const elements = {
   kinSubscriptionList: document.querySelector("#kinSubscriptionList"),
   groupRefreshLine: document.querySelector("#groupRefreshLine"),
   groupSubscriptionList: document.querySelector("#groupSubscriptionList"),
+  activityTitle: document.querySelector("#activityTitle"),
+  detailTabs: document.querySelector("#detailTabs"),
+  monitorPane: document.querySelector("#monitorPane"),
+  detailPane: document.querySelector("#detailPane"),
+  kinDetailEmpty: document.querySelector("#kinDetailEmpty"),
+  kinDetailContent: document.querySelector("#kinDetailContent"),
+  detailStats: document.querySelector("#detailStats"),
+  fieldContent: document.querySelector("#fieldContent"),
+  voiceForm: document.querySelector("#voiceForm"),
+  voiceEnabledInput: document.querySelector("#voiceEnabledInput"),
+  filterNarrationInput: document.querySelector("#filterNarrationInput"),
+  voiceProviderInput: document.querySelector("#voiceProviderInput"),
+  openAiVoiceLabel: document.querySelector("#openAiVoiceLabel"),
+  openAiVoiceInput: document.querySelector("#openAiVoiceInput"),
+  elevenLabsVoiceLabel: document.querySelector("#elevenLabsVoiceLabel"),
+  elevenLabsVoiceInput: document.querySelector("#elevenLabsVoiceInput"),
+  narrationDelimiterInput: document.querySelector("#narrationDelimiterInput"),
+  openAiInstructionsInput: document.querySelector("#openAiInstructionsInput"),
+  voiceStatusLine: document.querySelector("#voiceStatusLine"),
+  voiceSaveButton: document.querySelector("#voiceSaveButton"),
+  timelineList: document.querySelector("#timelineList"),
+  timeline: document.querySelector(".timeline"),
   monitorLine: document.querySelector("#monitorLine"),
   messageList: document.querySelector("#messageList"),
   loginStartButton: document.querySelector("#loginStartButton"),
@@ -66,10 +99,36 @@ elements.refreshGroupsButton.addEventListener("click", () =>
 elements.clearButton.addEventListener("click", () => {
   elements.messageList.replaceChildren();
 });
+elements.detailTabs.addEventListener("click", (event) => {
+  if (!(event.target instanceof Element)) {
+    return;
+  }
+
+  const button = event.target.closest("[data-tab]");
+  if (!button) {
+    return;
+  }
+
+  state.activeTab = button.dataset.tab;
+  if (state.activeTab === "voice" && state.selectedKinId && !state.selectedKinVoice && !state.voiceLoading) {
+    void loadKinVoice(state.selectedKinId);
+  }
+  renderActivity();
+});
+elements.voiceProviderInput.addEventListener("change", renderVoiceProviderFields);
+elements.voiceForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  void saveSelectedKinVoice();
+});
 
 window.kinagent.onEvent((message) => {
   if (message.channel === "monitor-line") {
     handleMonitorLine(message.payload);
+    return;
+  }
+
+  if (message.channel === "voice-audio") {
+    void playVoiceAudio(message.payload);
     return;
   }
 
@@ -132,9 +191,11 @@ window.kinagent.onEvent((message) => {
   if (message.channel === "kins-updated") {
     state.subscriptions = message.payload || [];
     state.kins = state.subscriptions.map((subscription) => subscription.kin);
+    clearMissingSelectedKin();
     updateMonitorRunning();
     renderKinSubscriptions();
     renderMonitorState();
+    renderActivity();
     return;
   }
 
@@ -180,9 +241,11 @@ function renderStatus(status) {
   elements.appCheckStatus.textContent = status.appCheckPresent ? "Ready" : "Missing";
   elements.expiryStatus.textContent = status.session.expirationIso || "Unknown";
 
+  clearMissingSelectedKin();
   renderKinSubscriptions();
   renderGroupSubscriptions();
   renderMonitorState();
+  renderActivity();
 }
 
 function renderKinSubscriptions() {
@@ -226,18 +289,35 @@ function renderKinSubscriptions() {
 
   for (const subscription of state.subscriptions) {
     const kin = subscription.kin || {};
-    const row = document.createElement("label");
-    row.className = "kin-row";
+    const row = document.createElement("div");
+    row.className = `kin-row selectable${state.selectedKinId === kin.aiId ? " selected" : ""}`;
+    row.tabIndex = 0;
+    row.setAttribute("role", "button");
+    row.setAttribute("aria-label", `Manage ${kin.name || kin.aiId || "Kin"}`);
+    row.addEventListener("click", () => {
+      void selectKin(kin.aiId);
+    });
+    row.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        void selectKin(kin.aiId);
+      }
+    });
 
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";
     checkbox.checked = Boolean(subscription.enabled);
-    checkbox.addEventListener("change", () =>
+    checkbox.setAttribute("aria-label", `Monitor ${kin.name || kin.aiId || "Kin"}`);
+    checkbox.addEventListener("click", (event) => {
+      event.stopPropagation();
+    });
+    checkbox.addEventListener("change", (event) => {
+      event.stopPropagation();
       runAction(checkbox.checked ? "Enabling Kin" : "Disabling Kin", async () => {
         await window.kinagent.setKinEnabled({ kinId: kin.aiId, enabled: checkbox.checked });
         await refreshStatus();
-      })
-    );
+      });
+    });
 
     const text = document.createElement("span");
     text.className = "kin-name";
@@ -324,6 +404,412 @@ function renderMonitorState() {
   const runningGroupCount = state.groupSubscriptions.filter((subscription) => subscription.running).length;
   const totalRunning = runningCount + runningGroupCount;
   elements.monitorLine.textContent = totalRunning > 0 ? `${totalRunning} subscriptions live` : "No live subscriptions";
+}
+
+async function selectKin(kinId) {
+  if (!kinId) {
+    return;
+  }
+
+  state.selectedKinId = kinId;
+  state.activeTab = state.activeTab === "monitor" ? "backstory" : state.activeTab;
+  state.captureLoading = true;
+  state.captureError = null;
+  state.selectedKinCapture = null;
+  state.selectedKinVoice = null;
+  state.voiceError = null;
+  renderKinSubscriptions();
+  renderActivity();
+  void loadKinVoice(kinId);
+
+  try {
+    state.selectedKinCapture = await withTimeout(
+      window.kinagent.getCapturedKin({ kinId }),
+      captureRequestTimeoutMs,
+      "Captured settings request timed out."
+    );
+  } catch (error) {
+    state.captureError = error.message || String(error);
+  } finally {
+    state.captureLoading = false;
+    renderActivity();
+  }
+}
+
+async function loadKinVoice(kinId) {
+  state.voiceLoading = true;
+  state.voiceError = null;
+  renderActivity();
+
+  try {
+    state.selectedKinVoice = await window.kinagent.getKinVoicePreference({ kinId });
+  } catch (error) {
+    state.voiceError = error.message || String(error);
+  } finally {
+    state.voiceLoading = false;
+    renderActivity();
+  }
+}
+
+function renderActivity() {
+  const activeTab = state.activeTab || "monitor";
+  const isMonitor = activeTab === "monitor";
+  const isVoice = activeTab === "voice";
+
+  for (const button of elements.detailTabs.querySelectorAll("[data-tab]")) {
+    const selected = button.dataset.tab === activeTab;
+    button.classList.toggle("active", selected);
+    button.setAttribute("aria-selected", String(selected));
+  }
+
+  elements.monitorPane.hidden = !isMonitor;
+  elements.detailPane.hidden = isMonitor;
+  elements.clearButton.hidden = !isMonitor;
+
+  if (isMonitor) {
+    elements.activityTitle.textContent = "Incoming Messages";
+    return;
+  }
+
+  const selectedKin = currentSelectedKin();
+  const field = currentCapturedField();
+  const tabLabel = field?.label || tabLabelFor(activeTab);
+  elements.activityTitle.textContent = selectedKin ? `${selectedKin.name || "Kin"} · ${tabLabel}` : tabLabel;
+
+  if (!state.selectedKinId) {
+    renderDetailEmpty("Select Manage on a Kin to inspect captured settings.");
+    return;
+  }
+
+  if (isVoice) {
+    renderVoiceTab(selectedKin);
+    return;
+  }
+
+  if (state.captureLoading) {
+    renderDetailEmpty("Loading captured settings.");
+    return;
+  }
+
+  if (state.captureError) {
+    renderDetailEmpty(state.captureError);
+    return;
+  }
+
+  if (!state.selectedKinCapture?.ok) {
+    renderDetailEmpty(state.selectedKinCapture?.error || "No captured state found for this Kin yet.");
+    return;
+  }
+
+  if (!field || !field.available) {
+    renderDetailContent({
+      content: "No captured value for this setting.",
+      history: [],
+      stats: detailStats(selectedKin, field, state.selectedKinCapture)
+    });
+    return;
+  }
+
+  renderDetailContent({
+    content: field.content || "",
+    history: field.history || [],
+    stats: detailStats(selectedKin, field, state.selectedKinCapture)
+  });
+}
+
+function renderDetailEmpty(message) {
+  elements.kinDetailEmpty.hidden = false;
+  elements.kinDetailEmpty.textContent = message;
+  elements.kinDetailContent.hidden = true;
+}
+
+function renderDetailContent({ content, history, stats }) {
+  elements.kinDetailEmpty.hidden = true;
+  elements.kinDetailContent.hidden = false;
+  elements.fieldContent.hidden = false;
+  elements.voiceForm.hidden = true;
+  elements.timeline.hidden = false;
+  elements.fieldContent.textContent = content;
+
+  elements.detailStats.replaceChildren();
+  for (const stat of stats) {
+    const item = document.createElement("div");
+    const label = document.createElement("span");
+    label.textContent = stat.label;
+    const value = document.createElement("strong");
+    value.textContent = stat.value;
+    item.append(label, value);
+    elements.detailStats.append(item);
+  }
+
+  elements.timelineList.replaceChildren();
+  if (history.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "empty-line";
+    empty.textContent = "No recorded changes for this setting.";
+    elements.timelineList.append(empty);
+    return;
+  }
+
+  for (const entry of history) {
+    const item = document.createElement("article");
+    item.className = "timeline-entry";
+
+    const date = document.createElement("div");
+    date.className = "timeline-date";
+    date.textContent = formatTime(entry.committedAt);
+
+    const subject = document.createElement("p");
+    subject.textContent = entry.subject || "Captured state";
+
+    const hash = document.createElement("span");
+    hash.textContent = entry.shortHash;
+
+    item.append(date, subject, hash);
+    elements.timelineList.append(item);
+  }
+}
+
+function renderVoiceTab(selectedKin) {
+  if (state.voiceLoading) {
+    renderDetailEmpty("Loading voice settings.");
+    return;
+  }
+
+  if (state.voiceError) {
+    renderDetailEmpty(state.voiceError);
+    return;
+  }
+
+  if (!state.selectedKinVoice?.ok) {
+    renderDetailEmpty("No voice settings found for this Kin.");
+    return;
+  }
+
+  const preference = state.selectedKinVoice.preference || {};
+  elements.kinDetailEmpty.hidden = true;
+  elements.kinDetailContent.hidden = false;
+  elements.fieldContent.hidden = true;
+  elements.voiceForm.hidden = false;
+  elements.timeline.hidden = true;
+  elements.voiceEnabledInput.checked = Boolean(preference.enabled);
+  elements.voiceProviderInput.value = preference.provider || "openai";
+  renderOpenAiVoiceOptions(state.selectedKinVoice.openAiVoiceOptions || [], preference.openaiVoice || "marin");
+  elements.elevenLabsVoiceInput.value = preference.elevenLabsVoiceId || "";
+  elements.filterNarrationInput.checked = preference.filterNarrationForTts !== false;
+  elements.narrationDelimiterInput.value = preference.narrationDelimiter || "*";
+  elements.openAiInstructionsInput.value = preference.openaiInstructions || "";
+  elements.voiceSaveButton.disabled = state.voiceSaving;
+  renderVoiceProviderFields();
+  renderVoiceStatusLine();
+  renderVoiceStats(selectedKin, preference);
+}
+
+function renderVoiceStats(selectedKin, preference) {
+  const providers = state.selectedKinVoice.configuredProviders || {};
+  const stats = [
+    { label: "Kin", value: selectedKin?.name || state.selectedKinId || "Unknown" },
+    { label: "Voice", value: preference.enabled ? "Enabled" : "Off" },
+    { label: "Provider", value: providerLabel(preference.provider) },
+    {
+      label: "Ready",
+      value: state.selectedKinVoice.globalEnabled && providers[preference.provider] ? "Yes" : "No"
+    }
+  ];
+
+  elements.detailStats.replaceChildren();
+  for (const stat of stats) {
+    const item = document.createElement("div");
+    const label = document.createElement("span");
+    label.textContent = stat.label;
+    const value = document.createElement("strong");
+    value.textContent = stat.value;
+    item.append(label, value);
+    elements.detailStats.append(item);
+  }
+}
+
+function renderOpenAiVoiceOptions(options, selectedVoice) {
+  const values = options.length > 0 ? options : [selectedVoice || "marin"];
+  elements.openAiVoiceInput.replaceChildren();
+  for (const voice of values) {
+    const option = document.createElement("option");
+    option.value = voice;
+    option.textContent = voice;
+    elements.openAiVoiceInput.append(option);
+  }
+  elements.openAiVoiceInput.value = selectedVoice || values[0] || "marin";
+}
+
+function renderVoiceProviderFields() {
+  const provider = elements.voiceProviderInput.value;
+  elements.openAiVoiceLabel.hidden = provider !== "openai";
+  elements.openAiInstructionsInput.closest("label").hidden = provider !== "openai";
+  elements.elevenLabsVoiceLabel.hidden = provider !== "elevenlabs";
+  renderVoiceStatusLine();
+}
+
+function renderVoiceStatusLine() {
+  if (!state.selectedKinVoice?.ok) {
+    elements.voiceStatusLine.textContent = "";
+    return;
+  }
+
+  const provider = elements.voiceProviderInput.value;
+  const providers = state.selectedKinVoice.configuredProviders || {};
+  if (!state.selectedKinVoice.globalEnabled) {
+    elements.voiceStatusLine.textContent = "Voice is off globally. This Kin setting is saved but will not play yet.";
+    return;
+  }
+
+  if (!providers[provider]) {
+    elements.voiceStatusLine.textContent =
+      provider === "openai" ? "OpenAI is missing an API key." : "ElevenLabs is missing an API key.";
+    return;
+  }
+
+  if (provider === "elevenlabs" && !elements.elevenLabsVoiceInput.value.trim()) {
+    elements.voiceStatusLine.textContent = "ElevenLabs requires a voice ID for this Kin.";
+    return;
+  }
+
+  elements.voiceStatusLine.textContent = "Voice settings are ready for this Kin.";
+}
+
+async function saveSelectedKinVoice() {
+  if (!state.selectedKinId) {
+    return;
+  }
+
+  const preference = {
+    enabled: elements.voiceEnabledInput.checked,
+    provider: elements.voiceProviderInput.value,
+    openaiVoice: elements.openAiVoiceInput.value,
+    openaiInstructions: elements.openAiInstructionsInput.value,
+    elevenLabsVoiceId: elements.elevenLabsVoiceInput.value,
+    filterNarrationForTts: elements.filterNarrationInput.checked,
+    narrationDelimiter: elements.narrationDelimiterInput.value
+  };
+
+  state.voiceSaving = true;
+  renderActivity();
+  try {
+    state.selectedKinVoice = await window.kinagent.setKinVoicePreference({
+      kinId: state.selectedKinId,
+      preference
+    });
+    state.voiceError = null;
+    elements.monitorLine.textContent = "Voice settings saved.";
+  } catch (error) {
+    state.voiceError = error.message || String(error);
+  } finally {
+    state.voiceSaving = false;
+    renderActivity();
+  }
+}
+
+function detailStats(selectedKin, field, capture) {
+  return [
+    { label: "Kin", value: selectedKin?.name || capture.kinId || "Unknown" },
+    { label: "Capture", value: capture.folderName || "Unavailable" },
+    { label: "Setting", value: field?.label || tabLabelFor(state.activeTab) },
+    { label: "Changes", value: String(field?.history?.length || 0) }
+  ];
+}
+
+function currentCapturedField() {
+  return state.selectedKinCapture?.fields?.find((field) => field.key === state.activeTab) || null;
+}
+
+function currentSelectedKin() {
+  return state.kins.find((kin) => kin.aiId === state.selectedKinId) || null;
+}
+
+function clearMissingSelectedKin() {
+  if (!state.selectedKinId) {
+    return;
+  }
+
+  if (!state.kins.some((kin) => kin.aiId === state.selectedKinId)) {
+    state.selectedKinId = null;
+    state.selectedKinCapture = null;
+    state.selectedKinVoice = null;
+    state.captureError = null;
+    state.voiceError = null;
+    state.captureLoading = false;
+    state.voiceLoading = false;
+    state.activeTab = "monitor";
+  }
+}
+
+function tabLabelFor(tab) {
+  const button = elements.detailTabs.querySelector(`[data-tab="${tab}"]`);
+  return button?.textContent?.trim() || "Detail";
+}
+
+function providerLabel(provider) {
+  return provider === "elevenlabs" ? "ElevenLabs" : "OpenAI";
+}
+
+function withTimeout(promise, timeoutMs, message) {
+  let timeoutId;
+  const timeout = new Promise((_, reject) => {
+    timeoutId = window.setTimeout(() => reject(new Error(message)), timeoutMs);
+  });
+
+  return Promise.race([promise, timeout]).finally(() => {
+    window.clearTimeout(timeoutId);
+  });
+}
+
+const voiceAudio = {
+  context: null,
+  nextStartTime: 0
+};
+
+async function playVoiceAudio(payload) {
+  if (!payload?.audio || payload.format !== "mp3") {
+    return;
+  }
+
+  try {
+    const context = voiceAudio.context || new AudioContext();
+    voiceAudio.context = context;
+    if (context.state === "suspended") {
+      await context.resume();
+    }
+
+    const audio = audioPayloadToArrayBuffer(payload.audio);
+    const decoded = await context.decodeAudioData(audio.slice(0));
+    const source = context.createBufferSource();
+    source.buffer = decoded;
+    source.connect(context.destination);
+
+    const now = context.currentTime;
+    const boundaryGapSeconds = Math.max(0, Number(payload.boundaryGapMs ?? 80)) / 1000;
+    const startAt = Math.max(now + 0.02, voiceAudio.nextStartTime + boundaryGapSeconds);
+    source.start(startAt);
+    voiceAudio.nextStartTime = startAt + decoded.duration;
+    source.onended = () => {
+      if (context.currentTime >= voiceAudio.nextStartTime - 0.05) {
+        voiceAudio.nextStartTime = 0;
+      }
+    };
+  } catch (error) {
+    elements.monitorLine.textContent = `Voice playback failed: ${error.message || String(error)}`;
+  }
+}
+
+function audioPayloadToArrayBuffer(audio) {
+  if (audio instanceof ArrayBuffer) {
+    return audio;
+  }
+
+  if (ArrayBuffer.isView(audio)) {
+    return audio.buffer.slice(audio.byteOffset, audio.byteOffset + audio.byteLength);
+  }
+
+  throw new Error("Unsupported audio payload.");
 }
 
 function handleMonitorLine(payload) {

@@ -314,6 +314,21 @@ function testConfig(): AppConfig {
         enabled: true,
         maxLength: 160
       }
+    },
+    voice: {
+      enabled: false,
+      provider: "none",
+      openai: {
+        apiKey: "",
+        model: "gpt-4o-mini-tts",
+        voice: "marin",
+        instructions: ""
+      },
+      elevenlabs: {
+        apiKey: "",
+        model: "eleven_flash_v2_5",
+        outputFormat: "mp3_44100_128"
+      }
     }
   };
 }
