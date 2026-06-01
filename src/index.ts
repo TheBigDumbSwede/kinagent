@@ -119,6 +119,7 @@ program
         {
           outputDir: result.outputDir,
           committed: result.committed,
+          createdCommit: result.createdCommit,
           commitHash: result.commitHash,
           kinCount: result.kinCount,
           groupCount: result.groupCount,

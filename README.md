@@ -215,6 +215,8 @@ npm run capture-state
 
 By default this writes to `./data/kin-source-control`, which is outside the application repo's Git tracking. The capture includes Kin and group profile fields, readable decrypted field files where possible, Kin journal entries, and a Git commit for the snapshot.
 
+The shared backend runtime also runs this capture once at desktop or daemon startup. If the generated files match the previous snapshot, no new capture commit is created.
+
 Forward decrypted chat events to a local Cadence Hermes gateway and allow Hermes to request `current_scene` updates:
 
 ```powershell

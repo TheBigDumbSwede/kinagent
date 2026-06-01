@@ -1,4 +1,5 @@
 import { extractFirebaseAppCheckState, loadBrowserSession, summarizeSessionAuth } from "../auth/firebaseSession.js";
+import { captureKindroidState, type CaptureKindroidStateResult } from "../capture/kinStateCapture.js";
 import type { AppConfig } from "../config/types.js";
 import { KindroidLiveMonitor } from "../firestore/liveMonitor.js";
 import { mapKindroidMessage } from "../firestore/messageMapper.js";
@@ -29,7 +30,9 @@ export type BridgeRuntimeEvent =
   | { channel: "group-monitor-stopped"; payload: { groupId: string; reason: string } }
   | { channel: "group-monitor-exit"; payload: { groupId: string; aborted: boolean } }
   | { channel: "group-monitor-error"; payload: { groupId: string; groupName: string; error: string } }
-  | { channel: "monitor-line"; payload: Record<string, unknown> };
+  | { channel: "monitor-line"; payload: Record<string, unknown> }
+  | { channel: "identity-capture-completed"; payload: CaptureKindroidStateResult }
+  | { channel: "identity-capture-failed"; payload: { error: string } };
 
 export interface BridgeRuntimeOptions {
   config: AppConfig;
@@ -44,6 +47,7 @@ export class BridgeRuntime {
   private readonly kinSubscriptionSupervisor: KinSubscriptionSupervisor;
   private readonly groupSubscriptionSupervisor: GroupSubscriptionSupervisor;
   private started = false;
+  private startupCaptureStarted = false;
 
   private constructor(private readonly options: BridgeRuntimeOptions) {
     this.hermes = createHermesAdapter(options.config, options.logger);
@@ -134,6 +138,7 @@ export class BridgeRuntime {
     this.sessionKeepAlive.start();
     this.kinSubscriptionSupervisor.start();
     this.groupSubscriptionSupervisor.start();
+    this.startIdentityCapture();
   }
 
   stop(): void {
@@ -318,6 +323,33 @@ export class BridgeRuntime {
     }
 
     this.options.logger.warn("Kindroid session keepalive failed.", { error: event.error });
+  }
+
+  private startIdentityCapture(): void {
+    if (this.startupCaptureStarted || process.env.KINAGENT_DESKTOP_SMOKE === "1") {
+      return;
+    }
+
+    this.startupCaptureStarted = true;
+    void captureKindroidState(this.options.config, this.options.logger)
+      .then((result) => {
+        this.options.logger.info("Kindroid identity capture completed.", {
+          outputDir: result.outputDir,
+          committed: result.committed,
+          createdCommit: result.createdCommit,
+          commitHash: result.commitHash,
+          kinCount: result.kinCount,
+          groupCount: result.groupCount,
+          kinJournalEntryCount: result.kinJournalEntryCount,
+          globalJournalEntryCount: result.globalJournalEntryCount
+        });
+        this.emit({ channel: "identity-capture-completed", payload: result });
+      })
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        this.options.logger.warn("Kindroid identity capture failed.", { error: message });
+        this.emit({ channel: "identity-capture-failed", payload: { error: message } });
+      });
   }
 
   private emit(event: BridgeRuntimeEvent): void {
