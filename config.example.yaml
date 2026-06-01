@@ -1,0 +1,18 @@
+kindroid:
+  firebaseProjectId: "kindroid-ai"
+  uid: ""
+  kins:
+    - name: "Example Kin"
+      aiId: ""
+      enabled: true
+
+bridge:
+  dedupeWindowSeconds: 180
+  logLevel: "info"
+  sessionDir: "./data/browser-session"
+  sqlitePath: "./data/bridge.sqlite"
+
+hermes:
+  enabled: false
+  baseUrl: "http://localhost:8000"
+  agentId: "kindroid-bridge"

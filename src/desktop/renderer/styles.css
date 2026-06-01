@@ -1,0 +1,210 @@
+:root {
+  color-scheme: light;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  background: #f5f7fa;
+  color: #182635;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 820px;
+  min-height: 560px;
+  background: #f5f7fa;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+button {
+  min-height: 34px;
+  border: 1px solid #2d5a7b;
+  border-radius: 6px;
+  background: #2d5a7b;
+  color: #fff;
+  padding: 0 12px;
+  cursor: pointer;
+}
+
+button.secondary {
+  border-color: #c4ced8;
+  background: #fff;
+  color: #26384a;
+}
+
+button:hover {
+  filter: brightness(0.96);
+}
+
+input,
+select {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid #c4ced8;
+  border-radius: 6px;
+  background: #fff;
+  color: #182635;
+  padding: 0 10px;
+}
+
+label {
+  display: grid;
+  gap: 6px;
+  color: #4d6174;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.app-shell {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  height: 100vh;
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 18px;
+  border-right: 1px solid #d7e0e8;
+  background: #eef3f7;
+  overflow: auto;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 54px;
+}
+
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 8px;
+  background: #243b53;
+  color: #fff;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}
+
+h1 {
+  font-size: 20px;
+  line-height: 1.2;
+}
+
+h2 {
+  font-size: 14px;
+  line-height: 1.2;
+}
+
+.brand p,
+.activity-header p {
+  color: #63788c;
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.panel {
+  display: grid;
+  gap: 12px;
+  padding-top: 14px;
+  border-top: 1px solid #d7e0e8;
+}
+
+.button-row,
+.input-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.status-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.status-list div {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 8px;
+  align-items: baseline;
+}
+
+.status-list dt {
+  color: #63788c;
+  font-size: 12px;
+}
+
+.status-list dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+
+.activity {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+  background: #fff;
+}
+
+.activity-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 20px;
+  border-bottom: 1px solid #d7e0e8;
+}
+
+.message-list {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  padding: 16px 20px;
+  overflow: auto;
+}
+
+.message {
+  display: grid;
+  gap: 6px;
+  max-width: 860px;
+  border-left: 3px solid #8699aa;
+  padding: 10px 12px;
+  background: #f8fafc;
+}
+
+.message.user {
+  border-left-color: #4c7c59;
+}
+
+.message.ai {
+  border-left-color: #b26e35;
+}
+
+.message-meta {
+  color: #63788c;
+  font-size: 12px;
+}
+
+.message p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}

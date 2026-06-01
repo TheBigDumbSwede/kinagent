@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Kinagent</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">K</div>
+          <div>
+            <h1>Kinagent</h1>
+            <p id="sessionLine">Session unknown</p>
+          </div>
+        </div>
+
+        <section class="panel">
+          <h2>Session</h2>
+          <div class="button-row">
+            <button id="loginStartButton" type="button">Open Login</button>
+            <button id="loginSaveButton" type="button">Save Session</button>
+          </div>
+          <button id="openKindroidButton" class="secondary" type="button">Open Kindroid</button>
+          <dl class="status-list">
+            <div>
+              <dt>Firebase</dt>
+              <dd id="firebaseStatus">Unknown</dd>
+            </div>
+            <div>
+              <dt>App Check</dt>
+              <dd id="appCheckStatus">Unknown</dd>
+            </div>
+            <div>
+              <dt>Expires</dt>
+              <dd id="expiryStatus">Unknown</dd>
+            </div>
+          </dl>
+        </section>
+
+        <section class="panel">
+          <h2>Monitor</h2>
+          <label for="kinSelect">Kin</label>
+          <select id="kinSelect"></select>
+          <label for="manualKinInput">Manual AI ID</label>
+          <input id="manualKinInput" type="text" placeholder="ai_id" />
+          <div class="input-grid">
+            <label>
+              Poll
+              <input id="pollSecondsInput" type="number" min="1" max="60" value="5" />
+            </label>
+            <label>
+              Page
+              <input id="pageSizeInput" type="number" min="1" max="100" value="50" />
+            </label>
+          </div>
+          <div class="button-row">
+            <button id="monitorStartButton" type="button">Start</button>
+            <button id="monitorStopButton" type="button">Stop</button>
+          </div>
+        </section>
+      </aside>
+
+      <section class="activity">
+        <div class="activity-header">
+          <div>
+            <h2>Incoming Messages</h2>
+            <p id="monitorLine">Monitor stopped</p>
+          </div>
+          <button id="clearButton" class="secondary" type="button">Clear</button>
+        </div>
+        <div id="messageList" class="message-list"></div>
+      </section>
+    </main>
+    <script src="./renderer.js"></script>
+  </body>
+</html>

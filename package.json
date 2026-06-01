@@ -1,0 +1,37 @@
+{
+  "name": "kinagent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/desktop/main.js",
+  "description": "Headless Kindroid to Hermes bridge prototype.",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/copy-desktop-assets.mjs",
+    "desktop": "npm run build && electron dist/desktop/main.js",
+    "postinstall": "playwright install chromium",
+    "login": "tsx src/index.ts login",
+    "instrument-login": "tsx src/index.ts instrument-login",
+    "list-kins": "tsx src/index.ts list-kins",
+    "session-info": "tsx src/index.ts session-info",
+    "probe-chat": "tsx src/index.ts probe-chat",
+    "monitor-live": "tsx src/index.ts monitor-live",
+    "listen": "tsx src/index.ts listen",
+    "send": "tsx src/index.ts send",
+    "daemon": "tsx src/index.ts daemon",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@types/crypto-js": "^4.2.2",
+    "commander": "^14.0.2",
+    "crypto-js": "^4.2.0",
+    "dotenv": "^17.2.3",
+    "playwright": "^1.57.0",
+    "yaml": "^2.8.2"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "electron": "^42.3.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  }
+}
