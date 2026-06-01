@@ -30,7 +30,7 @@ const logger = createLogger(config.bridge.logLevel);
 
 app.setName("Kinagent");
 
-app.whenReady().then(() => {
+void app.whenReady().then(() => {
   createMainWindow();
   createTray();
   registerIpcHandlers();
@@ -71,6 +71,12 @@ function createMainWindow(): void {
 
   mainWindow.once("ready-to-show", () => {
     mainWindow?.show();
+    if (process.env.KINAGENT_DESKTOP_SMOKE === "1") {
+      setTimeout(() => {
+        isQuitting = true;
+        app.quit();
+      }, 1_000);
+    }
   });
 
   mainWindow.on("minimize" as never, (event: ElectronEvent) => {
@@ -134,7 +140,9 @@ function registerIpcHandlers(): void {
 
 async function getDesktopStatus() {
   const session = loadSessionSummary();
-  const appCheck = session.available ? extractFirebaseAppCheckState(loadBrowserSession(config.bridge.sessionDir).storageState) : null;
+  const appCheck = session.available
+    ? extractFirebaseAppCheckState(loadBrowserSession(config.bridge.sessionDir).storageState)
+    : null;
 
   return {
     monitorRunning: Boolean(monitorController),
@@ -261,22 +269,25 @@ function stopMonitorProcess() {
 }
 
 function startSessionKeepAlive(): void {
-  keepAliveTimer = setInterval(() => {
-    loadFreshFirebaseAuth(config.bridge.sessionDir)
-      .then((auth) => {
-        sendRendererEvent("session-keepalive", {
-          ok: true,
-          uidPresent: Boolean(auth.uid),
-          expirationIso: auth.expirationTime ? new Date(auth.expirationTime).toISOString() : null
+  keepAliveTimer = setInterval(
+    () => {
+      loadFreshFirebaseAuth(config.bridge.sessionDir)
+        .then((auth) => {
+          sendRendererEvent("session-keepalive", {
+            ok: true,
+            uidPresent: Boolean(auth.uid),
+            expirationIso: auth.expirationTime ? new Date(auth.expirationTime).toISOString() : null
+          });
+        })
+        .catch((error) => {
+          sendRendererEvent("session-keepalive", {
+            ok: false,
+            error: error instanceof Error ? error.message : String(error)
+          });
         });
-      })
-      .catch((error) => {
-        sendRendererEvent("session-keepalive", {
-          ok: false,
-          error: error instanceof Error ? error.message : String(error)
-        });
-      });
-  }, 30 * 60 * 1000);
+    },
+    30 * 60 * 1000
+  );
 }
 
 function showMainWindow(): void {

@@ -78,7 +78,9 @@ export class KindroidLiveMonitor {
     const session = loadBrowserSession(this.config.bridge.sessionDir);
     const uid = session.firebaseAuth?.uid;
     if (!uid) {
-      throw new Error("Cannot decrypt live messages without a Firebase UID. Run npm run session-info to verify the saved session.");
+      throw new Error(
+        "Cannot decrypt live messages without a Firebase UID. Run npm run session-info to verify the saved session."
+      );
     }
 
     return uid;

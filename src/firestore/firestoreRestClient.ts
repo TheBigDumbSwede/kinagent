@@ -1,9 +1,5 @@
 import type { AppConfig } from "../config/types.js";
-import {
-  extractFirebaseAppCheckState,
-  loadBrowserSession,
-  loadFreshFirebaseAuth
-} from "../auth/firebaseSession.js";
+import { extractFirebaseAppCheckState, loadBrowserSession, loadFreshFirebaseAuth } from "../auth/firebaseSession.js";
 import type { Logger } from "../util/logger.js";
 import type { FirestoreDocumentLike } from "./types.js";
 
@@ -53,8 +49,8 @@ export class FirestoreRestClient {
     url.searchParams.set("orderBy", "timestamp desc");
 
     const headers: Record<string, string> = {
-        authorization: `Bearer ${auth.accessToken}`,
-        accept: "application/json"
+      authorization: `Bearer ${auth.accessToken}`,
+      accept: "application/json"
     };
 
     if (appCheck?.token) {
@@ -65,9 +61,7 @@ export class FirestoreRestClient {
 
     if (!response.ok) {
       const responseText = await response.text();
-      throw new Error(
-        `Firestore read failed with HTTP ${response.status}: ${responseText.slice(0, 500)}`
-      );
+      throw new Error(`Firestore read failed with HTTP ${response.status}: ${responseText.slice(0, 500)}`);
     }
 
     const payload = (await response.json()) as { documents?: FirestoreRestDocument[] };

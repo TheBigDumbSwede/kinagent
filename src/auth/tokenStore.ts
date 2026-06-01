@@ -14,9 +14,7 @@ export function ensureSessionDir(sessionDir: string): void {
 export function assertStorageStateExists(sessionDir: string): string {
   const statePath = storageStatePath(sessionDir);
   if (!fs.existsSync(statePath)) {
-    throw new Error(
-      `No Kindroid browser session found at ${statePath}. Run "npm run login" first.`
-    );
+    throw new Error(`No Kindroid browser session found at ${statePath}. Run "npm run login" first.`);
   }
 
   return statePath;

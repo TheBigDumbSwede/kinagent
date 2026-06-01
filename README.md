@@ -202,7 +202,30 @@ Run the normal pre-push check:
 npm run check
 ```
 
-The current tests cover Kindroid `!enc:` decryption, Firestore message normalization, config loading/env overrides, and outbound dedupe behavior. They do not call live Kindroid, Firestore, Playwright, or Electron.
+`npm run check` runs the local secret scan, ESLint, Prettier check, TypeScript typecheck, unit tests, and build. GitHub Actions runs the same check on pushes and pull requests.
+
+The current unit tests cover Kindroid `!enc:` decryption, Firestore message normalization, config loading/env overrides, and outbound SQLite dedupe behavior. They do not call live Kindroid, Firestore, Playwright, or Electron.
+
+Run the desktop launch smoke test:
+
+```powershell
+npm run smoke:desktop
+```
+
+Run live Firestore integration tests only when a real local session and enabled Kin are available:
+
+```powershell
+$env:KINAGENT_LIVE_TESTS = "1"
+npm run test:live
+```
+
+Build and smoke-check the Windows portable app:
+
+```powershell
+npm run dist:win
+```
+
+The portable artifact is written under `release/`, which is ignored by Git.
 
 ## Configuration
 
@@ -233,6 +256,6 @@ Environment variables can override the main scalar settings; see `.env.example`.
 
 1. Decide the Hermes content contract and forward decrypted Firestore messages from the listener.
 2. Replace the REST polling listener with a true Firestore realtime subscription.
-3. Replace the in-memory dedupe store with SQLite.
+3. Expand live integration coverage around saved session refresh and Firestore listen behavior.
 4. Implement the real Hermes adapter.
-5. Add focused integration tests around session parsing, notification mapping, and dedupe matching.
+5. Add installer signing and start-with-Windows support.

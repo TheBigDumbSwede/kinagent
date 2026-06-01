@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import dotenv from "dotenv";
 import YAML from "yaml";
+import { z } from "zod";
 import type { AppConfig, LogLevel } from "./types.js";
 
 dotenv.config({ quiet: true });
@@ -25,24 +26,46 @@ const defaultConfig: AppConfig = {
   }
 };
 
+const logLevelSchema = z.enum(["debug", "info", "warn", "error"]);
+const appConfigSchema = z.object({
+  kindroid: z.object({
+    firebaseProjectId: z.string().min(1, "kindroid.firebaseProjectId is required."),
+    uid: z.string(),
+    kins: z.array(
+      z.object({
+        name: z.string(),
+        aiId: z.string(),
+        enabled: z.boolean()
+      })
+    )
+  }),
+  bridge: z.object({
+    dedupeWindowSeconds: z.number().finite().positive("bridge.dedupeWindowSeconds must be a positive number."),
+    logLevel: logLevelSchema,
+    sessionDir: z.string().min(1, "bridge.sessionDir is required."),
+    sqlitePath: z.string().min(1, "bridge.sqlitePath is required.")
+  }),
+  hermes: z.object({
+    enabled: z.boolean(),
+    baseUrl: z.string().min(1, "hermes.baseUrl is required."),
+    agentId: z.string().min(1, "hermes.agentId is required.")
+  })
+});
+
 export interface LoadConfigOptions {
   configPath?: string;
 }
 
 export function loadConfig(options: LoadConfigOptions = {}): AppConfig {
-  const configPath =
-    options.configPath ??
-    process.env.KINAGENT_CONFIG ??
-    path.resolve(process.cwd(), "config.yaml");
+  const configPath = options.configPath ?? process.env.KINAGENT_CONFIG ?? path.resolve(process.cwd(), "config.yaml");
 
   const fileConfig = readYamlConfig(configPath);
   const merged = mergeConfig(defaultConfig, fileConfig);
 
   applyEnvOverrides(merged);
   normalizePaths(merged);
-  validateConfig(merged);
 
-  return merged;
+  return parseConfig(merged);
 }
 
 function readYamlConfig(configPath: string): Partial<AppConfig> {
@@ -74,14 +97,10 @@ function mergeConfig(base: AppConfig, override: Partial<AppConfig>): AppConfig {
 }
 
 function applyEnvOverrides(config: AppConfig): void {
-  config.kindroid.firebaseProjectId =
-    process.env.KINDROID_FIREBASE_PROJECT_ID ?? config.kindroid.firebaseProjectId;
+  config.kindroid.firebaseProjectId = process.env.KINDROID_FIREBASE_PROJECT_ID ?? config.kindroid.firebaseProjectId;
   config.kindroid.uid = process.env.KINDROID_UID ?? config.kindroid.uid;
 
-  config.bridge.dedupeWindowSeconds = numberFromEnv(
-    "BRIDGE_DEDUPE_WINDOW_SECONDS",
-    config.bridge.dedupeWindowSeconds
-  );
+  config.bridge.dedupeWindowSeconds = numberFromEnv("BRIDGE_DEDUPE_WINDOW_SECONDS", config.bridge.dedupeWindowSeconds);
   config.bridge.logLevel = logLevelFromEnv("BRIDGE_LOG_LEVEL", config.bridge.logLevel);
   config.bridge.sessionDir = process.env.BRIDGE_SESSION_DIR ?? config.bridge.sessionDir;
   config.bridge.sqlitePath = process.env.BRIDGE_SQLITE_PATH ?? config.bridge.sqlitePath;
@@ -94,17 +113,6 @@ function applyEnvOverrides(config: AppConfig): void {
 function normalizePaths(config: AppConfig): void {
   config.bridge.sessionDir = path.resolve(process.cwd(), config.bridge.sessionDir);
   config.bridge.sqlitePath = path.resolve(process.cwd(), config.bridge.sqlitePath);
-}
-
-function validateConfig(config: AppConfig): void {
-  if (!config.kindroid.firebaseProjectId) {
-    throw new Error("kindroid.firebaseProjectId is required.");
-  }
-
-  if (!Number.isFinite(config.bridge.dedupeWindowSeconds) || config.bridge.dedupeWindowSeconds < 1) {
-    throw new Error("bridge.dedupeWindowSeconds must be a positive number.");
-  }
-
 }
 
 function numberFromEnv(name: string, fallback: number): number {
@@ -136,9 +144,22 @@ function logLevelFromEnv(name: string, fallback: LogLevel): LogLevel {
     return fallback;
   }
 
-  if (value === "debug" || value === "info" || value === "warn" || value === "error") {
-    return value;
+  const parsed = logLevelSchema.safeParse(value);
+  if (parsed.success) {
+    return parsed.data;
   }
 
   throw new Error(`${name} must be one of debug, info, warn, or error.`);
+}
+
+function parseConfig(config: AppConfig): AppConfig {
+  const parsed = appConfigSchema.safeParse(config);
+  if (parsed.success) {
+    return parsed.data;
+  }
+
+  const issues = parsed.error.issues.map((issue) => {
+    return issue.message;
+  });
+  throw new Error(`Invalid configuration: ${issues.join(" ")}`);
 }

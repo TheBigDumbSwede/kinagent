@@ -78,10 +78,7 @@ export async function runInstrumentedKindroidLogin(
   return reportPath;
 }
 
-async function installCryptoInstrumentation(
-  context: BrowserContext,
-  report: InstrumentationReport
-): Promise<void> {
+async function installCryptoInstrumentation(context: BrowserContext, report: InstrumentationReport): Promise<void> {
   await context.exposeBinding("__kinagentCryptoEvent", (_source, event: unknown) => {
     report.cryptoEvents.push(event);
   });
@@ -184,13 +181,7 @@ async function installCryptoInstrumentation(
     }
 
     const originalImportKey = subtle.importKey.bind(subtle);
-    subtle.importKey = async function patchedImportKey(
-      format,
-      keyData,
-      algorithm,
-      extractable,
-      keyUsages
-    ) {
+    subtle.importKey = async function patchedImportKey(format, keyData, algorithm, extractable, keyUsages) {
       emit({
         type: "crypto.subtle.importKey",
         format,
@@ -199,23 +190,11 @@ async function installCryptoInstrumentation(
         extractable,
         keyUsages
       });
-      return originalImportKey(
-        format as "raw",
-        keyData as BufferSource,
-        algorithm,
-        extractable,
-        keyUsages
-      );
+      return originalImportKey(format as "raw", keyData as BufferSource, algorithm, extractable, keyUsages);
     };
 
     const originalDeriveKey = subtle.deriveKey.bind(subtle);
-    subtle.deriveKey = async function patchedDeriveKey(
-      algorithm,
-      baseKey,
-      derivedKeyType,
-      extractable,
-      keyUsages
-    ) {
+    subtle.deriveKey = async function patchedDeriveKey(algorithm, baseKey, derivedKeyType, extractable, keyUsages) {
       emit({
         type: "crypto.subtle.deriveKey",
         algorithm: summarizeAlgorithm(algorithm),
@@ -285,8 +264,7 @@ function attachNetworkInstrumentation(context: BrowserContext, report: Instrumen
 async function summarizeStorage(page: Page): Promise<unknown> {
   return page.evaluate(async () => {
     const localStorageKeys = Object.keys(localStorage).sort();
-    const indexedDbDatabases =
-      typeof indexedDB.databases === "function" ? await indexedDB.databases() : [];
+    const indexedDbDatabases = typeof indexedDB.databases === "function" ? await indexedDB.databases() : [];
 
     return {
       origin: location.origin,

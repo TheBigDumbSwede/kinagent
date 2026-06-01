@@ -17,7 +17,7 @@ export class KindroidClient {
 
     const headers: Record<string, string> = {
       "content-type": "application/json",
-      "accept": "application/json"
+      accept: "application/json"
     };
 
     if (cookieHeader) {

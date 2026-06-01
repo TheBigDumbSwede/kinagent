@@ -22,10 +22,13 @@ program
   .option("-c, --config <path>", "Path to config.yaml")
   .showHelpAfterError();
 
-program.command("login").description("Open Kindroid in Chromium and save local browser session state.").action(async () => {
-  const { config, logger } = loadRuntime();
-  await runKindroidLogin(config, logger);
-});
+program
+  .command("login")
+  .description("Open Kindroid in Chromium and save local browser session state.")
+  .action(async () => {
+    const { config, logger } = loadRuntime();
+    await runKindroidLogin(config, logger);
+  });
 
 program
   .command("instrument-login")
@@ -41,17 +44,23 @@ program
     await runInstrumentedKindroidLogin(config, logger, { durationSeconds });
   });
 
-program.command("list-kins").description("List cached Kindroid Kins from the saved browser session.").action(() => {
-  const { config } = loadRuntime();
-  const kins = listKinsFromSession(config.bridge.sessionDir);
-  process.stdout.write(`${JSON.stringify({ count: kins.length, kins }, null, 2)}\n`);
-});
+program
+  .command("list-kins")
+  .description("List cached Kindroid Kins from the saved browser session.")
+  .action(() => {
+    const { config } = loadRuntime();
+    const kins = listKinsFromSession(config.bridge.sessionDir);
+    process.stdout.write(`${JSON.stringify({ count: kins.length, kins }, null, 2)}\n`);
+  });
 
-program.command("session-info").description("Print a safe summary of saved session auth state.").action(() => {
-  const { config } = loadRuntime();
-  const session = loadBrowserSession(config.bridge.sessionDir);
-  process.stdout.write(`${JSON.stringify(summarizeSessionAuth(session.storageState), null, 2)}\n`);
-});
+program
+  .command("session-info")
+  .description("Print a safe summary of saved session auth state.")
+  .action(() => {
+    const { config } = loadRuntime();
+    const session = loadBrowserSession(config.bridge.sessionDir);
+    process.stdout.write(`${JSON.stringify(summarizeSessionAuth(session.storageState), null, 2)}\n`);
+  });
 
 program
   .command("probe-chat")
@@ -95,7 +104,7 @@ program
     }
 
     const hermes = createHermesAdapter(config, logger);
-    const dedupeStore = createDedupeStore(config.bridge.dedupeWindowSeconds);
+    const dedupeStore = await createDedupeStore(config.bridge.sqlitePath, config.bridge.dedupeWindowSeconds);
     const listener = new KindroidChatListener(config, hermes, dedupeStore, logger);
     await listener.start({ kinId: options.kin, pollSeconds });
   });
@@ -136,7 +145,7 @@ program
   .action(async (options: { kin: string; message: string }) => {
     const { config, logger } = loadRuntime();
     const client = new KindroidClient(config, logger);
-    const dedupeStore = createDedupeStore(config.bridge.dedupeWindowSeconds);
+    const dedupeStore = await createDedupeStore(config.bridge.sqlitePath, config.bridge.dedupeWindowSeconds);
     const requestId = newRequestId();
     const idempotencyKey = newRequestId();
 
@@ -171,28 +180,31 @@ program
     }
   });
 
-program.command("daemon").description("Run enabled bridge listeners.").action(async () => {
-  const { config, logger } = loadRuntime();
-  const enabledKins = config.kindroid.kins.filter((kin) => kin.enabled);
+program
+  .command("daemon")
+  .description("Run enabled bridge listeners.")
+  .action(async () => {
+    const { config, logger } = loadRuntime();
+    const enabledKins = config.kindroid.kins.filter((kin) => kin.enabled);
 
-  if (enabledKins.length === 0) {
-    throw new Error("No enabled Kins configured. Add one to config.yaml or use npm run listen -- --kin <ai_id>.");
-  }
+    if (enabledKins.length === 0) {
+      throw new Error("No enabled Kins configured. Add one to config.yaml or use npm run listen -- --kin <ai_id>.");
+    }
 
-  const missingAiId = enabledKins.find((kin) => !kin.aiId);
-  if (missingAiId) {
-    throw new Error(`Enabled Kin "${missingAiId.name}" is missing aiId.`);
-  }
+    const missingAiId = enabledKins.find((kin) => !kin.aiId);
+    if (missingAiId) {
+      throw new Error(`Enabled Kin "${missingAiId.name}" is missing aiId.`);
+    }
 
-  const hermes = createHermesAdapter(config, logger);
-  const dedupeStore = createDedupeStore(config.bridge.dedupeWindowSeconds);
-  const listener = new KindroidChatListener(config, hermes, dedupeStore, logger);
+    const hermes = createHermesAdapter(config, logger);
+    const dedupeStore = await createDedupeStore(config.bridge.sqlitePath, config.bridge.dedupeWindowSeconds);
+    const listener = new KindroidChatListener(config, hermes, dedupeStore, logger);
 
-  for (const kin of enabledKins) {
-    logger.info("Starting configured Kin listener.", { name: kin.name, aiId: kin.aiId });
-    await listener.start({ kinId: kin.aiId });
-  }
-});
+    for (const kin of enabledKins) {
+      logger.info("Starting configured Kin listener.", { name: kin.name, aiId: kin.aiId });
+      await listener.start({ kinId: kin.aiId });
+    }
+  });
 
 program.parseAsync(process.argv).catch((error: unknown) => {
   const message = error instanceof Error ? error.message : String(error);

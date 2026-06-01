@@ -118,9 +118,7 @@ export function summarizeSessionAuth(storageState: BrowserStorageState): {
     tokenPresent: firebaseAuth ? Boolean(firebaseAuth.accessToken) : undefined,
     refreshTokenPresent: firebaseAuth ? Boolean(firebaseAuth.refreshToken) : undefined,
     expirationTime: firebaseAuth?.expirationTime,
-    expirationIso: firebaseAuth?.expirationTime
-      ? new Date(firebaseAuth.expirationTime).toISOString()
-      : undefined,
+    expirationIso: firebaseAuth?.expirationTime ? new Date(firebaseAuth.expirationTime).toISOString() : undefined,
     indexedDbOrigins: (storageState.origins ?? [])
       .filter((origin) => (origin.indexedDB ?? []).length > 0)
       .map((origin) => ({
@@ -128,9 +126,7 @@ export function summarizeSessionAuth(storageState: BrowserStorageState): {
         databaseNames: (origin.indexedDB ?? []).map((database) => database.name)
       })),
     appCheckTokenPresent: Boolean(appCheck?.token),
-    appCheckExpirationIso: appCheck?.expireTimeMillis
-      ? new Date(appCheck.expireTimeMillis).toISOString()
-      : undefined
+    appCheckExpirationIso: appCheck?.expireTimeMillis ? new Date(appCheck.expireTimeMillis).toISOString() : undefined
   };
 }
 
@@ -295,11 +291,7 @@ function parseFirebaseAuthKey(key: string): { apiKey: string; appName: string } 
   };
 }
 
-function firebaseAuthFromRecord(
-  apiKey: string,
-  appName: string,
-  record: Record<string, unknown>
-): FirebaseAuthState {
+function firebaseAuthFromRecord(apiKey: string, appName: string, record: Record<string, unknown>): FirebaseAuthState {
   const tokenManager = isRecord(record.stsTokenManager) ? record.stsTokenManager : {};
 
   return {

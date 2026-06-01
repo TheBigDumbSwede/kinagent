@@ -22,27 +22,37 @@ const elements = {
   clearButton: document.querySelector("#clearButton")
 };
 
-elements.loginStartButton.addEventListener("click", () => runAction("Opening login", () => window.kinagent.startLogin()));
-elements.loginSaveButton.addEventListener("click", () => runAction("Saving session", async () => {
-  await window.kinagent.saveLogin();
-  await refreshStatus();
-}));
-elements.openKindroidButton.addEventListener("click", () => runAction("Opening Kindroid", () => window.kinagent.openKindroid()));
-elements.monitorStartButton.addEventListener("click", () => runAction("Starting monitor", async () => {
-  const kinId = selectedKinId();
-  await window.kinagent.startMonitor({
-    kinId,
-    pollSeconds: numberValue(elements.pollSecondsInput.value, 5),
-    pageSize: numberValue(elements.pageSizeInput.value, 50)
-  });
-  state.monitorRunning = true;
-  renderMonitorState();
-}));
-elements.monitorStopButton.addEventListener("click", () => runAction("Stopping monitor", async () => {
-  await window.kinagent.stopMonitor();
-  state.monitorRunning = false;
-  renderMonitorState();
-}));
+elements.loginStartButton.addEventListener("click", () =>
+  runAction("Opening login", () => window.kinagent.startLogin())
+);
+elements.loginSaveButton.addEventListener("click", () =>
+  runAction("Saving session", async () => {
+    await window.kinagent.saveLogin();
+    await refreshStatus();
+  })
+);
+elements.openKindroidButton.addEventListener("click", () =>
+  runAction("Opening Kindroid", () => window.kinagent.openKindroid())
+);
+elements.monitorStartButton.addEventListener("click", () =>
+  runAction("Starting monitor", async () => {
+    const kinId = selectedKinId();
+    await window.kinagent.startMonitor({
+      kinId,
+      pollSeconds: numberValue(elements.pollSecondsInput.value, 5),
+      pageSize: numberValue(elements.pageSizeInput.value, 50)
+    });
+    state.monitorRunning = true;
+    renderMonitorState();
+  })
+);
+elements.monitorStopButton.addEventListener("click", () =>
+  runAction("Stopping monitor", async () => {
+    await window.kinagent.stopMonitor();
+    state.monitorRunning = false;
+    renderMonitorState();
+  })
+);
 elements.clearButton.addEventListener("click", () => {
   elements.messageList.replaceChildren();
 });
@@ -168,7 +178,11 @@ function addMessage(message) {
 
   const meta = document.createElement("div");
   meta.className = "message-meta";
-  meta.textContent = [message.sender || "unknown", formatTime(message.timestamp), message.textDecrypted ? "decrypted" : "not decrypted"]
+  meta.textContent = [
+    message.sender || "unknown",
+    formatTime(message.timestamp),
+    message.textDecrypted ? "decrypted" : "not decrypted"
+  ]
     .filter(Boolean)
     .join(" · ");
 
