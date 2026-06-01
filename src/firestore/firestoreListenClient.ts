@@ -21,7 +21,7 @@ export interface FirestoreListenOrder {
 }
 
 interface ListenSessionState {
-  seen: Set<string>;
+  documentVersions: Map<string, string | null>;
   startupSnapshotComplete: boolean;
   lastCurrentAt: number | null;
   currentGeneration: number;
@@ -125,7 +125,7 @@ export class FirestoreListenClient {
 
   async listenCollection(options: ListenCollectionOptions): Promise<void> {
     const state: ListenSessionState = {
-      seen: new Set<string>(),
+      documentVersions: new Map<string, string | null>(),
       startupSnapshotComplete: false,
       lastCurrentAt: null,
       currentGeneration: 0
@@ -287,7 +287,7 @@ export class FirestoreListenClient {
                 options.state.startupSnapshotComplete = true;
               } else {
                 for (const document of startupDocuments.reverse()) {
-                  options.state.seen.add(document.id);
+                  markDocumentSeen(options.state, document);
                   await options.onDocument(document);
                 }
               }
@@ -307,12 +307,12 @@ export class FirestoreListenClient {
             }
 
             const document = firestoreDocumentLike(listenDocument);
-            if (options.state.seen.has(document.id) || startupDocumentIds.has(document.id)) {
+            if (startupDocumentIds.has(document.id) || !isNewOrChangedDocument(options.state, document)) {
               return;
             }
 
             if (initialized) {
-              options.state.seen.add(document.id);
+              markDocumentSeen(options.state, document);
               await options.onDocument(document);
               return;
             }
@@ -324,7 +324,7 @@ export class FirestoreListenClient {
               return;
             }
 
-            options.state.seen.add(document.id);
+            markDocumentSeen(options.state, document);
           })
           .catch((error: unknown) => {
             settleReject(error instanceof Error ? error : new Error(String(error)));
@@ -400,6 +400,34 @@ function grpcStatusCode(error: unknown): number | undefined {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function isNewOrChangedDocument(state: ListenSessionState, document: FirestoreDocumentLike): boolean {
+  const previousVersion = state.documentVersions.get(document.id);
+  if (previousVersion === undefined) {
+    return true;
+  }
+
+  const nextVersion = documentVersion(document);
+  return nextVersion !== null && nextVersion !== previousVersion;
+}
+
+function markDocumentSeen(state: ListenSessionState, document: FirestoreDocumentLike): void {
+  state.documentVersions.set(document.id, documentVersion(document));
+}
+
+function documentVersion(document: FirestoreDocumentLike): string | null {
+  const data = document.data();
+  if (typeof data !== "object" || data === null) {
+    return null;
+  }
+
+  const record = data as Record<string, unknown>;
+  return stringValue(record._updateTime) ?? stringValue(record._createTime);
+}
+
+function stringValue(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
 }
 
 function delay(ms: number, signal: AbortSignal | undefined): Promise<void> {

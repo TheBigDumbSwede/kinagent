@@ -318,7 +318,21 @@ async function startGroupMonitor(group: KindroidGroup, options: { pageSize: numb
       const record = typeof data === "object" && data !== null ? (data as Record<string, unknown>) : {};
       const aiId = typeof record.ai_id === "string" && record.ai_id.length > 0 ? record.ai_id : group.groupId;
       const message = mapKindroidMessage(document, aiId, { decryptionKey });
-      sendRendererEvent("monitor-line", { ...message, groupId: group.groupId, groupName: group.name });
+      sendRendererEvent("monitor-line", {
+        type: "kindroid.chat.message",
+        id: message.id,
+        kinId: message.kinId,
+        groupId: group.groupId,
+        groupName: group.name,
+        timestamp: message.timestamp,
+        sender: message.sender,
+        role: message.role,
+        text: message.text,
+        textEncrypted: message.textEncrypted,
+        textDecrypted: message.textDecrypted,
+        textDecryptionError: message.textDecryptionError,
+        source: "firestore"
+      });
     }
   });
 }
