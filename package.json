@@ -17,6 +17,7 @@
     "probe-group-chat": "tsx src/index.ts probe-group-chat",
     "session-info": "tsx src/index.ts session-info",
     "probe-chat": "tsx src/index.ts probe-chat",
+    "capture-state": "tsx src/index.ts capture-state",
     "monitor-live": "tsx src/index.ts monitor-live",
     "listen": "tsx src/index.ts listen",
     "send": "tsx src/index.ts send",

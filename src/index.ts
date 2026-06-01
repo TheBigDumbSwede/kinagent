@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import { loadConfig } from "./config/loadConfig.js";
 import { loadBrowserSession, summarizeSessionAuth } from "./auth/firebaseSession.js";
+import { captureKindroidState } from "./capture/kinStateCapture.js";
 import { runInstrumentedKindroidLogin } from "./auth/instrumentedLogin.js";
 import { runKindroidLogin } from "./auth/playwrightLogin.js";
 import { KindroidClient } from "./kindroid/kindroidClient.js";
@@ -98,6 +99,36 @@ program
     const { config } = loadRuntime();
     const session = loadBrowserSession(config.bridge.sessionDir);
     process.stdout.write(`${JSON.stringify(summarizeSessionAuth(session.storageState), null, 2)}\n`);
+  });
+
+program
+  .command("capture-state")
+  .description("Capture current Kindroid identity state into a local Git repository.")
+  .option("--out <path>", "Output Git repository path", "./data/kin-source-control")
+  .option("--no-commit", "Write files without creating a Git commit")
+  .option("--message <message>", "Git commit message for the capture")
+  .action(async (options: { out: string; commit: boolean; message?: string }) => {
+    const { config, logger } = loadRuntime();
+    const result = await captureKindroidState(config, logger, {
+      outputDir: options.out,
+      commit: options.commit,
+      message: options.message
+    });
+    process.stdout.write(
+      `${JSON.stringify(
+        {
+          outputDir: result.outputDir,
+          committed: result.committed,
+          commitHash: result.commitHash,
+          kinCount: result.kinCount,
+          groupCount: result.groupCount,
+          kinJournalEntryCount: result.kinJournalEntryCount,
+          globalJournalEntryCount: result.globalJournalEntryCount
+        },
+        null,
+        2
+      )}\n`
+    );
   });
 
 program

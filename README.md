@@ -207,6 +207,14 @@ Run the headless background daemon. It uses the same dynamic Kin and group disco
 npm run daemon
 ```
 
+Capture current Kin identity state into a separate local Git repository:
+
+```powershell
+npm run capture-state
+```
+
+By default this writes to `./data/kin-source-control`, which is outside the application repo's Git tracking. The capture includes Kin and group profile fields, readable decrypted field files where possible, Kin journal entries, and a Git commit for the snapshot.
+
 Forward decrypted chat events to a local Cadence Hermes gateway and allow Hermes to request `current_scene` updates:
 
 ```powershell
