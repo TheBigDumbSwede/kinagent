@@ -188,6 +188,22 @@ Use a non-default config file:
 npm run listen -- --config .\config.yaml --kin "<ai_id>"
 ```
 
+## Test Bench
+
+Run the fast deterministic test suite:
+
+```powershell
+npm test
+```
+
+Run the normal pre-push check:
+
+```powershell
+npm run check
+```
+
+The current tests cover Kindroid `!enc:` decryption, Firestore message normalization, config loading/env overrides, and outbound dedupe behavior. They do not call live Kindroid, Firestore, Playwright, or Electron.
+
 ## Configuration
 
 ```yaml
