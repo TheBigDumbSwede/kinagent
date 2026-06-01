@@ -15,7 +15,7 @@ Working in this first milestone:
 - Manual Kindroid login through a visible Playwright Chromium window.
 - Local browser session persistence under `./data/`, including IndexedDB because Firebase Auth often stores browser tokens there.
 - Desktop background session warming while the app is running; a lightweight HTTP touch refreshes Kindroid cookies, with a hidden browser fallback when needed.
-- Cached Kin listing from saved Kindroid browser state.
+- Server-side Kin discovery from Firestore REST using the saved authenticated session.
 - Best-effort extraction of Firebase browser auth state from saved Playwright storage.
 - Firestore realtime listen stream for `ChatMessages` using the saved Firebase browser auth state, with gRPC keepalive and reconnect backoff.
 - Optional Firestore chat text decryption in `probe-chat` using the saved Firebase UID as the Kindroid AES passphrase.
@@ -79,7 +79,7 @@ npm install
 Copy-Item config.example.yaml config.yaml
 ```
 
-Edit `config.yaml` and fill in at least the Kin `aiId`. If you know your Kindroid UID, set `kindroid.uid`; otherwise the project will try to read it from the saved Firebase auth state.
+Edit `config.yaml`. If you know your Kindroid UID, set `kindroid.uid`; otherwise the project will try to read it from the saved Firebase auth state. The daemon discovers available Kins from the saved session, so static Kin entries are optional compatibility data rather than the primary subscription source.
 
 ## Commands
 
@@ -93,7 +93,8 @@ In the desktop app:
 
 - `Open Login` opens a visible Kindroid browser.
 - `Save Session` stores the browser session after login.
-- `Start` begins the live decrypted monitor for the selected Kin.
+- The background supervisor discovers available Kins and subscribes to all enabled Kins automatically.
+- `Manage` expands per-Kin subscription toggles for users who want desktop control.
 - Minimize or close hides the window to the Windows tray; use the tray menu to show or quit.
 
 Log in and save local browser state:
@@ -114,7 +115,7 @@ Send one message:
 npm run send -- --kin "<ai_id>" --message "hello"
 ```
 
-List cached Kins from the saved session:
+List Kins from Firestore REST using the saved session:
 
 ```powershell
 npm run list-kins
@@ -176,7 +177,7 @@ Include the full raw Firestore document payload when inspecting schema changes:
 npm run probe-chat -- --kin "<ai_id>" --limit 1 --include-raw
 ```
 
-Run configured enabled Kins:
+Run the headless background daemon. It uses the same dynamic Kin discovery and subscription supervisor as the desktop app:
 
 ```powershell
 npm run daemon

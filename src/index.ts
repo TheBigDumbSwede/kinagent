@@ -9,6 +9,8 @@ import { FirestoreRestClient } from "./firestore/firestoreRestClient.js";
 import { KindroidLiveMonitor } from "./firestore/liveMonitor.js";
 import { mapKindroidMessage } from "./firestore/messageMapper.js";
 import { createHermesAdapter } from "./hermes/hermesAdapter.js";
+import { KindroidSessionKeepAlive } from "./runtime/kindroidSessionKeepAlive.js";
+import { KinSubscriptionSupervisor } from "./runtime/kinSubscriptionSupervisor.js";
 import { createDedupeStore } from "./state/sqliteStore.js";
 import { newRequestId } from "./util/ids.js";
 import { createLogger, redactSecrets } from "./util/logger.js";
@@ -175,30 +177,57 @@ program
 
 program
   .command("daemon")
-  .description("Run enabled bridge listeners.")
+  .description("Run dynamic background bridge listeners for all discovered Kins.")
   .action(async () => {
     const { config, logger } = loadRuntime();
-    const enabledKins = config.kindroid.kins.filter((kin) => kin.enabled);
-
-    if (enabledKins.length === 0) {
-      throw new Error("No enabled Kins configured. Add one to config.yaml or use npm run listen -- --kin <ai_id>.");
-    }
-
-    const missingAiId = enabledKins.find((kin) => !kin.aiId);
-    if (missingAiId) {
-      throw new Error(`Enabled Kin "${missingAiId.name}" is missing aiId.`);
-    }
-
     const hermes = createHermesAdapter(config, logger);
     const dedupeStore = await createDedupeStore(config.bridge.sqlitePath, config.bridge.dedupeWindowSeconds);
     const listener = new KindroidChatListener(config, hermes, dedupeStore, logger);
+    const sessionKeepAlive = new KindroidSessionKeepAlive({
+      config,
+      logger,
+      onKeepAlive: (event) => {
+        if (event.ok) {
+          logger.info("Kindroid session keepalive completed.", {
+            warmed: event.warmed,
+            method: event.method,
+            uidPresent: event.uidPresent,
+            expirationIso: event.expirationIso
+          });
+          return;
+        }
 
-    await Promise.all(
-      enabledKins.map((kin) => {
-        logger.info("Starting configured Kin listener.", { name: kin.name, aiId: kin.aiId });
-        return listener.start({ kinId: kin.aiId });
-      })
-    );
+        logger.warn("Kindroid session keepalive failed.", { error: event.error });
+      }
+    });
+    const supervisor = new KinSubscriptionSupervisor({
+      config,
+      logger,
+      startKin: async (kin, options) => {
+        logger.info("Starting discovered Kin listener.", { name: kin.name, aiId: kin.aiId });
+        await listener.start({ kinId: kin.aiId, pageSize: options.pageSize, signal: options.signal });
+      },
+      onKinsUpdated: (statuses) => {
+        logger.info("Kin subscriptions reconciled.", {
+          total: statuses.length,
+          running: statuses.filter((status) => status.running).length,
+          disabled: statuses.filter((status) => !status.enabled).length
+        });
+      },
+      onRefreshError: (error) => {
+        logger.warn("Kin subscription refresh failed.", { error });
+      },
+      onMonitorError: (kin, error) => {
+        logger.error("Kin listener failed.", { name: kin.name, aiId: kin.aiId, error });
+      }
+    });
+
+    sessionKeepAlive.start();
+    supervisor.start();
+    await waitForShutdown(() => {
+      supervisor.stop();
+      sessionKeepAlive.stop();
+    });
   });
 
 program.parseAsync(process.argv).catch((error: unknown) => {
@@ -212,4 +241,18 @@ function loadRuntime() {
   const config = loadConfig({ configPath: globalOptions.config });
   const logger = createLogger(config.bridge.logLevel);
   return { config, logger };
+}
+
+async function waitForShutdown(onShutdown: () => void): Promise<void> {
+  await new Promise<void>((resolve) => {
+    const shutdown = () => {
+      process.off("SIGINT", shutdown);
+      process.off("SIGTERM", shutdown);
+      onShutdown();
+      resolve();
+    };
+
+    process.once("SIGINT", shutdown);
+    process.once("SIGTERM", shutdown);
+  });
 }
