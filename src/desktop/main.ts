@@ -62,6 +62,7 @@ function createMainWindow(): void {
     minWidth: 840,
     minHeight: 560,
     title: "Kinagent",
+    icon: desktopIconPath("icon.png"),
     show: false,
     webPreferences: {
       contextIsolation: true,
@@ -100,14 +101,7 @@ function createMainWindow(): void {
 }
 
 function createTray(): void {
-  const icon = nativeImage.createFromDataURL(
-    `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
-      `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
-        <rect width="32" height="32" rx="7" fill="#243b53"/>
-        <path d="M9 22V10h3v5.1L17 10h4l-5.4 5.5L22 22h-4.1l-4.4-4.7L12 18.8V22H9z" fill="#f7f9fb"/>
-      </svg>`
-    )}`
-  );
+  const icon = nativeImage.createFromPath(desktopIconPath("icon-32.png"));
 
   tray = new Tray(icon);
   tray.setToolTip("Kinagent");
@@ -396,4 +390,8 @@ function showMainWindow(): void {
 
 function sendRendererEvent(channel: string, payload: unknown): void {
   mainWindow?.webContents.send("app:event", { channel, payload });
+}
+
+function desktopIconPath(fileName: string): string {
+  return path.join(__dirname, "assets", fileName);
 }

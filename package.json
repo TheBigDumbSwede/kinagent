@@ -25,6 +25,7 @@
     "format": "prettier --check .",
     "format:write": "prettier --write .",
     "secret-scan": "node scripts/secret-scan.mjs",
+    "generate:icons": "node scripts/generate-icons.mjs",
     "smoke:desktop": "npm run build && node scripts/desktop-smoke.mjs",
     "dist:win": "node scripts/dist-win.mjs",
     "smoke:portable": "node scripts/smoke-portable.mjs",
@@ -35,6 +36,7 @@
   "build": {
     "appId": "dev.kinagent.app",
     "productName": "Kinagent",
+    "icon": "assets/icon.ico",
     "directories": {
       "output": "release"
     },
@@ -47,6 +49,7 @@
       "main": "dist/desktop/main.js"
     },
     "win": {
+      "icon": "assets/icon.ico",
       "target": [
         {
           "target": "portable",

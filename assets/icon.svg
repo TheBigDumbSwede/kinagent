@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-label="Kinagent icon">
+  <defs>
+    <linearGradient id="bg" x1="40" y1="28" x2="216" y2="228" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#18344a" />
+      <stop offset="1" stop-color="#31536b" />
+    </linearGradient>
+    <linearGradient id="accent" x1="138" y1="76" x2="207" y2="184" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7fd7c8" />
+      <stop offset="1" stop-color="#e7c36f" />
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="54" fill="url(#bg)" />
+  <path
+    d="M65 190V66h29v49l43-49h37l-52 58 55 66h-38l-37-45-8 9v36H65z"
+    fill="#f8fbfd"
+  />
+  <path d="M148 190l43-124h27l-42 124h-28z" fill="url(#accent)" />
+  <path d="M171 152h54l9 25h-72l9-25z" fill="#f8fbfd" opacity=".95" />
+  <path d="M196 88l20 64h-40l20-64z" fill="url(#accent)" />
+</svg>
