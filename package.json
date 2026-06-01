@@ -59,11 +59,13 @@
     }
   },
   "dependencies": {
+    "@grpc/grpc-js": "^1.14.4",
     "@types/crypto-js": "^4.2.2",
     "commander": "^14.0.2",
     "crypto-js": "^4.2.0",
     "dotenv": "^17.2.3",
     "playwright": "^1.57.0",
+    "protobufjs": "^7.6.2",
     "sql.js": "^1.14.1",
     "yaml": "^2.8.2",
     "zod": "^4.4.3"

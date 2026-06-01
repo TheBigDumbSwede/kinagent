@@ -2,13 +2,14 @@ import type { AppConfig } from "../config/types.js";
 import type { HermesAdapter } from "../hermes/types.js";
 import type { DedupeStore } from "../state/dedupeStore.js";
 import type { Logger } from "../util/logger.js";
-import { FirestoreRestClient } from "./firestoreRestClient.js";
+import { FirestoreListenClient } from "./firestoreListenClient.js";
 import { mapKindroidMessage } from "./messageMapper.js";
 import type { KindroidChatChangeNotification } from "./types.js";
 
 export interface ChatListenerOptions {
   kinId: string;
-  pollSeconds?: number;
+  pageSize?: number;
+  signal?: AbortSignal;
 }
 
 export class KindroidChatListener {
@@ -20,42 +21,27 @@ export class KindroidChatListener {
   ) {}
 
   async start(options: ChatListenerOptions): Promise<void> {
-    const client = new FirestoreRestClient(this.config, this.logger);
-    const pollMs = (options.pollSeconds ?? 5) * 1000;
-    const seen = new Set<string>();
+    const client = new FirestoreListenClient(this.config, this.logger);
+    const pageSize = options.pageSize ?? 50;
     this.logger.info("Preparing Firestore listener.", {
       projectId: this.config.kindroid.firebaseProjectId,
       kinId: options.kinId,
-      pollSeconds: pollMs / 1000,
+      pageSize,
       mode: "notification-only"
     });
 
-    const initialDocuments = await client.listChatMessages({ kinId: options.kinId, limit: 50 });
-    for (const document of initialDocuments) {
-      seen.add(document.id);
-    }
-
-    this.logger.info("Firestore polling listener started.", {
+    await client.listenChatMessages({
       kinId: options.kinId,
-      existingMessages: seen.size
-    });
-
-    for (;;) {
-      await sleep(pollMs);
-      const documents = await client.listChatMessages({ kinId: options.kinId, limit: 50 });
-      for (const document of documents) {
-        if (seen.has(document.id)) {
-          continue;
-        }
-
-        seen.add(document.id);
+      limit: pageSize,
+      signal: options.signal,
+      onDocument: async (document) => {
         const message = mapKindroidMessage(document, options.kinId);
         const notification = toChatChangeNotification(message);
 
         process.stdout.write(`${JSON.stringify(notification)}\n`);
         await this.hermes.handleChatChanged(notification);
       }
-    }
+    });
   }
 }
 
@@ -75,10 +61,4 @@ function toChatChangeNotification(message: {
     role: message.role,
     source: "firestore"
   };
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
 }

@@ -10,7 +10,6 @@ const elements = {
   expiryStatus: document.querySelector("#expiryStatus"),
   kinSelect: document.querySelector("#kinSelect"),
   manualKinInput: document.querySelector("#manualKinInput"),
-  pollSecondsInput: document.querySelector("#pollSecondsInput"),
   pageSizeInput: document.querySelector("#pageSizeInput"),
   monitorLine: document.querySelector("#monitorLine"),
   messageList: document.querySelector("#messageList"),
@@ -39,7 +38,6 @@ elements.monitorStartButton.addEventListener("click", () =>
     const kinId = selectedKinId();
     await window.kinagent.startMonitor({
       kinId,
-      pollSeconds: numberValue(elements.pollSecondsInput.value, 5),
       pageSize: numberValue(elements.pageSizeInput.value, 50)
     });
     state.monitorRunning = true;

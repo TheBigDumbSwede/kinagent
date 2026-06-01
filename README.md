@@ -16,7 +16,7 @@ Working in this first milestone:
 - Local browser session persistence under `./data/`, including IndexedDB because Firebase Auth often stores browser tokens there.
 - Cached Kin listing from saved Kindroid browser state.
 - Best-effort extraction of Firebase browser auth state from saved Playwright storage.
-- Firestore-backed chat change notifications for `ChatMessages`.
+- Firestore realtime listen stream for `ChatMessages` using the saved Firebase browser auth state.
 - Optional Firestore chat text decryption in `probe-chat` using the saved Firebase UID as the Kindroid AES passphrase.
 - Live plaintext monitor for new incoming Firestore chat messages.
 - Kindroid outbound `POST https://api.kindroid.ai/v1/send-message` client.
@@ -26,12 +26,11 @@ Working in this first milestone:
 Not complete yet:
 
 - Installer/signing/start-with-Windows packaging.
-- Firestore realtime subscription from Node using the saved browser Firebase auth state; the current listener uses REST polling.
 - Persistent SQLite-backed dedupe storage.
 - Actual Hermes HTTP/WebSocket integration.
 - Forwarding decrypted Firestore chat content from the listener into Hermes. The listener still emits notification events only until the Hermes content contract is nailed down.
 
-The listener command is wired through Firestore REST polling. It emits lightweight `kindroid.chat.changed` notifications; `probe-chat --decrypt` can verify readable message recovery separately, and `monitor-live` can print new decrypted messages as they arrive.
+The listener command uses Firestore's gRPC Listen API, not timer polling. It emits lightweight `kindroid.chat.changed` notifications; `probe-chat --decrypt` can verify readable message recovery separately, and `monitor-live` can print new decrypted messages as they arrive.
 
 ## Architecture
 
@@ -138,10 +137,10 @@ Start the live plaintext monitor. It skips already-seen recent messages at start
 npm run monitor-live -- --kin "<ai_id>"
 ```
 
-Use a faster poll interval while testing:
+Adjust the initial listen window while testing:
 
 ```powershell
-npm run monitor-live -- --kin "<ai_id>" --poll-seconds 2
+npm run monitor-live -- --kin "<ai_id>" --page-size 25
 ```
 
 Example event:
@@ -255,7 +254,6 @@ Environment variables can override the main scalar settings; see `.env.example`.
 ## Next Milestones
 
 1. Decide the Hermes content contract and forward decrypted Firestore messages from the listener.
-2. Replace the REST polling listener with a true Firestore realtime subscription.
-3. Expand live integration coverage around saved session refresh and Firestore listen behavior.
-4. Implement the real Hermes adapter.
-5. Add installer signing and start-with-Windows support.
+2. Expand live integration coverage around saved session refresh and Firestore listen behavior.
+3. Implement the real Hermes adapter.
+4. Add installer signing and start-with-Windows support.

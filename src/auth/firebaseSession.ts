@@ -404,13 +404,3 @@ export function buildCookieHeader(storageState: BrowserStorageState, targetHost:
 
   return cookies.map((cookie) => `${cookie.name}=${cookie.value}`).join("; ");
 }
-
-export function firestoreAuthReuseError(projectId: string): Error {
-  return new Error(
-    [
-      `Firestore listener is not connected yet for Firebase project "${projectId}".`,
-      "The saved browser session was found, but this prototype does not yet safely attach Kindroid's browser Firebase auth state to the Node Firebase client.",
-      "Next implementation step: create a Firebase auth handoff that rehydrates the extracted firebase:authUser entry without printing or manually pasting tokens, then attach it before subscribing to Users/{uid}/AIs/{ai_id}/ChatMessages."
-    ].join(" ")
-  );
-}

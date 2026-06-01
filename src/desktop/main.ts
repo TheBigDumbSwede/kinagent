@@ -132,7 +132,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle("login:start", async () => startLoginSession());
   ipcMain.handle("login:save", async () => saveLoginSession());
   ipcMain.handle("login:cancel", async () => closeLoginSession());
-  ipcMain.handle("monitor:start", async (_event, input: { kinId: string; pollSeconds?: number; pageSize?: number }) =>
+  ipcMain.handle("monitor:start", async (_event, input: { kinId: string; pageSize?: number }) =>
     startMonitorProcess(input)
   );
   ipcMain.handle("monitor:stop", async () => stopMonitorProcess());
@@ -220,7 +220,7 @@ async function closeLoginSession() {
   return { ok: true };
 }
 
-function startMonitorProcess(input: { kinId: string; pollSeconds?: number; pageSize?: number }) {
+function startMonitorProcess(input: { kinId: string; pageSize?: number }) {
   if (!input.kinId) {
     throw new Error("Select a Kin before starting the monitor.");
   }
@@ -234,7 +234,6 @@ function startMonitorProcess(input: { kinId: string; pollSeconds?: number; pageS
   void monitor
     .start({
       kinId: input.kinId,
-      pollSeconds: input.pollSeconds ?? 5,
       pageSize: input.pageSize ?? 50,
       signal: controller.signal,
       onMessage: (message) => {

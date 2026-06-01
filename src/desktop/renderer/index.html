@@ -46,16 +46,10 @@
           <select id="kinSelect"></select>
           <label for="manualKinInput">Manual AI ID</label>
           <input id="manualKinInput" type="text" placeholder="ai_id" />
-          <div class="input-grid">
-            <label>
-              Poll
-              <input id="pollSecondsInput" type="number" min="1" max="60" value="5" />
-            </label>
-            <label>
-              Page
-              <input id="pageSizeInput" type="number" min="1" max="100" value="50" />
-            </label>
-          </div>
+          <label>
+            Initial page
+            <input id="pageSizeInput" type="number" min="1" max="100" value="50" />
+          </label>
           <div class="button-row">
             <button id="monitorStartButton" type="button">Start</button>
             <button id="monitorStopButton" type="button">Stop</button>

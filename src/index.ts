@@ -95,34 +95,28 @@ program
   .command("listen")
   .description("Listen for new chat messages for a configured Kin.")
   .requiredOption("--kin <ai_id>", "Kindroid AI/Kin id")
-  .option("--poll-seconds <seconds>", "Polling interval for REST-backed listener", "5")
-  .action(async (options: { kin: string; pollSeconds: string }) => {
+  .option("--page-size <count>", "Recent Firestore documents used to establish the initial listen target", "50")
+  .action(async (options: { kin: string; pageSize: string }) => {
     const { config, logger } = loadRuntime();
-    const pollSeconds = Number(options.pollSeconds);
-    if (!Number.isFinite(pollSeconds) || pollSeconds < 1) {
-      throw new Error("--poll-seconds must be a number greater than or equal to 1.");
+    const pageSize = Number(options.pageSize);
+    if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100) {
+      throw new Error("--page-size must be an integer from 1 to 100.");
     }
 
     const hermes = createHermesAdapter(config, logger);
     const dedupeStore = await createDedupeStore(config.bridge.sqlitePath, config.bridge.dedupeWindowSeconds);
     const listener = new KindroidChatListener(config, hermes, dedupeStore, logger);
-    await listener.start({ kinId: options.kin, pollSeconds });
+    await listener.start({ kinId: options.kin, pageSize });
   });
 
 program
   .command("monitor-live")
   .description("Monitor one Kin and print decrypted incoming Firestore chat messages as JSON lines.")
   .requiredOption("--kin <ai_id>", "Kindroid AI/Kin id")
-  .option("--poll-seconds <seconds>", "Polling interval for REST-backed monitor", "5")
-  .option("--page-size <count>", "Recent Firestore documents to check each poll", "50")
+  .option("--page-size <count>", "Recent Firestore documents used to establish the initial listen target", "50")
   .option("--include-raw", "Include full raw Firestore document payloads")
-  .action(async (options: { kin: string; pollSeconds: string; pageSize: string; includeRaw?: boolean }) => {
+  .action(async (options: { kin: string; pageSize: string; includeRaw?: boolean }) => {
     const { config, logger } = loadRuntime();
-    const pollSeconds = Number(options.pollSeconds);
-    if (!Number.isFinite(pollSeconds) || pollSeconds < 1) {
-      throw new Error("--poll-seconds must be a number greater than or equal to 1.");
-    }
-
     const pageSize = Number(options.pageSize);
     if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100) {
       throw new Error("--page-size must be an integer from 1 to 100.");
@@ -131,7 +125,6 @@ program
     const monitor = new KindroidLiveMonitor(config, logger);
     await monitor.start({
       kinId: options.kin,
-      pollSeconds,
       pageSize,
       includeRaw: options.includeRaw
     });
@@ -200,10 +193,12 @@ program
     const dedupeStore = await createDedupeStore(config.bridge.sqlitePath, config.bridge.dedupeWindowSeconds);
     const listener = new KindroidChatListener(config, hermes, dedupeStore, logger);
 
-    for (const kin of enabledKins) {
-      logger.info("Starting configured Kin listener.", { name: kin.name, aiId: kin.aiId });
-      await listener.start({ kinId: kin.aiId });
-    }
+    await Promise.all(
+      enabledKins.map((kin) => {
+        logger.info("Starting configured Kin listener.", { name: kin.name, aiId: kin.aiId });
+        return listener.start({ kinId: kin.aiId });
+      })
+    );
   });
 
 program.parseAsync(process.argv).catch((error: unknown) => {

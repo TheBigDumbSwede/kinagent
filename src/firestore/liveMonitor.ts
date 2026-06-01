@@ -1,13 +1,12 @@
 import type { AppConfig } from "../config/types.js";
 import { loadBrowserSession } from "../auth/firebaseSession.js";
 import type { Logger } from "../util/logger.js";
-import { FirestoreRestClient } from "./firestoreRestClient.js";
+import { FirestoreListenClient } from "./firestoreListenClient.js";
 import { mapKindroidMessage } from "./messageMapper.js";
 import type { NormalizedKindroidMessage } from "./types.js";
 
 export interface KindroidLiveMonitorOptions {
   kinId: string;
-  pollSeconds?: number;
   pageSize?: number;
   includeRaw?: boolean;
   signal?: AbortSignal;
@@ -23,51 +22,25 @@ export class KindroidLiveMonitor {
   ) {}
 
   async start(options: KindroidLiveMonitorOptions): Promise<void> {
-    const client = new FirestoreRestClient(this.config, this.logger);
-    const pollMs = (options.pollSeconds ?? 5) * 1000;
+    const client = new FirestoreListenClient(this.config, this.logger);
     const pageSize = options.pageSize ?? 50;
     const decryptionKey = this.resolveDecryptionKey();
-    const seen = new Set<string>();
 
     this.logger.info("Preparing live Kindroid message monitor.", {
       projectId: this.config.kindroid.firebaseProjectId,
       kinId: options.kinId,
-      pollSeconds: pollMs / 1000,
       pageSize
     });
 
-    const initialDocuments = await client.listChatMessages({ kinId: options.kinId, limit: pageSize });
-    for (const document of initialDocuments) {
-      seen.add(document.id);
-    }
-
-    this.logger.info("Live Kindroid message monitor started.", {
+    await client.listenChatMessages({
       kinId: options.kinId,
-      existingMessages: seen.size
-    });
-
-    while (!options.signal?.aborted) {
-      await sleep(pollMs);
-      if (options.signal?.aborted) {
-        break;
-      }
-
-      const documents = await client.listChatMessages({ kinId: options.kinId, limit: pageSize });
-      const newMessages: NormalizedKindroidMessage[] = [];
-
-      for (const document of documents) {
-        if (seen.has(document.id)) {
-          continue;
-        }
-
-        seen.add(document.id);
-        newMessages.push(mapKindroidMessage(document, options.kinId, { decryptionKey }));
-      }
-
-      for (const message of newMessages.reverse()) {
+      limit: pageSize,
+      signal: options.signal,
+      onDocument: async (document) => {
+        const message = mapKindroidMessage(document, options.kinId, { decryptionKey });
         await emitMessage(toOutputMessage(message, Boolean(options.includeRaw)), options);
       }
-    }
+    });
   }
 
   private resolveDecryptionKey(): string {
@@ -112,10 +85,4 @@ async function emitMessage(message: KindroidLiveMonitorMessage, options: Kindroi
   }
 
   process.stdout.write(`${JSON.stringify(message)}\n`);
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
 }
