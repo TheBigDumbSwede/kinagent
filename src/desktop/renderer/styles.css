@@ -38,6 +38,12 @@ button.secondary {
   color: #26384a;
 }
 
+button.compact {
+  min-height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
 button:hover {
   filter: brightness(0.96);
 }
@@ -126,6 +132,24 @@ h2 {
   border-top: 1px solid #d7e0e8;
 }
 
+.panel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.panel-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.panel-note,
+.empty-line {
+  color: #63788c;
+  font-size: 12px;
+}
+
 .button-row,
 .input-grid {
   display: grid;
@@ -155,6 +179,64 @@ h2 {
   margin: 0;
   overflow-wrap: anywhere;
   font-size: 12px;
+}
+
+.kin-list {
+  display: grid;
+  gap: 8px;
+  max-height: min(360px, calc(100vh - 330px));
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.kin-list[hidden] {
+  display: none;
+}
+
+.kin-row {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  border: 1px solid #d7e0e8;
+  border-radius: 6px;
+  background: #fff;
+  padding: 7px 9px;
+  color: #182635;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.kin-row input {
+  width: 16px;
+  min-height: 16px;
+  padding: 0;
+}
+
+.kin-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kin-state {
+  min-width: 48px;
+  border-radius: 999px;
+  padding: 2px 7px;
+  text-align: center;
+  color: #63788c;
+  background: #eef3f7;
+}
+
+.kin-state.running {
+  color: #1f5f3f;
+  background: #dcefe4;
+}
+
+.kin-state.disabled {
+  color: #7d4b4b;
+  background: #f2e1df;
 }
 
 .activity {

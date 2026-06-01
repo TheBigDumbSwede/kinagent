@@ -8,6 +8,8 @@ contextBridge.exposeInMainWorld("kinagent", {
   cancelLogin: () => ipcRenderer.invoke("login:cancel"),
   startMonitor: (input) => ipcRenderer.invoke("monitor:start", input),
   stopMonitor: () => ipcRenderer.invoke("monitor:stop"),
+  setKinEnabled: (input) => ipcRenderer.invoke("kins:set-enabled", input),
+  refreshKins: () => ipcRenderer.invoke("kins:refresh"),
   onEvent: (callback) => {
     const listener = (_event, message) => callback(message);
     ipcRenderer.on("app:event", listener);

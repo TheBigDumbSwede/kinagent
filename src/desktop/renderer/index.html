@@ -41,19 +41,17 @@
         </section>
 
         <section class="panel">
-          <h2>Monitor</h2>
-          <label for="kinSelect">Kin</label>
-          <select id="kinSelect"></select>
-          <label for="manualKinInput">Manual AI ID</label>
-          <input id="manualKinInput" type="text" placeholder="ai_id" />
-          <label>
-            Initial page
-            <input id="pageSizeInput" type="number" min="1" max="100" value="50" />
-          </label>
-          <div class="button-row">
-            <button id="monitorStartButton" type="button">Start</button>
-            <button id="monitorStopButton" type="button">Stop</button>
+          <div class="panel-heading">
+            <h2>Kins</h2>
+            <div class="panel-actions">
+              <button id="toggleKinsButton" class="secondary compact" type="button" aria-expanded="false">
+                Manage
+              </button>
+              <button id="refreshKinsButton" class="secondary compact" type="button">Refresh</button>
+            </div>
           </div>
+          <p id="kinRefreshLine" class="panel-note">Waiting for Kin list</p>
+          <div id="kinSubscriptionList" class="kin-list"></div>
         </section>
       </aside>
 

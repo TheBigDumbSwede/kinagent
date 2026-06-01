@@ -4,7 +4,6 @@ import { loadBrowserSession, summarizeSessionAuth } from "./auth/firebaseSession
 import { runInstrumentedKindroidLogin } from "./auth/instrumentedLogin.js";
 import { runKindroidLogin } from "./auth/playwrightLogin.js";
 import { KindroidClient } from "./kindroid/kindroidClient.js";
-import { listKinsFromSession } from "./kindroid/sessionKins.js";
 import { KindroidChatListener } from "./firestore/chatListener.js";
 import { FirestoreRestClient } from "./firestore/firestoreRestClient.js";
 import { KindroidLiveMonitor } from "./firestore/liveMonitor.js";
@@ -46,10 +45,11 @@ program
 
 program
   .command("list-kins")
-  .description("List cached Kindroid Kins from the saved browser session.")
-  .action(() => {
-    const { config } = loadRuntime();
-    const kins = listKinsFromSession(config.bridge.sessionDir);
+  .description("List Kindroid Kins from Firestore REST using the saved session.")
+  .action(async () => {
+    const { config, logger } = loadRuntime();
+    const client = new FirestoreRestClient(config, logger);
+    const kins = await client.listUserKins();
     process.stdout.write(`${JSON.stringify({ count: kins.length, kins }, null, 2)}\n`);
   });
 

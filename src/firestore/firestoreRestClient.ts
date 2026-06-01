@@ -28,11 +28,63 @@ export interface ListChatMessagesOptions {
   limit: number;
 }
 
+export interface ListUserKinsOptions {
+  pageSize?: number;
+}
+
+export interface FirestoreKinDocument {
+  documentId: string;
+  aiId: string;
+  name: string;
+  current: boolean;
+}
+
 export class FirestoreRestClient {
   constructor(
     private readonly config: AppConfig,
     private readonly logger: Logger
   ) {}
+
+  async listUserKins(options: ListUserKinsOptions = {}): Promise<FirestoreKinDocument[]> {
+    const auth = await loadFreshFirebaseAuth(this.config.bridge.sessionDir);
+    const session = loadBrowserSession(this.config.bridge.sessionDir);
+    const appCheck = extractFirebaseAppCheckState(session.storageState);
+    const uid = this.config.kindroid.uid || auth.uid;
+    const documents: FirestoreRestDocument[] = [];
+    let pageToken: string | undefined;
+
+    do {
+      const url = new URL(
+        `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(
+          this.config.kindroid.firebaseProjectId
+        )}/databases/(default)/documents/Users/${encodeURIComponent(uid)}/AIs`
+      );
+      url.searchParams.set("pageSize", String(options.pageSize ?? 100));
+      if (pageToken) {
+        url.searchParams.set("pageToken", pageToken);
+      }
+
+      const response = await fetch(url, { headers: this.authHeaders(auth.accessToken, appCheck?.token) });
+      if (!response.ok) {
+        const responseText = await response.text();
+        throw new Error(`Firestore Kin list failed with HTTP ${response.status}: ${responseText.slice(0, 500)}`);
+      }
+
+      const payload = (await response.json()) as {
+        documents?: FirestoreRestDocument[];
+        nextPageToken?: string;
+      };
+      documents.push(...(payload.documents ?? []));
+      pageToken = payload.nextPageToken;
+    } while (pageToken);
+
+    const kins = documents.flatMap(normalizeKinDocument);
+    this.logger.debug("Firestore Kin list loaded.", {
+      uid,
+      count: kins.length
+    });
+    return kins;
+  }
 
   async listChatMessages(options: ListChatMessagesOptions): Promise<FirestoreDocumentLike[]> {
     const auth = await loadFreshFirebaseAuth(this.config.bridge.sessionDir);
@@ -48,16 +100,7 @@ export class FirestoreRestClient {
     url.searchParams.set("pageSize", String(options.limit));
     url.searchParams.set("orderBy", "timestamp desc");
 
-    const headers: Record<string, string> = {
-      authorization: `Bearer ${auth.accessToken}`,
-      accept: "application/json"
-    };
-
-    if (appCheck?.token) {
-      headers["x-firebase-appcheck"] = appCheck.token;
-    }
-
-    const response = await fetch(url, { headers });
+    const response = await fetch(url, { headers: this.authHeaders(auth.accessToken, appCheck?.token) });
 
     if (!response.ok) {
       const responseText = await response.text();
@@ -75,6 +118,37 @@ export class FirestoreRestClient {
 
     return documents.map((document) => firestoreDocumentLike(document));
   }
+
+  private authHeaders(firebaseAuthJwt: string, appCheckToken?: string): Record<string, string> {
+    const headers: Record<string, string> = {
+      authorization: `Bearer ${firebaseAuthJwt}`,
+      accept: "application/json"
+    };
+
+    if (appCheckToken) {
+      headers["x-firebase-appcheck"] = appCheckToken;
+    }
+
+    return headers;
+  }
+}
+
+export function normalizeKinDocument(document: FirestoreRestDocument): FirestoreKinDocument[] {
+  const data = decodeFields(document.fields ?? {});
+  const documentId = document.name.split("/").pop() ?? document.name;
+  const aiId = stringValue(data.ai_id) ?? documentId;
+  if (!aiId) {
+    return [];
+  }
+
+  return [
+    {
+      documentId,
+      aiId,
+      name: stringValue(data.ai_name) ?? "(unnamed)",
+      current: booleanValue(data.current) ?? false
+    }
+  ];
 }
 
 function firestoreDocumentLike(document: FirestoreRestDocument): FirestoreDocumentLike {
@@ -87,6 +161,14 @@ function firestoreDocumentLike(document: FirestoreRestDocument): FirestoreDocume
       _updateTime: document.updateTime
     })
   };
+}
+
+function stringValue(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function booleanValue(value: unknown): boolean | null {
+  return typeof value === "boolean" ? value : null;
 }
 
 function decodeFields(fields: Record<string, FirestoreRestValue>): Record<string, unknown> {

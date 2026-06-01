@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, Menu, nativeImage, shell, Tray, ipcMain } from "electron";
@@ -14,24 +15,34 @@ import {
 } from "../auth/firebaseSession.js";
 import { ensureSessionDir, storageStatePath } from "../auth/tokenStore.js";
 import { loadConfig } from "../config/loadConfig.js";
+import { FirestoreRestClient, type FirestoreKinDocument } from "../firestore/firestoreRestClient.js";
 import { KindroidLiveMonitor } from "../firestore/liveMonitor.js";
-import { listKinsFromSession } from "../kindroid/sessionKins.js";
 import { createLogger } from "../util/logger.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const config = loadConfig();
+const logger = createLogger(config.bridge.logLevel);
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let isQuitting = false;
-let monitorController: AbortController | null = null;
 let loginSession: { browser: Browser; context: BrowserContext } | null = null;
 let keepAliveTimer: NodeJS.Timeout | null = null;
 let keepAliveInFlight = false;
+let kinRefreshTimer: NodeJS.Timeout | null = null;
+let kinRefreshInFlight = false;
+let knownKins = new Map<string, FirestoreKinDocument>();
+const disabledKinIds = loadKinSubscriptionPreferences().disabledKinIds;
+const activeKinMonitors = new Map<string, { controller: AbortController; kin: FirestoreKinDocument }>();
+let lastKinRefresh:
+  | { ok: true; refreshedAtIso: string; count: number }
+  | { ok: false; refreshedAtIso: string; error: string }
+  | null = null;
 
-const config = loadConfig();
-const logger = createLogger(config.bridge.logLevel);
 const sessionKeepAliveMs = 25 * 60 * 1000;
+const kinRefreshMs = 5 * 60 * 1000;
+const defaultMonitorPageSize = 50;
 
 app.setName("Kinagent");
 
@@ -40,6 +51,7 @@ void app.whenReady().then(() => {
   createTray();
   registerIpcHandlers();
   startSessionKeepAlive();
+  startKinSubscriptionSupervisor();
 
   app.on("activate", () => {
     showMainWindow();
@@ -48,10 +60,13 @@ void app.whenReady().then(() => {
 
 app.on("before-quit", () => {
   isQuitting = true;
-  stopMonitorProcess();
+  stopAllKinMonitors();
   void closeLoginSession();
   if (keepAliveTimer) {
     clearInterval(keepAliveTimer);
+  }
+  if (kinRefreshTimer) {
+    clearInterval(kinRefreshTimer);
   }
 });
 
@@ -109,7 +124,7 @@ function createTray(): void {
     Menu.buildFromTemplate([
       { label: "Show Kinagent", click: showMainWindow },
       { type: "separator" },
-      { label: "Stop Monitor", click: stopMonitorProcess },
+      { label: "Refresh Kins", click: () => void refreshKinSubscriptions() },
       {
         label: "Quit",
         click: () => {
@@ -134,7 +149,14 @@ function registerIpcHandlers(): void {
   ipcMain.handle("monitor:start", async (_event, input: { kinId: string; pageSize?: number }) =>
     startMonitorProcess(input)
   );
-  ipcMain.handle("monitor:stop", async () => stopMonitorProcess());
+  ipcMain.handle("monitor:stop", async () => stopAllKinMonitors());
+  ipcMain.handle("kins:set-enabled", async (_event, input: { kinId: string; enabled: boolean }) =>
+    setKinSubscriptionEnabled(input)
+  );
+  ipcMain.handle("kins:refresh", async () => {
+    await refreshKinSubscriptions();
+    return { ok: true };
+  });
 }
 
 async function getDesktopStatus() {
@@ -144,7 +166,7 @@ async function getDesktopStatus() {
     : null;
 
   return {
-    monitorRunning: Boolean(monitorController),
+    monitorRunning: activeKinMonitors.size > 0,
     loginOpen: Boolean(loginSession),
     config: {
       firebaseProjectId: config.kindroid.firebaseProjectId,
@@ -153,7 +175,9 @@ async function getDesktopStatus() {
     },
     session,
     appCheckPresent: Boolean(appCheck?.token),
-    kins: safeListKins()
+    kins: subscriptionStatuses().map((subscription) => subscription.kin),
+    subscriptions: subscriptionStatuses(),
+    kinRefresh: lastKinRefresh
   };
 }
 
@@ -169,14 +193,6 @@ function loadSessionSummary() {
       available: false,
       error: error instanceof Error ? error.message : String(error)
     };
-  }
-}
-
-function safeListKins() {
-  try {
-    return listKinsFromSession(config.bridge.sessionDir);
-  } catch {
-    return [];
   }
 }
 
@@ -204,6 +220,7 @@ async function saveLoginSession() {
   const statePath = storageStatePath(config.bridge.sessionDir);
   await loginSession.context.storageState({ path: statePath, indexedDB: true });
   await closeLoginSession();
+  await refreshKinSubscriptions();
   sendRendererEvent("session-updated", await getDesktopStatus());
   return { ok: true, path: statePath };
 }
@@ -224,46 +241,164 @@ function startMonitorProcess(input: { kinId: string; pageSize?: number }) {
     throw new Error("Select a Kin before starting the monitor.");
   }
 
-  stopMonitorProcess();
+  disabledKinIds.delete(input.kinId);
+  saveKinSubscriptionPreferences();
+  const kin =
+    knownKins.get(input.kinId) ??
+    ({
+      aiId: input.kinId,
+      documentId: input.kinId,
+      name: input.kinId,
+      current: false
+    } satisfies FirestoreKinDocument);
+  knownKins.set(kin.aiId, kin);
+  startKinMonitor(kin, input.pageSize ?? defaultMonitorPageSize);
+  sendRendererEvent("kins-updated", subscriptionStatuses());
+  return { ok: true };
+}
+
+function stopAllKinMonitors() {
+  if (activeKinMonitors.size === 0) {
+    return { ok: true, alreadyStopped: true };
+  }
+
+  for (const kinId of activeKinMonitors.keys()) {
+    stopKinMonitor(kinId, "manual");
+  }
+  return { ok: true };
+}
+
+function startKinSubscriptionSupervisor(): void {
+  void refreshKinSubscriptions();
+  kinRefreshTimer = setInterval(() => {
+    void refreshKinSubscriptions();
+  }, kinRefreshMs);
+}
+
+async function refreshKinSubscriptions(): Promise<void> {
+  if (kinRefreshInFlight) {
+    return;
+  }
+
+  kinRefreshInFlight = true;
+  try {
+    const client = new FirestoreRestClient(config, logger);
+    const kins = await client.listUserKins();
+    const nextKnownKins = new Map(kins.map((kin) => [kin.aiId, kin]));
+    const availableKinIds = new Set(nextKnownKins.keys());
+
+    knownKins = nextKnownKins;
+    for (const kinId of activeKinMonitors.keys()) {
+      if (!availableKinIds.has(kinId) || disabledKinIds.has(kinId)) {
+        stopKinMonitor(kinId, availableKinIds.has(kinId) ? "disabled" : "removed");
+      }
+    }
+
+    for (const kin of kins) {
+      if (!disabledKinIds.has(kin.aiId)) {
+        startKinMonitor(kin, defaultMonitorPageSize);
+      }
+    }
+
+    lastKinRefresh = { ok: true, refreshedAtIso: new Date().toISOString(), count: kins.length };
+    sendRendererEvent("kins-updated", subscriptionStatuses());
+    sendRendererEvent("session-updated", await getDesktopStatus());
+  } catch (error) {
+    lastKinRefresh = {
+      ok: false,
+      refreshedAtIso: new Date().toISOString(),
+      error: error instanceof Error ? error.message : String(error)
+    };
+    sendRendererEvent("kins-refresh-error", lastKinRefresh.error);
+    sendRendererEvent("session-updated", await getDesktopStatus());
+  } finally {
+    kinRefreshInFlight = false;
+  }
+}
+
+function startKinMonitor(kin: FirestoreKinDocument, pageSize: number): void {
+  if (activeKinMonitors.has(kin.aiId)) {
+    return;
+  }
 
   const controller = new AbortController();
   const monitor = new KindroidLiveMonitor(config, logger);
-  monitorController = controller;
+  activeKinMonitors.set(kin.aiId, { controller, kin });
 
   void monitor
     .start({
-      kinId: input.kinId,
-      pageSize: input.pageSize ?? 50,
+      kinId: kin.aiId,
+      pageSize,
       signal: controller.signal,
       onMessage: (message) => {
-        sendRendererEvent("monitor-line", message);
+        sendRendererEvent("monitor-line", { ...message, kinName: kin.name });
       }
     })
     .catch((error) => {
       if (!controller.signal.aborted) {
-        sendRendererEvent("monitor-error", error instanceof Error ? error.message : String(error));
+        sendRendererEvent("monitor-error", {
+          kinId: kin.aiId,
+          kinName: kin.name,
+          error: error instanceof Error ? error.message : String(error)
+        });
       }
     })
     .finally(() => {
-      if (monitorController === controller) {
-        monitorController = null;
+      const activeMonitor = activeKinMonitors.get(kin.aiId);
+      if (activeMonitor?.controller === controller) {
+        activeKinMonitors.delete(kin.aiId);
       }
-      sendRendererEvent("monitor-exit", { aborted: controller.signal.aborted });
+      sendRendererEvent("monitor-exit", { kinId: kin.aiId, aborted: controller.signal.aborted });
+      sendRendererEvent("kins-updated", subscriptionStatuses());
     });
 
-  sendRendererEvent("monitor-started", { kinId: input.kinId });
+  sendRendererEvent("monitor-started", { kinId: kin.aiId, kinName: kin.name });
+  sendRendererEvent("kins-updated", subscriptionStatuses());
+}
+
+function stopKinMonitor(kinId: string, reason: "disabled" | "manual" | "removed"): void {
+  const activeMonitor = activeKinMonitors.get(kinId);
+  if (!activeMonitor) {
+    return;
+  }
+
+  activeMonitor.controller.abort();
+  activeKinMonitors.delete(kinId);
+  sendRendererEvent("monitor-stopped", { kinId, reason });
+  sendRendererEvent("kins-updated", subscriptionStatuses());
+}
+
+async function setKinSubscriptionEnabled(input: { kinId: string; enabled: boolean }) {
+  if (!input.kinId) {
+    throw new Error("Missing Kin id.");
+  }
+
+  if (input.enabled) {
+    disabledKinIds.delete(input.kinId);
+    const kin = knownKins.get(input.kinId);
+    if (kin) {
+      startKinMonitor(kin, defaultMonitorPageSize);
+    } else {
+      await refreshKinSubscriptions();
+    }
+  } else {
+    disabledKinIds.add(input.kinId);
+    stopKinMonitor(input.kinId, "disabled");
+  }
+
+  saveKinSubscriptionPreferences();
+  sendRendererEvent("kins-updated", subscriptionStatuses());
   return { ok: true };
 }
 
-function stopMonitorProcess() {
-  if (!monitorController) {
-    return { ok: true, alreadyStopped: true };
-  }
-
-  monitorController.abort();
-  monitorController = null;
-  sendRendererEvent("monitor-stopped", {});
-  return { ok: true };
+function subscriptionStatuses() {
+  return [...knownKins.values()]
+    .sort((left, right) => left.name.localeCompare(right.name) || left.aiId.localeCompare(right.aiId))
+    .map((kin) => ({
+      kin,
+      enabled: !disabledKinIds.has(kin.aiId),
+      running: activeKinMonitors.has(kin.aiId)
+    }));
 }
 
 function startSessionKeepAlive(): void {
@@ -377,6 +512,30 @@ function responseSetCookieHeaders(headers: Headers): string[] {
 
 function splitCombinedSetCookieHeader(value: string): string[] {
   return value.split(/,(?=\s*[^;,\s]+=)/).map((header) => header.trim());
+}
+
+function loadKinSubscriptionPreferences(): { disabledKinIds: Set<string> } {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(kinSubscriptionPreferencesPath(), "utf8")) as {
+      disabledKinIds?: unknown;
+    };
+    const disabled = Array.isArray(parsed.disabledKinIds)
+      ? parsed.disabledKinIds.filter((kinId): kinId is string => typeof kinId === "string" && kinId.length > 0)
+      : [];
+    return { disabledKinIds: new Set(disabled) };
+  } catch {
+    return { disabledKinIds: new Set() };
+  }
+}
+
+function saveKinSubscriptionPreferences(): void {
+  const preferencesPath = kinSubscriptionPreferencesPath();
+  fs.mkdirSync(path.dirname(preferencesPath), { recursive: true });
+  fs.writeFileSync(preferencesPath, `${JSON.stringify({ disabledKinIds: [...disabledKinIds].sort() }, null, 2)}\n`);
+}
+
+function kinSubscriptionPreferencesPath(): string {
+  return path.join(path.dirname(path.resolve(config.bridge.sqlitePath)), "kin-subscriptions.json");
 }
 
 function showMainWindow(): void {
