@@ -12,6 +12,18 @@ interface ListenChatMessagesOptions {
   onDocument: (document: FirestoreDocumentLike) => void | Promise<void>;
 }
 
+interface ListenSessionState {
+  seen: Set<string>;
+  startupSnapshotComplete: boolean;
+  lastCurrentAt: number | null;
+  currentGeneration: number;
+}
+
+interface OpenStreamOptions extends ListenChatMessagesOptions {
+  state: ListenSessionState;
+  forceRefreshAuth: boolean;
+}
+
 interface ListenRequest {
   database: string;
   addTarget?: {
@@ -67,6 +79,35 @@ let firestoreClientConstructor: grpc.ServiceClientConstructor | null = null;
 let firestoreTypes: FirestoreTypes | null = null;
 
 const targetId = 1;
+const initialReconnectBackoffMs = 1_000;
+const maxReconnectBackoffMs = 30_000;
+const stableStreamResetMs = 60_000;
+const retryableStatusCodes = new Set<number>([
+  grpc.status.CANCELLED,
+  grpc.status.UNKNOWN,
+  grpc.status.DEADLINE_EXCEEDED,
+  grpc.status.RESOURCE_EXHAUSTED,
+  grpc.status.ABORTED,
+  grpc.status.INTERNAL,
+  grpc.status.UNAVAILABLE,
+  grpc.status.DATA_LOSS
+]);
+const grpcKeepaliveOptions: grpc.ChannelOptions = {
+  "grpc.keepalive_time_ms": 60_000,
+  "grpc.keepalive_timeout_ms": 20_000,
+  "grpc.keepalive_permit_without_calls": 1,
+  "grpc.http2.min_time_between_pings_ms": 30_000,
+  "grpc.http2.max_pings_without_data": 0
+};
+
+class FirestoreListenTargetError extends Error {
+  constructor(
+    message: string,
+    readonly statusCode?: number
+  ) {
+    super(`Firestore listen target failed: ${message}`);
+  }
+}
 
 export class FirestoreListenClient {
   constructor(
@@ -75,7 +116,79 @@ export class FirestoreListenClient {
   ) {}
 
   async listenChatMessages(options: ListenChatMessagesOptions): Promise<void> {
-    const auth = await loadFreshFirebaseAuth(this.config.bridge.sessionDir);
+    const state: ListenSessionState = {
+      seen: new Set<string>(),
+      startupSnapshotComplete: false,
+      lastCurrentAt: null,
+      currentGeneration: 0
+    };
+    let reconnectAttempt = 0;
+    let forceRefreshAuth = false;
+    let authRetryUsed = false;
+    let authRetryCurrentGeneration = 0;
+
+    while (!options.signal?.aborted) {
+      try {
+        await this.openChatMessagesStream({ ...options, state, forceRefreshAuth });
+        if (options.signal?.aborted) {
+          return;
+        }
+
+        reconnectAttempt = reconnectAttemptAfterStream(reconnectAttempt, state.lastCurrentAt);
+        forceRefreshAuth = false;
+        authRetryUsed = false;
+        const backoffMs = reconnectBackoffMs(reconnectAttempt++);
+        this.logger.warn("Firestore listen stream ended; reconnecting.", {
+          kinId: options.kinId,
+          backoffMs
+        });
+        await delay(backoffMs, options.signal);
+      } catch (error) {
+        if (options.signal?.aborted) {
+          return;
+        }
+
+        const statusCode = grpcStatusCode(error);
+        if (authRetryUsed && state.currentGeneration > authRetryCurrentGeneration) {
+          authRetryUsed = false;
+        }
+
+        const authError = isAuthStatus(statusCode);
+        if (authError && authRetryUsed) {
+          throw new Error(
+            `Firestore listen authentication failed after token refresh. Save a fresh Kindroid session. ${errorMessage(
+              error
+            )}`,
+            { cause: error }
+          );
+        }
+
+        if (!authError && !isRetryableStatus(statusCode)) {
+          throw error;
+        }
+
+        reconnectAttempt = reconnectAttemptAfterStream(reconnectAttempt, state.lastCurrentAt);
+        forceRefreshAuth = authError;
+        authRetryUsed = authError;
+        if (authError) {
+          authRetryCurrentGeneration = state.currentGeneration;
+        }
+
+        const backoffMs = authError ? 0 : reconnectBackoffMs(reconnectAttempt++);
+        this.logger.warn("Firestore listen stream disconnected; reconnecting.", {
+          kinId: options.kinId,
+          statusCode,
+          forceRefreshAuth,
+          backoffMs,
+          error: errorMessage(error)
+        });
+        await delay(backoffMs, options.signal);
+      }
+    }
+  }
+
+  private async openChatMessagesStream(options: OpenStreamOptions): Promise<void> {
+    const auth = await loadFreshFirebaseAuth(this.config.bridge.sessionDir, { forceRefresh: options.forceRefreshAuth });
     const session = loadBrowserSession(this.config.bridge.sessionDir);
     const appCheck = extractFirebaseAppCheckState(session.storageState);
     const uid = this.config.kindroid.uid || auth.uid;
@@ -84,7 +197,9 @@ export class FirestoreListenClient {
     const client = createFirestoreClient();
     const metadata = new grpc.Metadata();
     let initialized = false;
-    const seen = new Set<string>();
+    const startupDocuments: FirestoreDocumentLike[] = [];
+    const startupDocumentIds = new Set<string>();
+    let initialDocumentCount = 0;
     let pending = Promise.resolve();
 
     metadata.set("authorization", `Bearer ${auth.accessToken}`);
@@ -98,13 +213,22 @@ export class FirestoreListenClient {
     this.logger.info("Starting Firestore listen stream.", {
       projectId: this.config.kindroid.firebaseProjectId,
       kinId: options.kinId,
-      pageSize: options.limit
+      pageSize: options.limit,
+      reconnect: options.state.startupSnapshotComplete,
+      forceRefreshAuth: options.forceRefreshAuth
     });
 
     await new Promise<void>((resolve, reject) => {
       const call = client.listen(metadata);
+      let settled = false;
       const abort = () => {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
         call.cancel();
+        client.close();
         resolve();
       };
 
@@ -115,19 +239,53 @@ export class FirestoreListenClient {
 
       options.signal?.addEventListener("abort", abort, { once: true });
 
+      const settleReject = (error: unknown) => {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
+        options.signal?.removeEventListener("abort", abort);
+        client.close();
+        reject(error);
+      };
+
+      const settleResolve = () => {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
+        options.signal?.removeEventListener("abort", abort);
+        client.close();
+        resolve();
+      };
+
       call.on("data", (response: ListenResponse) => {
         pending = pending
           .then(async () => {
             const targetChange = response.targetChange;
             if (targetChange?.cause?.message) {
-              throw new Error(`Firestore listen target failed: ${targetChange.cause.message}`);
+              throw new FirestoreListenTargetError(targetChange.cause.message, targetChange.cause.code);
             }
 
             if (targetChange?.targetChangeType === "CURRENT") {
               initialized = true;
+              options.state.lastCurrentAt = Date.now();
+              options.state.currentGeneration += 1;
+              if (!options.state.startupSnapshotComplete) {
+                options.state.startupSnapshotComplete = true;
+              } else {
+                for (const document of startupDocuments.reverse()) {
+                  options.state.seen.add(document.id);
+                  await options.onDocument(document);
+                }
+              }
+
               this.logger.info("Firestore listen stream is current.", {
                 kinId: options.kinId,
-                initialDocuments: seen.size
+                initialDocuments: initialDocumentCount,
+                catchupDocuments: startupDocuments.length
               });
               return;
             }
@@ -138,40 +296,47 @@ export class FirestoreListenClient {
             }
 
             const document = firestoreDocumentLike(listenDocument);
-            if (seen.has(document.id)) {
+            if (options.state.seen.has(document.id) || startupDocumentIds.has(document.id)) {
               return;
             }
 
-            seen.add(document.id);
             if (initialized) {
+              options.state.seen.add(document.id);
               await options.onDocument(document);
+              return;
             }
+
+            initialDocumentCount += 1;
+            if (options.state.startupSnapshotComplete) {
+              startupDocumentIds.add(document.id);
+              startupDocuments.push(document);
+              return;
+            }
+
+            options.state.seen.add(document.id);
           })
           .catch((error: unknown) => {
-            call.destroy(error instanceof Error ? error : new Error(String(error)));
+            settleReject(error instanceof Error ? error : new Error(String(error)));
+            call.cancel();
           });
       });
 
       call.on("error", (error: grpc.ServiceError) => {
-        options.signal?.removeEventListener("abort", abort);
-        client.close();
         if (options.signal?.aborted || error.code === grpc.status.CANCELLED) {
-          resolve();
+          settleResolve();
           return;
         }
 
-        reject(new Error(`Firestore listen stream failed: ${error.message}`));
+        settleReject(error);
       });
 
       call.on("end", () => {
-        options.signal?.removeEventListener("abort", abort);
-        client.close();
         if (options.signal?.aborted) {
-          resolve();
+          settleResolve();
           return;
         }
 
-        pending.then(resolve, reject);
+        pending.then(settleResolve, settleReject);
       });
 
       call.write(buildListenRequest(database, parent, options.limit));
@@ -181,7 +346,69 @@ export class FirestoreListenClient {
 
 function createFirestoreClient(): FirestoreGrpcClient {
   const Firestore = loadFirestoreClientConstructor();
-  return new Firestore("firestore.googleapis.com:443", grpc.credentials.createSsl()) as unknown as FirestoreGrpcClient;
+  return new Firestore(
+    "firestore.googleapis.com:443",
+    grpc.credentials.createSsl(),
+    grpcKeepaliveOptions
+  ) as unknown as FirestoreGrpcClient;
+}
+
+function reconnectBackoffMs(attempt: number): number {
+  const base = Math.min(maxReconnectBackoffMs, initialReconnectBackoffMs * 2 ** Math.min(attempt, 6));
+  return Math.floor(base * (0.75 + Math.random() * 0.5));
+}
+
+function reconnectAttemptAfterStream(attempt: number, lastCurrentAt: number | null): number {
+  if (lastCurrentAt && Date.now() - lastCurrentAt >= stableStreamResetMs) {
+    return 0;
+  }
+
+  return attempt;
+}
+
+function isRetryableStatus(statusCode: number | undefined): boolean {
+  return statusCode === undefined || retryableStatusCodes.has(statusCode);
+}
+
+function isAuthStatus(statusCode: number | undefined): boolean {
+  return statusCode === grpc.status.UNAUTHENTICATED;
+}
+
+function grpcStatusCode(error: unknown): number | undefined {
+  if (error instanceof FirestoreListenTargetError) {
+    return error.statusCode;
+  }
+
+  if (typeof error === "object" && error !== null && "code" in error) {
+    const code = (error as { code?: unknown }).code;
+    return typeof code === "number" ? code : undefined;
+  }
+
+  return undefined;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function delay(ms: number, signal: AbortSignal | undefined): Promise<void> {
+  if (ms <= 0 || signal?.aborted) {
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve) => {
+    const finish = () => {
+      signal?.removeEventListener("abort", abort);
+      resolve();
+    };
+    const timer = setTimeout(finish, ms);
+    const abort = () => {
+      clearTimeout(timer);
+      finish();
+    };
+
+    signal?.addEventListener("abort", abort, { once: true });
+  });
 }
 
 function loadFirestoreClientConstructor(): grpc.ServiceClientConstructor {

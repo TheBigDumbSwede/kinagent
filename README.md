@@ -14,9 +14,10 @@ Working in this first milestone:
 - Electron desktop control panel with Windows tray behavior.
 - Manual Kindroid login through a visible Playwright Chromium window.
 - Local browser session persistence under `./data/`, including IndexedDB because Firebase Auth often stores browser tokens there.
+- Desktop background session warming while the app is running; a lightweight HTTP touch refreshes Kindroid cookies, with a hidden browser fallback when needed.
 - Cached Kin listing from saved Kindroid browser state.
 - Best-effort extraction of Firebase browser auth state from saved Playwright storage.
-- Firestore realtime listen stream for `ChatMessages` using the saved Firebase browser auth state.
+- Firestore realtime listen stream for `ChatMessages` using the saved Firebase browser auth state, with gRPC keepalive and reconnect backoff.
 - Optional Firestore chat text decryption in `probe-chat` using the saved Firebase UID as the Kindroid AES passphrase.
 - Live plaintext monitor for new incoming Firestore chat messages.
 - Kindroid outbound `POST https://api.kindroid.ai/v1/send-message` client.

@@ -81,6 +81,11 @@ export function loadBrowserSession(sessionDir: string): LoadedBrowserSession {
   };
 }
 
+export function saveBrowserStorageState(sessionDir: string, storageState: BrowserStorageState): void {
+  const statePath = assertStorageStateExists(sessionDir);
+  fs.writeFileSync(statePath, `${JSON.stringify(storageState, null, 2)}\n`);
+}
+
 export function extractFirebaseAuthState(storageState: BrowserStorageState): FirebaseAuthState | null {
   for (const origin of storageState.origins ?? []) {
     const localStorageAuth = extractFirebaseAuthFromLocalStorage(origin);
@@ -160,7 +165,10 @@ export function extractFirebaseAppCheckState(storageState: BrowserStorageState):
   return null;
 }
 
-export async function loadFreshFirebaseAuth(sessionDir: string): Promise<FreshFirebaseAuthState> {
+export async function loadFreshFirebaseAuth(
+  sessionDir: string,
+  options: { forceRefresh?: boolean } = {}
+): Promise<FreshFirebaseAuthState> {
   const session = loadBrowserSession(sessionDir);
   const firebaseAuth = session.firebaseAuth;
   if (!firebaseAuth?.uid || !firebaseAuth.accessToken || !firebaseAuth.refreshToken) {
@@ -169,7 +177,7 @@ export async function loadFreshFirebaseAuth(sessionDir: string): Promise<FreshFi
     );
   }
 
-  if (!firebaseAuth.expirationTime || firebaseAuth.expirationTime > Date.now() + 60_000) {
+  if (!options.forceRefresh && (!firebaseAuth.expirationTime || firebaseAuth.expirationTime > Date.now() + 60_000)) {
     return firebaseAuth as FreshFirebaseAuthState;
   }
 
@@ -403,4 +411,129 @@ export function buildCookieHeader(storageState: BrowserStorageState, targetHost:
   }
 
   return cookies.map((cookie) => `${cookie.name}=${cookie.value}`).join("; ");
+}
+
+export function applySetCookieHeaders(
+  storageState: BrowserStorageState,
+  setCookieHeaders: string[],
+  requestUrl: string
+): number {
+  const url = new URL(requestUrl);
+  const cookies = [...(storageState.cookies ?? [])];
+  let changed = 0;
+
+  for (const header of setCookieHeaders) {
+    const parsed = parseSetCookieHeader(header, url);
+    if (!parsed) {
+      continue;
+    }
+
+    const index = cookies.findIndex((cookie) => {
+      return cookie.name === parsed.name && cookie.domain === parsed.domain && (cookie.path ?? "/") === parsed.path;
+    });
+
+    if (parsed.expires !== undefined && parsed.expires <= Date.now() / 1000) {
+      if (index >= 0) {
+        cookies.splice(index, 1);
+        changed += 1;
+      }
+      continue;
+    }
+
+    if (index >= 0) {
+      cookies[index] = parsed;
+    } else {
+      cookies.push(parsed);
+    }
+    changed += 1;
+  }
+
+  storageState.cookies = cookies;
+  return changed;
+}
+
+function parseSetCookieHeader(header: string, requestUrl: URL): BrowserCookie | null {
+  const parts = header.split(";").map((part) => part.trim());
+  const [nameValue, ...attributes] = parts;
+  const separatorIndex = nameValue?.indexOf("=") ?? -1;
+  if (!nameValue || separatorIndex <= 0) {
+    return null;
+  }
+
+  const cookie: BrowserCookie = {
+    name: nameValue.slice(0, separatorIndex),
+    value: nameValue.slice(separatorIndex + 1),
+    domain: requestUrl.hostname,
+    path: defaultCookiePath(requestUrl.pathname)
+  };
+
+  for (const attribute of attributes) {
+    const [rawName, ...rawValueParts] = attribute.split("=");
+    const name = rawName?.toLowerCase();
+    const value = rawValueParts.join("=");
+
+    if (name === "domain" && value) {
+      cookie.domain = value.toLowerCase();
+      continue;
+    }
+
+    if (name === "path" && value) {
+      cookie.path = value;
+      continue;
+    }
+
+    if (name === "expires" && value) {
+      const expires = Date.parse(value);
+      if (!Number.isNaN(expires)) {
+        cookie.expires = Math.floor(expires / 1000);
+      }
+      continue;
+    }
+
+    if (name === "max-age" && value) {
+      const maxAge = Number(value);
+      if (Number.isFinite(maxAge)) {
+        cookie.expires = Math.floor(Date.now() / 1000 + maxAge);
+      }
+      continue;
+    }
+
+    if (name === "httponly") {
+      cookie.httpOnly = true;
+      continue;
+    }
+
+    if (name === "secure") {
+      cookie.secure = true;
+      continue;
+    }
+
+    if (name === "samesite" && value) {
+      cookie.sameSite = normalizeSameSite(value);
+    }
+  }
+
+  return cookie;
+}
+
+function defaultCookiePath(pathname: string): string {
+  if (!pathname || !pathname.startsWith("/") || pathname === "/") {
+    return "/";
+  }
+
+  const lastSlashIndex = pathname.lastIndexOf("/");
+  return lastSlashIndex <= 0 ? "/" : pathname.slice(0, lastSlashIndex);
+}
+
+function normalizeSameSite(value: string): string {
+  const lower = value.toLowerCase();
+  if (lower === "strict") {
+    return "Strict";
+  }
+
+  if (lower === "none") {
+    return "None";
+  }
+
+  return "Lax";
 }

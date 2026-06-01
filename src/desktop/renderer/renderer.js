@@ -85,7 +85,11 @@ window.kinagent.onEvent((message) => {
   }
 
   if (message.channel === "session-keepalive") {
-    elements.sessionLine.textContent = message.payload.ok ? "Session refreshed" : "Session refresh failed";
+    elements.sessionLine.textContent = message.payload.ok
+      ? message.payload.warmed
+        ? "Session warmed"
+        : "Session refreshed"
+      : "Session refresh failed";
   }
 });
 

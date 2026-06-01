@@ -4,9 +4,12 @@ import { app, BrowserWindow, Menu, nativeImage, shell, Tray, ipcMain } from "ele
 import type { Event as ElectronEvent } from "electron";
 import { chromium, type Browser, type BrowserContext } from "playwright";
 import {
+  applySetCookieHeaders,
+  buildCookieHeader,
   extractFirebaseAppCheckState,
   loadBrowserSession,
   loadFreshFirebaseAuth,
+  saveBrowserStorageState,
   summarizeSessionAuth
 } from "../auth/firebaseSession.js";
 import { ensureSessionDir, storageStatePath } from "../auth/tokenStore.js";
@@ -24,9 +27,11 @@ let isQuitting = false;
 let monitorController: AbortController | null = null;
 let loginSession: { browser: Browser; context: BrowserContext } | null = null;
 let keepAliveTimer: NodeJS.Timeout | null = null;
+let keepAliveInFlight = false;
 
 const config = loadConfig();
 const logger = createLogger(config.bridge.logLevel);
+const sessionKeepAliveMs = 25 * 60 * 1000;
 
 app.setName("Kinagent");
 
@@ -268,25 +273,116 @@ function stopMonitorProcess() {
 }
 
 function startSessionKeepAlive(): void {
-  keepAliveTimer = setInterval(
-    () => {
-      loadFreshFirebaseAuth(config.bridge.sessionDir)
-        .then((auth) => {
-          sendRendererEvent("session-keepalive", {
-            ok: true,
-            uidPresent: Boolean(auth.uid),
-            expirationIso: auth.expirationTime ? new Date(auth.expirationTime).toISOString() : null
-          });
-        })
-        .catch((error) => {
-          sendRendererEvent("session-keepalive", {
-            ok: false,
-            error: error instanceof Error ? error.message : String(error)
-          });
-        });
-    },
-    30 * 60 * 1000
-  );
+  void runSessionKeepAlive();
+  keepAliveTimer = setInterval(() => {
+    void runSessionKeepAlive();
+  }, sessionKeepAliveMs);
+}
+
+async function runSessionKeepAlive(): Promise<void> {
+  if (keepAliveInFlight) {
+    return;
+  }
+
+  keepAliveInFlight = true;
+  try {
+    const auth = await loadFreshFirebaseAuth(config.bridge.sessionDir);
+    const warmResult = await warmKindroidSession();
+    sendRendererEvent("session-keepalive", {
+      ok: true,
+      warmed: warmResult.warmed,
+      method: warmResult.method,
+      uidPresent: Boolean(auth.uid),
+      expirationIso: auth.expirationTime ? new Date(auth.expirationTime).toISOString() : null
+    });
+  } catch (error) {
+    sendRendererEvent("session-keepalive", {
+      ok: false,
+      error: error instanceof Error ? error.message : String(error)
+    });
+  } finally {
+    keepAliveInFlight = false;
+  }
+}
+
+async function warmKindroidSession(): Promise<{ warmed: boolean; method: "http" | "browser" | "skipped" }> {
+  if (loginSession) {
+    return { warmed: false, method: "skipped" };
+  }
+
+  try {
+    const cookieUpdates = await warmKindroidHttpSession();
+    logger.debug("Kindroid session warmed over HTTP.", { cookieUpdates });
+    return { warmed: true, method: "http" };
+  } catch (error) {
+    logger.warn("HTTP Kindroid session warm failed; falling back to browser warm.", {
+      error: error instanceof Error ? error.message : String(error)
+    });
+  }
+
+  await warmKindroidBrowserSession();
+  return { warmed: true, method: "browser" };
+}
+
+async function warmKindroidHttpSession(): Promise<number> {
+  const session = loadBrowserSession(config.bridge.sessionDir);
+  const cookieHeader = buildCookieHeader(session.storageState, "kindroid.ai");
+  if (!cookieHeader) {
+    throw new Error("Saved session has no Kindroid cookies to warm.");
+  }
+
+  const url = "https://kindroid.ai/";
+  const response = await fetch(url, {
+    method: "GET",
+    redirect: "follow",
+    headers: {
+      accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      cookie: cookieHeader,
+      "user-agent": "Kinagent session warmer"
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error(`Kindroid HTTP warm failed with HTTP ${response.status}.`);
+  }
+
+  const setCookieHeaders = responseSetCookieHeaders(response.headers);
+  const cookieUpdates = applySetCookieHeaders(session.storageState, setCookieHeaders, response.url || url);
+  if (cookieUpdates > 0) {
+    saveBrowserStorageState(config.bridge.sessionDir, session.storageState);
+  }
+
+  return cookieUpdates;
+}
+
+async function warmKindroidBrowserSession(): Promise<void> {
+  const statePath = storageStatePath(config.bridge.sessionDir);
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const context = await browser.newContext({ storageState: statePath });
+    const page = await context.newPage();
+    await page.goto("https://kindroid.ai/", { waitUntil: "domcontentloaded", timeout: 60_000 });
+    await page.waitForLoadState("networkidle", { timeout: 15_000 }).catch(() => undefined);
+    await context.storageState({ path: statePath, indexedDB: true });
+    logger.debug("Kindroid browser session warmed.", { url: page.url() });
+  } finally {
+    await browser.close();
+  }
+}
+
+function responseSetCookieHeaders(headers: Headers): string[] {
+  const withGetSetCookie = headers as Headers & { getSetCookie?: () => string[] };
+  const setCookieHeaders = withGetSetCookie.getSetCookie?.();
+  if (setCookieHeaders && setCookieHeaders.length > 0) {
+    return setCookieHeaders;
+  }
+
+  const combined = headers.get("set-cookie");
+  return combined ? splitCombinedSetCookieHeader(combined) : [];
+}
+
+function splitCombinedSetCookieHeader(value: string): string[] {
+  return value.split(/,(?=\s*[^;,\s]+=)/).map((header) => header.trim());
 }
 
 function showMainWindow(): void {
