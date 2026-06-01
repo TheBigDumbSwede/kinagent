@@ -26,7 +26,7 @@
     "format:write": "prettier --write .",
     "secret-scan": "node scripts/secret-scan.mjs",
     "smoke:desktop": "npm run build && node scripts/desktop-smoke.mjs",
-    "dist:win": "npm run check && electron-builder --win portable --publish never && npm run smoke:portable",
+    "dist:win": "node scripts/dist-win.mjs",
     "smoke:portable": "node scripts/smoke-portable.mjs",
     "test:live": "vitest run --config vitest.live.config.ts",
     "check": "npm run secret-scan && npm run lint && npm run format && npm run typecheck && npm test && npm run build",
