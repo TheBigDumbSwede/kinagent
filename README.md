@@ -52,6 +52,13 @@ Hermes or CLI
   -> dedupe record
 ```
 
+Kindroid domain access is organized behind `KindroidApiClient` resource modules:
+
+- `kins` for Kin discovery from `Users/{uid}/AIs`.
+- `chats` for Kin chat message reads and listen streams.
+- `groups` for group metadata from `Users/{uid}/Groups`.
+- `groupChats` for group chat message and pinned-message reads/listen streams.
+
 ## Security Notes
 
 Kindroid browser session data, cookies, Firebase ID tokens, refresh tokens, and API auth headers are equivalent to passwords.
@@ -94,6 +101,7 @@ In the desktop app:
 - `Open Login` opens a visible Kindroid browser.
 - `Save Session` stores the browser session after login.
 - The background supervisor discovers available Kins and subscribes to all enabled Kins automatically.
+- The background supervisor also discovers available groups and subscribes to group chat messages automatically.
 - `Manage` expands per-Kin subscription toggles for users who want desktop control.
 - Minimize or close hides the window to the Windows tray; use the tray menu to show or quit.
 
@@ -119,6 +127,18 @@ List Kins from Firestore REST using the saved session:
 
 ```powershell
 npm run list-kins
+```
+
+List group metadata from Firestore REST using the saved session:
+
+```powershell
+npm run list-groups
+```
+
+Inspect recent group chat document shapes without printing message text:
+
+```powershell
+npm run probe-group-chat -- --group "<group_id>" --limit 5
 ```
 
 Show a token-safe session summary:
@@ -177,7 +197,7 @@ Include the full raw Firestore document payload when inspecting schema changes:
 npm run probe-chat -- --kin "<ai_id>" --limit 1 --include-raw
 ```
 
-Run the headless background daemon. It uses the same dynamic Kin discovery and subscription supervisor as the desktop app:
+Run the headless background daemon. It uses the same dynamic Kin and group discovery/subscription supervisors as the desktop app:
 
 ```powershell
 npm run daemon

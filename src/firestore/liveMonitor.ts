@@ -1,7 +1,7 @@
 import type { AppConfig } from "../config/types.js";
 import { loadBrowserSession } from "../auth/firebaseSession.js";
+import { KindroidApiClient } from "../kindroid/client/index.js";
 import type { Logger } from "../util/logger.js";
-import { FirestoreListenClient } from "./firestoreListenClient.js";
 import { mapKindroidMessage } from "./messageMapper.js";
 import type { NormalizedKindroidMessage } from "./types.js";
 
@@ -22,7 +22,7 @@ export class KindroidLiveMonitor {
   ) {}
 
   async start(options: KindroidLiveMonitorOptions): Promise<void> {
-    const client = new FirestoreListenClient(this.config, this.logger);
+    const client = new KindroidApiClient(this.config, this.logger);
     const pageSize = options.pageSize ?? 50;
     const decryptionKey = this.resolveDecryptionKey();
 
@@ -32,9 +32,9 @@ export class KindroidLiveMonitor {
       pageSize
     });
 
-    await client.listenChatMessages({
+    await client.chats.listenMessages({
       kinId: options.kinId,
-      limit: pageSize,
+      pageSize,
       signal: options.signal,
       onDocument: async (document) => {
         const message = mapKindroidMessage(document, options.kinId, { decryptionKey });

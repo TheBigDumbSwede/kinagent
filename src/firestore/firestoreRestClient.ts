@@ -23,20 +23,12 @@ export type FirestoreRestValue =
   | { arrayValue: { values?: FirestoreRestValue[] } }
   | { mapValue: { fields?: Record<string, FirestoreRestValue> } };
 
-export interface ListChatMessagesOptions {
-  kinId: string;
-  limit: number;
-}
-
-export interface ListUserKinsOptions {
+export interface ListDocumentsOptions {
+  collectionPath: string;
   pageSize?: number;
-}
-
-export interface FirestoreKinDocument {
-  documentId: string;
-  aiId: string;
-  name: string;
-  current: boolean;
+  maxDocuments?: number;
+  orderBy?: string;
+  logLabel?: string;
 }
 
 export class FirestoreRestClient {
@@ -45,11 +37,15 @@ export class FirestoreRestClient {
     private readonly logger: Logger
   ) {}
 
-  async listUserKins(options: ListUserKinsOptions = {}): Promise<FirestoreKinDocument[]> {
+  async resolveUid(): Promise<string> {
+    const auth = await loadFreshFirebaseAuth(this.config.bridge.sessionDir);
+    return this.config.kindroid.uid || auth.uid;
+  }
+
+  async listDocuments(options: ListDocumentsOptions): Promise<FirestoreDocumentLike[]> {
     const auth = await loadFreshFirebaseAuth(this.config.bridge.sessionDir);
     const session = loadBrowserSession(this.config.bridge.sessionDir);
     const appCheck = extractFirebaseAppCheckState(session.storageState);
-    const uid = this.config.kindroid.uid || auth.uid;
     const documents: FirestoreRestDocument[] = [];
     let pageToken: string | undefined;
 
@@ -57,9 +53,12 @@ export class FirestoreRestClient {
       const url = new URL(
         `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(
           this.config.kindroid.firebaseProjectId
-        )}/databases/(default)/documents/Users/${encodeURIComponent(uid)}/AIs`
+        )}/databases/(default)/documents/${encodeFirestorePath(options.collectionPath)}`
       );
       url.searchParams.set("pageSize", String(options.pageSize ?? 100));
+      if (options.orderBy) {
+        url.searchParams.set("orderBy", options.orderBy);
+      }
       if (pageToken) {
         url.searchParams.set("pageToken", pageToken);
       }
@@ -67,7 +66,7 @@ export class FirestoreRestClient {
       const response = await fetch(url, { headers: this.authHeaders(auth.accessToken, appCheck?.token) });
       if (!response.ok) {
         const responseText = await response.text();
-        throw new Error(`Firestore Kin list failed with HTTP ${response.status}: ${responseText.slice(0, 500)}`);
+        throw new Error(`Firestore read failed with HTTP ${response.status}: ${responseText.slice(0, 500)}`);
       }
 
       const payload = (await response.json()) as {
@@ -75,48 +74,19 @@ export class FirestoreRestClient {
         nextPageToken?: string;
       };
       documents.push(...(payload.documents ?? []));
+      if (options.maxDocuments && documents.length >= options.maxDocuments) {
+        break;
+      }
       pageToken = payload.nextPageToken;
     } while (pageToken);
 
-    const kins = documents.flatMap(normalizeKinDocument);
-    this.logger.debug("Firestore Kin list loaded.", {
-      uid,
-      count: kins.length
-    });
-    return kins;
-  }
-
-  async listChatMessages(options: ListChatMessagesOptions): Promise<FirestoreDocumentLike[]> {
-    const auth = await loadFreshFirebaseAuth(this.config.bridge.sessionDir);
-    const session = loadBrowserSession(this.config.bridge.sessionDir);
-    const appCheck = extractFirebaseAppCheckState(session.storageState);
-    const uid = this.config.kindroid.uid || auth.uid;
-    const path = `Users/${uid}/AIs/${options.kinId}/ChatMessages`;
-    const url = new URL(
-      `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(
-        this.config.kindroid.firebaseProjectId
-      )}/databases/(default)/documents/${path}`
-    );
-    url.searchParams.set("pageSize", String(options.limit));
-    url.searchParams.set("orderBy", "timestamp desc");
-
-    const response = await fetch(url, { headers: this.authHeaders(auth.accessToken, appCheck?.token) });
-
-    if (!response.ok) {
-      const responseText = await response.text();
-      throw new Error(`Firestore read failed with HTTP ${response.status}: ${responseText.slice(0, 500)}`);
-    }
-
-    const payload = (await response.json()) as { documents?: FirestoreRestDocument[] };
-    const documents = payload.documents ?? [];
-
-    this.logger.debug("Firestore chat message page loaded.", {
-      uid,
-      kinId: options.kinId,
+    this.logger.debug("Firestore document page loaded.", {
+      collectionPath: options.collectionPath,
+      logLabel: options.logLabel,
       count: documents.length
     });
 
-    return documents.map((document) => firestoreDocumentLike(document));
+    return documents.slice(0, options.maxDocuments).map((document) => firestoreDocumentLike(document));
   }
 
   private authHeaders(firebaseAuthJwt: string, appCheckToken?: string): Record<string, string> {
@@ -133,24 +103,6 @@ export class FirestoreRestClient {
   }
 }
 
-export function normalizeKinDocument(document: FirestoreRestDocument): FirestoreKinDocument[] {
-  const data = decodeFields(document.fields ?? {});
-  const documentId = document.name.split("/").pop() ?? document.name;
-  const aiId = stringValue(data.ai_id) ?? documentId;
-  if (!aiId) {
-    return [];
-  }
-
-  return [
-    {
-      documentId,
-      aiId,
-      name: stringValue(data.ai_name) ?? "(unnamed)",
-      current: booleanValue(data.current) ?? false
-    }
-  ];
-}
-
 function firestoreDocumentLike(document: FirestoreRestDocument): FirestoreDocumentLike {
   return {
     id: document.name.split("/").pop() ?? document.name,
@@ -163,20 +115,20 @@ function firestoreDocumentLike(document: FirestoreRestDocument): FirestoreDocume
   };
 }
 
-function stringValue(value: unknown): string | null {
-  return typeof value === "string" && value.length > 0 ? value : null;
-}
-
-function booleanValue(value: unknown): boolean | null {
-  return typeof value === "boolean" ? value : null;
-}
-
 function decodeFields(fields: Record<string, FirestoreRestValue>): Record<string, unknown> {
   return Object.fromEntries(
     Object.entries(fields).map(([key, value]) => {
       return [key, decodeValue(value)];
     })
   );
+}
+
+function encodeFirestorePath(path: string): string {
+  return path
+    .split("/")
+    .filter((part) => part.length > 0)
+    .map((part) => encodeURIComponent(part))
+    .join("/");
 }
 
 function decodeValue(value: FirestoreRestValue): unknown {

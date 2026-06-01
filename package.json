@@ -13,6 +13,8 @@
     "login": "tsx src/index.ts login",
     "instrument-login": "tsx src/index.ts instrument-login",
     "list-kins": "tsx src/index.ts list-kins",
+    "list-groups": "tsx src/index.ts list-groups",
+    "probe-group-chat": "tsx src/index.ts probe-group-chat",
     "session-info": "tsx src/index.ts session-info",
     "probe-chat": "tsx src/index.ts probe-chat",
     "monitor-live": "tsx src/index.ts monitor-live",

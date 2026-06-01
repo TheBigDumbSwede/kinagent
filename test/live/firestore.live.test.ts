@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { loadBrowserSession } from "../../src/auth/firebaseSession.js";
 import { loadConfig } from "../../src/config/loadConfig.js";
-import { FirestoreRestClient } from "../../src/firestore/firestoreRestClient.js";
 import { mapKindroidMessage } from "../../src/firestore/messageMapper.js";
+import { KindroidApiClient } from "../../src/kindroid/client/index.js";
 import { createLogger } from "../../src/util/logger.js";
 
 const runLiveTests = process.env.KINAGENT_LIVE_TESTS === "1";
@@ -19,8 +19,8 @@ liveDescribe("live Firestore session", () => {
     const decryptionKey = config.kindroid.uid || session.firebaseAuth?.uid;
     expect(decryptionKey, "saved session must expose a Firebase UID").toBeTruthy();
 
-    const client = new FirestoreRestClient(config, createLogger("error"));
-    const documents = await client.listChatMessages({ kinId: kin!.aiId, limit: 1 });
+    const client = new KindroidApiClient(config, createLogger("error"));
+    const documents = await client.chats.listRecentMessages({ kinId: kin!.aiId, limit: 1 });
 
     expect(documents.length).toBeGreaterThan(0);
 

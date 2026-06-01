@@ -2,7 +2,7 @@ import type { AppConfig } from "../config/types.js";
 import type { HermesAdapter } from "../hermes/types.js";
 import type { DedupeStore } from "../state/dedupeStore.js";
 import type { Logger } from "../util/logger.js";
-import { FirestoreListenClient } from "./firestoreListenClient.js";
+import { KindroidApiClient } from "../kindroid/client/index.js";
 import { mapKindroidMessage } from "./messageMapper.js";
 import type { KindroidChatChangeNotification } from "./types.js";
 
@@ -21,7 +21,7 @@ export class KindroidChatListener {
   ) {}
 
   async start(options: ChatListenerOptions): Promise<void> {
-    const client = new FirestoreListenClient(this.config, this.logger);
+    const client = new KindroidApiClient(this.config, this.logger);
     const pageSize = options.pageSize ?? 50;
     this.logger.info("Preparing Firestore listener.", {
       projectId: this.config.kindroid.firebaseProjectId,
@@ -30,9 +30,9 @@ export class KindroidChatListener {
       mode: "notification-only"
     });
 
-    await client.listenChatMessages({
+    await client.chats.listenMessages({
       kinId: options.kinId,
-      limit: pageSize,
+      pageSize,
       signal: options.signal,
       onDocument: async (document) => {
         const message = mapKindroidMessage(document, options.kinId);

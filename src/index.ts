@@ -4,12 +4,14 @@ import { loadBrowserSession, summarizeSessionAuth } from "./auth/firebaseSession
 import { runInstrumentedKindroidLogin } from "./auth/instrumentedLogin.js";
 import { runKindroidLogin } from "./auth/playwrightLogin.js";
 import { KindroidClient } from "./kindroid/kindroidClient.js";
+import { KindroidApiClient } from "./kindroid/client/index.js";
 import { KindroidChatListener } from "./firestore/chatListener.js";
-import { FirestoreRestClient } from "./firestore/firestoreRestClient.js";
+import { KindroidGroupChatListener } from "./firestore/groupChatListener.js";
 import { KindroidLiveMonitor } from "./firestore/liveMonitor.js";
 import { mapKindroidMessage } from "./firestore/messageMapper.js";
 import { createHermesAdapter } from "./hermes/hermesAdapter.js";
 import { KindroidSessionKeepAlive } from "./runtime/kindroidSessionKeepAlive.js";
+import { GroupSubscriptionSupervisor } from "./runtime/groupSubscriptionSupervisor.js";
 import { KinSubscriptionSupervisor } from "./runtime/kinSubscriptionSupervisor.js";
 import { createDedupeStore } from "./state/sqliteStore.js";
 import { newRequestId } from "./util/ids.js";
@@ -50,9 +52,46 @@ program
   .description("List Kindroid Kins from Firestore REST using the saved session.")
   .action(async () => {
     const { config, logger } = loadRuntime();
-    const client = new FirestoreRestClient(config, logger);
-    const kins = await client.listUserKins();
+    const client = new KindroidApiClient(config, logger);
+    const kins = await client.kins.list();
     process.stdout.write(`${JSON.stringify({ count: kins.length, kins }, null, 2)}\n`);
+  });
+
+program
+  .command("list-groups")
+  .description("List Kindroid group metadata from Firestore REST using the saved session.")
+  .action(async () => {
+    const { config, logger } = loadRuntime();
+    const client = new KindroidApiClient(config, logger);
+    const groups = await client.groups.list();
+    process.stdout.write(`${JSON.stringify({ count: groups.length, groups }, null, 2)}\n`);
+  });
+
+program
+  .command("probe-group-chat")
+  .description("Read recent Firestore group chat documents and print field keys only.")
+  .requiredOption("--group <group_id>", "Kindroid group id")
+  .option("--limit <count>", "Maximum documents to inspect", "5")
+  .action(async (options: { group: string; limit: string }) => {
+    const { config, logger } = loadRuntime();
+    const limit = Number(options.limit);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+      throw new Error("--limit must be an integer from 1 to 100.");
+    }
+
+    const client = new KindroidApiClient(config, logger);
+    const documents = await client.groupChats.listRecentMessages({ groupId: options.group, limit });
+    const documentShapes = documents.map((document) => {
+      const data = document.data() as Record<string, unknown>;
+      return {
+        documentIdPresent: Boolean(document.id),
+        keys: Object.keys(data)
+          .filter((key) => !key.startsWith("_"))
+          .sort()
+      };
+    });
+
+    process.stdout.write(`${JSON.stringify({ count: documentShapes.length, documents: documentShapes }, null, 2)}\n`);
   });
 
 program
@@ -73,7 +112,7 @@ program
   .option("--include-raw", "Include full raw Firestore document payloads")
   .action(async (options: { kin: string; limit: string; decrypt?: boolean; includeRaw?: boolean }) => {
     const { config, logger } = loadRuntime();
-    const client = new FirestoreRestClient(config, logger);
+    const client = new KindroidApiClient(config, logger);
     const limit = Number(options.limit);
     if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
       throw new Error("--limit must be an integer from 1 to 100.");
@@ -85,7 +124,7 @@ program
       throw new Error("Cannot decrypt without a Firebase UID. Run npm run session-info to verify the saved session.");
     }
 
-    const documents = await client.listChatMessages({ kinId: options.kin, limit });
+    const documents = await client.chats.listRecentMessages({ kinId: options.kin, limit });
     const messages = documents.map((document) => {
       const message = mapKindroidMessage(document, options.kin, { decryptionKey });
       return options.includeRaw ? message : { ...message, raw: undefined };
@@ -177,12 +216,13 @@ program
 
 program
   .command("daemon")
-  .description("Run dynamic background bridge listeners for all discovered Kins.")
+  .description("Run dynamic background bridge listeners for all discovered Kins and groups.")
   .action(async () => {
     const { config, logger } = loadRuntime();
     const hermes = createHermesAdapter(config, logger);
     const dedupeStore = await createDedupeStore(config.bridge.sqlitePath, config.bridge.dedupeWindowSeconds);
     const listener = new KindroidChatListener(config, hermes, dedupeStore, logger);
+    const groupListener = new KindroidGroupChatListener(config, hermes, dedupeStore, logger);
     const sessionKeepAlive = new KindroidSessionKeepAlive({
       config,
       logger,
@@ -221,11 +261,34 @@ program
         logger.error("Kin listener failed.", { name: kin.name, aiId: kin.aiId, error });
       }
     });
+    const groupSupervisor = new GroupSubscriptionSupervisor({
+      config,
+      logger,
+      startGroup: async (group, options) => {
+        logger.info("Starting discovered group chat listener.", { name: group.name, groupId: group.groupId });
+        await groupListener.start({ groupId: group.groupId, pageSize: options.pageSize, signal: options.signal });
+      },
+      onGroupsUpdated: (statuses) => {
+        logger.info("Group subscriptions reconciled.", {
+          total: statuses.length,
+          running: statuses.filter((status) => status.running).length,
+          disabled: statuses.filter((status) => !status.enabled).length
+        });
+      },
+      onRefreshError: (error) => {
+        logger.warn("Group subscription refresh failed.", { error });
+      },
+      onMonitorError: (group, error) => {
+        logger.error("Group chat listener failed.", { name: group.name, groupId: group.groupId, error });
+      }
+    });
 
     sessionKeepAlive.start();
     supervisor.start();
+    groupSupervisor.start();
     await waitForShutdown(() => {
       supervisor.stop();
+      groupSupervisor.stop();
       sessionKeepAlive.stop();
     });
   });

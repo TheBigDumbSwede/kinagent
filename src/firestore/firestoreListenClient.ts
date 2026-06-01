@@ -5,11 +5,19 @@ import { extractFirebaseAppCheckState, loadBrowserSession, loadFreshFirebaseAuth
 import type { Logger } from "../util/logger.js";
 import type { FirestoreDocumentLike } from "./types.js";
 
-interface ListenChatMessagesOptions {
-  kinId: string;
+export interface ListenCollectionOptions {
+  parentPath: string;
+  collectionId: string;
   limit: number;
+  orderBy: FirestoreListenOrder[];
+  targetLabel?: string;
   signal?: AbortSignal;
   onDocument: (document: FirestoreDocumentLike) => void | Promise<void>;
+}
+
+export interface FirestoreListenOrder {
+  fieldPath: string;
+  direction: "ASCENDING" | "DESCENDING";
 }
 
 interface ListenSessionState {
@@ -19,7 +27,7 @@ interface ListenSessionState {
   currentGeneration: number;
 }
 
-interface OpenStreamOptions extends ListenChatMessagesOptions {
+interface OpenStreamOptions extends ListenCollectionOptions {
   state: ListenSessionState;
   forceRefreshAuth: boolean;
 }
@@ -31,7 +39,7 @@ interface ListenRequest {
       parent: string;
       structuredQuery: {
         from: Array<{ collectionId: string }>;
-        orderBy: Array<{ field: { fieldPath: string }; direction: "DESCENDING" }>;
+        orderBy: Array<{ field: { fieldPath: string }; direction: "ASCENDING" | "DESCENDING" }>;
         limit: { value: number };
       };
     };
@@ -115,7 +123,7 @@ export class FirestoreListenClient {
     private readonly logger: Logger
   ) {}
 
-  async listenChatMessages(options: ListenChatMessagesOptions): Promise<void> {
+  async listenCollection(options: ListenCollectionOptions): Promise<void> {
     const state: ListenSessionState = {
       seen: new Set<string>(),
       startupSnapshotComplete: false,
@@ -139,7 +147,8 @@ export class FirestoreListenClient {
         authRetryUsed = false;
         const backoffMs = reconnectBackoffMs(reconnectAttempt++);
         this.logger.warn("Firestore listen stream ended; reconnecting.", {
-          kinId: options.kinId,
+          targetLabel: options.targetLabel,
+          collectionId: options.collectionId,
           backoffMs
         });
         await delay(backoffMs, options.signal);
@@ -176,7 +185,8 @@ export class FirestoreListenClient {
 
         const backoffMs = authError ? 0 : reconnectBackoffMs(reconnectAttempt++);
         this.logger.warn("Firestore listen stream disconnected; reconnecting.", {
-          kinId: options.kinId,
+          targetLabel: options.targetLabel,
+          collectionId: options.collectionId,
           statusCode,
           forceRefreshAuth,
           backoffMs,
@@ -191,9 +201,8 @@ export class FirestoreListenClient {
     const auth = await loadFreshFirebaseAuth(this.config.bridge.sessionDir, { forceRefresh: options.forceRefreshAuth });
     const session = loadBrowserSession(this.config.bridge.sessionDir);
     const appCheck = extractFirebaseAppCheckState(session.storageState);
-    const uid = this.config.kindroid.uid || auth.uid;
     const database = firestoreDatabase(this.config.kindroid.firebaseProjectId);
-    const parent = `${database}/documents/Users/${uid}/AIs/${options.kinId}`;
+    const parent = `${database}/documents/${options.parentPath}`;
     const client = createFirestoreClient();
     const metadata = new grpc.Metadata();
     let initialized = false;
@@ -212,7 +221,8 @@ export class FirestoreListenClient {
 
     this.logger.info("Starting Firestore listen stream.", {
       projectId: this.config.kindroid.firebaseProjectId,
-      kinId: options.kinId,
+      targetLabel: options.targetLabel,
+      collectionId: options.collectionId,
       pageSize: options.limit,
       reconnect: options.state.startupSnapshotComplete,
       forceRefreshAuth: options.forceRefreshAuth
@@ -283,7 +293,8 @@ export class FirestoreListenClient {
               }
 
               this.logger.info("Firestore listen stream is current.", {
-                kinId: options.kinId,
+                targetLabel: options.targetLabel,
+                collectionId: options.collectionId,
                 initialDocuments: initialDocumentCount,
                 catchupDocuments: startupDocuments.length
               });
@@ -339,7 +350,7 @@ export class FirestoreListenClient {
         pending.then(settleResolve, settleReject);
       });
 
-      call.write(buildListenRequest(database, parent, options.limit));
+      call.write(buildListenRequest(database, parent, options));
     });
   }
 }
@@ -678,16 +689,19 @@ message MapValue {
 }
 `;
 
-function buildListenRequest(database: string, parent: string, limit: number): ListenRequest {
+function buildListenRequest(database: string, parent: string, options: ListenCollectionOptions): ListenRequest {
   return {
     database,
     addTarget: {
       query: {
         parent,
         structuredQuery: {
-          from: [{ collectionId: "ChatMessages" }],
-          orderBy: [{ field: { fieldPath: "timestamp" }, direction: "DESCENDING" }],
-          limit: { value: limit }
+          from: [{ collectionId: options.collectionId }],
+          orderBy: options.orderBy.map((order) => ({
+            field: { fieldPath: order.fieldPath },
+            direction: order.direction
+          })),
+          limit: { value: options.limit }
         }
       },
       targetId

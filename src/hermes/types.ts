@@ -1,5 +1,5 @@
-import type { KindroidChatChangeNotification } from "../firestore/types.js";
+import type { KindroidChatNotification } from "../firestore/types.js";
 
 export interface HermesAdapter {
-  handleChatChanged(notification: KindroidChatChangeNotification): Promise<void>;
+  handleChatChanged(notification: KindroidChatNotification): Promise<void>;
 }

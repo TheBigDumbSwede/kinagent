@@ -1,6 +1,7 @@
 export interface NormalizedKindroidMessage {
   id: string;
   kinId: string;
+  groupId?: string;
   timestamp: string | null;
   text: string | null;
   textEncrypted?: boolean;
@@ -20,6 +21,19 @@ export interface KindroidChatChangeNotification {
   role: string | null;
   source: "firestore";
 }
+
+export interface KindroidGroupChatChangeNotification {
+  type: "kindroid.group_chat.changed";
+  groupId: string;
+  aiId: string | null;
+  documentId: string;
+  timestamp: string | null;
+  sender: string | null;
+  role: string | null;
+  source: "firestore";
+}
+
+export type KindroidChatNotification = KindroidChatChangeNotification | KindroidGroupChatChangeNotification;
 
 export interface FirestoreDocumentLike {
   id: string;

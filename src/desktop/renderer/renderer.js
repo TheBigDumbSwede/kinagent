@@ -1,9 +1,13 @@
 const state = {
   kins: [],
   subscriptions: [],
+  groups: [],
+  groupSubscriptions: [],
   monitorRunning: false,
   kinRefresh: null,
-  kinsExpanded: false
+  groupRefresh: null,
+  kinsExpanded: false,
+  groupsExpanded: false
 };
 
 const elements = {
@@ -13,6 +17,8 @@ const elements = {
   expiryStatus: document.querySelector("#expiryStatus"),
   kinRefreshLine: document.querySelector("#kinRefreshLine"),
   kinSubscriptionList: document.querySelector("#kinSubscriptionList"),
+  groupRefreshLine: document.querySelector("#groupRefreshLine"),
+  groupSubscriptionList: document.querySelector("#groupSubscriptionList"),
   monitorLine: document.querySelector("#monitorLine"),
   messageList: document.querySelector("#messageList"),
   loginStartButton: document.querySelector("#loginStartButton"),
@@ -20,6 +26,8 @@ const elements = {
   openKindroidButton: document.querySelector("#openKindroidButton"),
   toggleKinsButton: document.querySelector("#toggleKinsButton"),
   refreshKinsButton: document.querySelector("#refreshKinsButton"),
+  toggleGroupsButton: document.querySelector("#toggleGroupsButton"),
+  refreshGroupsButton: document.querySelector("#refreshGroupsButton"),
   clearButton: document.querySelector("#clearButton")
 };
 
@@ -45,6 +53,16 @@ elements.refreshKinsButton.addEventListener("click", () =>
     await refreshStatus();
   })
 );
+elements.toggleGroupsButton.addEventListener("click", () => {
+  state.groupsExpanded = !state.groupsExpanded;
+  renderGroupSubscriptions();
+});
+elements.refreshGroupsButton.addEventListener("click", () =>
+  runAction("Refreshing groups", async () => {
+    await window.kinagent.refreshGroups();
+    await refreshStatus();
+  })
+);
 elements.clearButton.addEventListener("click", () => {
   elements.messageList.replaceChildren();
 });
@@ -56,23 +74,44 @@ window.kinagent.onEvent((message) => {
   }
 
   if (message.channel === "monitor-started") {
-    state.monitorRunning = true;
     markSubscriptionRunning(message.payload?.kinId, true);
+    updateMonitorRunning();
     renderMonitorState();
     return;
   }
 
   if (message.channel === "monitor-stopped" || message.channel === "monitor-exit") {
     markSubscriptionRunning(message.payload?.kinId, false);
-    state.monitorRunning = state.subscriptions.some((subscription) => subscription.running);
+    updateMonitorRunning();
     renderMonitorState();
     return;
   }
 
   if (message.channel === "monitor-error") {
     markSubscriptionRunning(message.payload?.kinId, false);
-    state.monitorRunning = state.subscriptions.some((subscription) => subscription.running);
+    updateMonitorRunning();
     elements.monitorLine.textContent = message.payload?.error || message.payload || "Monitor error";
+    return;
+  }
+
+  if (message.channel === "group-monitor-started") {
+    markGroupSubscriptionRunning(message.payload?.groupId, true);
+    updateMonitorRunning();
+    renderMonitorState();
+    return;
+  }
+
+  if (message.channel === "group-monitor-stopped" || message.channel === "group-monitor-exit") {
+    markGroupSubscriptionRunning(message.payload?.groupId, false);
+    updateMonitorRunning();
+    renderMonitorState();
+    return;
+  }
+
+  if (message.channel === "group-monitor-error") {
+    markGroupSubscriptionRunning(message.payload?.groupId, false);
+    updateMonitorRunning();
+    elements.monitorLine.textContent = message.payload?.error || message.payload || "Group monitor error";
     return;
   }
 
@@ -93,14 +132,28 @@ window.kinagent.onEvent((message) => {
   if (message.channel === "kins-updated") {
     state.subscriptions = message.payload || [];
     state.kins = state.subscriptions.map((subscription) => subscription.kin);
-    state.monitorRunning = state.subscriptions.some((subscription) => subscription.running);
+    updateMonitorRunning();
     renderKinSubscriptions();
+    renderMonitorState();
+    return;
+  }
+
+  if (message.channel === "groups-updated") {
+    state.groupSubscriptions = message.payload || [];
+    state.groups = state.groupSubscriptions.map((subscription) => subscription.group);
+    updateMonitorRunning();
+    renderGroupSubscriptions();
     renderMonitorState();
     return;
   }
 
   if (message.channel === "kins-refresh-error") {
     elements.kinRefreshLine.textContent = message.payload || "Kin refresh failed";
+    return;
+  }
+
+  if (message.channel === "groups-refresh-error") {
+    elements.groupRefreshLine.textContent = message.payload || "Group refresh failed";
   }
 });
 
@@ -116,8 +169,11 @@ async function refreshStatus() {
 function renderStatus(status) {
   state.kins = status.kins || [];
   state.subscriptions = status.subscriptions || [];
+  state.groups = status.groups || [];
+  state.groupSubscriptions = status.groupSubscriptions || [];
   state.monitorRunning = Boolean(status.monitorRunning);
   state.kinRefresh = status.kinRefresh || null;
+  state.groupRefresh = status.groupRefresh || null;
 
   elements.sessionLine.textContent = status.session.available ? "Session saved" : "No saved session";
   elements.firebaseStatus.textContent = status.session.hasFirebaseAuth ? "Ready" : "Missing";
@@ -125,6 +181,7 @@ function renderStatus(status) {
   elements.expiryStatus.textContent = status.session.expirationIso || "Unknown";
 
   renderKinSubscriptions();
+  renderGroupSubscriptions();
   renderMonitorState();
 }
 
@@ -195,9 +252,78 @@ function renderKinSubscriptions() {
   }
 }
 
+function renderGroupSubscriptions() {
+  elements.groupSubscriptionList.replaceChildren();
+  elements.groupSubscriptionList.hidden = !state.groupsExpanded;
+  elements.toggleGroupsButton.textContent = state.groupsExpanded ? "Hide" : "Manage";
+  elements.toggleGroupsButton.setAttribute("aria-expanded", String(state.groupsExpanded));
+
+  const totalCount = state.groupSubscriptions.length;
+  const enabledCount = state.groupSubscriptions.filter((subscription) => subscription.enabled).length;
+  const runningCount = state.groupSubscriptions.filter((subscription) => subscription.running).length;
+  const disabledCount = totalCount - enabledCount;
+
+  if (state.groupRefresh && !state.groupRefresh.ok) {
+    elements.groupRefreshLine.textContent = state.groupRefresh.error || "Group refresh failed";
+  } else if (totalCount > 0) {
+    elements.groupRefreshLine.textContent = [
+      `${totalCount} groups`,
+      `${runningCount} live`,
+      disabledCount > 0 ? `${disabledCount} off` : null
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  } else {
+    elements.groupRefreshLine.textContent = "Waiting for group list";
+  }
+
+  elements.toggleGroupsButton.disabled = state.groupSubscriptions.length === 0;
+
+  if (!state.groupsExpanded) {
+    return;
+  }
+
+  if (state.groupSubscriptions.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "empty-line";
+    empty.textContent = "No groups discovered yet";
+    elements.groupSubscriptionList.append(empty);
+    return;
+  }
+
+  for (const subscription of state.groupSubscriptions) {
+    const group = subscription.group || {};
+    const row = document.createElement("label");
+    row.className = "kin-row";
+
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = Boolean(subscription.enabled);
+    checkbox.addEventListener("change", () =>
+      runAction(checkbox.checked ? "Enabling group" : "Disabling group", async () => {
+        await window.kinagent.setGroupEnabled({ groupId: group.groupId, enabled: checkbox.checked });
+        await refreshStatus();
+      })
+    );
+
+    const text = document.createElement("span");
+    text.className = "kin-name";
+    text.textContent = group.name || group.groupId || "Group";
+
+    const status = document.createElement("span");
+    status.className = `kin-state ${subscription.running ? "running" : subscription.enabled ? "enabled" : "disabled"}`;
+    status.textContent = subscription.running ? "Live" : subscription.enabled ? "Queued" : "Off";
+
+    row.append(checkbox, text, status);
+    elements.groupSubscriptionList.append(row);
+  }
+}
+
 function renderMonitorState() {
   const runningCount = state.subscriptions.filter((subscription) => subscription.running).length;
-  elements.monitorLine.textContent = runningCount > 0 ? `${runningCount} subscriptions live` : "No live subscriptions";
+  const runningGroupCount = state.groupSubscriptions.filter((subscription) => subscription.running).length;
+  const totalRunning = runningCount + runningGroupCount;
+  elements.monitorLine.textContent = totalRunning > 0 ? `${totalRunning} subscriptions live` : "No live subscriptions";
 }
 
 function handleMonitorLine(payload) {
@@ -224,6 +350,7 @@ function addMessage(message) {
   meta.className = "message-meta";
   meta.textContent = [
     message.kinName,
+    message.groupName,
     message.sender || "unknown",
     formatTime(message.timestamp),
     message.textDecrypted ? "decrypted" : "not decrypted"
@@ -262,6 +389,23 @@ function markSubscriptionRunning(kinId, running) {
     subscription.kin?.aiId === kinId ? { ...subscription, running } : subscription
   );
   renderKinSubscriptions();
+}
+
+function markGroupSubscriptionRunning(groupId, running) {
+  if (!groupId) {
+    return;
+  }
+
+  state.groupSubscriptions = state.groupSubscriptions.map((subscription) =>
+    subscription.group?.groupId === groupId ? { ...subscription, running } : subscription
+  );
+  renderGroupSubscriptions();
+}
+
+function updateMonitorRunning() {
+  state.monitorRunning =
+    state.subscriptions.some((subscription) => subscription.running) ||
+    state.groupSubscriptions.some((subscription) => subscription.running);
 }
 
 function formatTime(value) {

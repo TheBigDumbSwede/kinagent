@@ -57,11 +57,16 @@ for (const file of files) {
     continue;
   }
 
-  if (allowlistedContentFiles.has(normalized) || isLikelyBinary(path.join(root, file))) {
+  const absolutePath = path.join(root, file);
+  if (!fs.existsSync(absolutePath)) {
     continue;
   }
 
-  const content = fs.readFileSync(path.join(root, file), "utf8");
+  if (allowlistedContentFiles.has(normalized) || isLikelyBinary(absolutePath)) {
+    continue;
+  }
+
+  const content = fs.readFileSync(absolutePath, "utf8");
   for (const secretPattern of secretPatterns) {
     if (secretPattern.pattern.test(content)) {
       findings.push(`${file}: ${secretPattern.name}`);
