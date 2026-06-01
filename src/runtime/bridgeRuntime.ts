@@ -265,6 +265,7 @@ export class BridgeRuntime {
         const data = document.data();
         const record = typeof data === "object" && data !== null ? (data as Record<string, unknown>) : {};
         const aiId = typeof record.ai_id === "string" && record.ai_id.length > 0 ? record.ai_id : group.groupId;
+        const kinName = this.resolveKinName(aiId);
         const message = mapKindroidMessage(document, aiId, { decryptionKey });
         const notification: KindroidChatNotification = {
           type: "kindroid.group_chat.changed",
@@ -287,6 +288,7 @@ export class BridgeRuntime {
             type: "kindroid.chat.message",
             id: message.id,
             kinId: message.kinId,
+            kinName,
             groupId: group.groupId,
             groupName: group.name,
             timestamp: message.timestamp,
@@ -302,7 +304,7 @@ export class BridgeRuntime {
         this.voice.enqueue({
           id: message.id,
           kinId: aiId,
-          kinName: aiId,
+          kinName,
           groupId: group.groupId,
           groupName: group.name,
           sender: message.sender,
@@ -315,6 +317,10 @@ export class BridgeRuntime {
         await this.hermes.handleChatChanged(notification);
       }
     });
+  }
+
+  private resolveKinName(aiId: string): string {
+    return this.kinSubscriptionSupervisor.statuses().find((status) => status.kin.aiId === aiId)?.kin.name || aiId;
   }
 
   private resolveDecryptionKey(): string {

@@ -104,15 +104,10 @@ label {
 }
 
 .brand-mark {
-  display: grid;
-  place-items: center;
   width: 42px;
   height: 42px;
   border-radius: 8px;
-  background: #243b53;
-  color: #fff;
-  font-size: 22px;
-  font-weight: 700;
+  display: block;
 }
 
 h1,
@@ -452,10 +447,28 @@ h2 {
 .timeline-entry {
   display: grid;
   gap: 4px;
+  min-height: 0;
   border: 1px solid #d7e0e8;
   border-radius: 6px;
   background: #fff;
+  color: #182635;
   padding: 9px 10px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.timeline-entry:hover {
+  border-color: #9db4c6;
+  filter: none;
+}
+
+.timeline-entry.active {
+  border-color: #2d5a7b;
+  box-shadow: inset 3px 0 0 #2d5a7b;
+}
+
+.timeline-entry.timeline-current {
+  background: #f2f7fb;
 }
 
 .timeline-entry p {
@@ -468,6 +481,10 @@ h2 {
 .timeline-date {
   color: #63788c;
   font-size: 11px;
+}
+
+.timeline-change {
+  overflow-wrap: anywhere;
 }
 
 .message {

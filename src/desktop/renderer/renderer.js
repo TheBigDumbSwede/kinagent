@@ -9,6 +9,7 @@ const state = {
   kinsExpanded: false,
   groupsExpanded: false,
   selectedKinId: null,
+  selectedGroupId: null,
   selectedKinCapture: null,
   selectedKinVoice: null,
   captureLoading: false,
@@ -16,10 +17,13 @@ const state = {
   voiceLoading: false,
   voiceError: null,
   voiceSaving: false,
-  activeTab: "monitor"
+  activeTab: "monitor",
+  selectedHistoryHash: null,
+  monitorMessages: []
 };
 
 const captureRequestTimeoutMs = 12_000;
+const maxMonitorMessages = 500;
 
 const elements = {
   sessionLine: document.querySelector("#sessionLine"),
@@ -97,7 +101,7 @@ elements.refreshGroupsButton.addEventListener("click", () =>
   })
 );
 elements.clearButton.addEventListener("click", () => {
-  elements.messageList.replaceChildren();
+  clearVisibleMonitorMessages();
 });
 elements.detailTabs.addEventListener("click", (event) => {
   if (!(event.target instanceof Element)) {
@@ -109,7 +113,11 @@ elements.detailTabs.addEventListener("click", (event) => {
     return;
   }
 
-  state.activeTab = button.dataset.tab;
+  const nextTab = button.dataset.tab;
+  if (state.activeTab !== nextTab) {
+    state.selectedHistoryHash = null;
+  }
+  state.activeTab = nextTab;
   if (state.activeTab === "voice" && state.selectedKinId && !state.selectedKinVoice && !state.voiceLoading) {
     void loadKinVoice(state.selectedKinId);
   }
@@ -202,6 +210,7 @@ window.kinagent.onEvent((message) => {
   if (message.channel === "groups-updated") {
     state.groupSubscriptions = message.payload || [];
     state.groups = state.groupSubscriptions.map((subscription) => subscription.group);
+    clearMissingSelectedGroup();
     updateMonitorRunning();
     renderGroupSubscriptions();
     renderMonitorState();
@@ -242,6 +251,7 @@ function renderStatus(status) {
   elements.expiryStatus.textContent = status.session.expirationIso || "Unknown";
 
   clearMissingSelectedKin();
+  clearMissingSelectedGroup();
   renderKinSubscriptions();
   renderGroupSubscriptions();
   renderMonitorState();
@@ -290,7 +300,7 @@ function renderKinSubscriptions() {
   for (const subscription of state.subscriptions) {
     const kin = subscription.kin || {};
     const row = document.createElement("div");
-    row.className = `kin-row selectable${state.selectedKinId === kin.aiId ? " selected" : ""}`;
+    row.className = `kin-row selectable${state.selectedKinId === kin.aiId && !state.selectedGroupId ? " selected" : ""}`;
     row.tabIndex = 0;
     row.setAttribute("role", "button");
     row.setAttribute("aria-label", `Manage ${kin.name || kin.aiId || "Kin"}`);
@@ -373,18 +383,35 @@ function renderGroupSubscriptions() {
 
   for (const subscription of state.groupSubscriptions) {
     const group = subscription.group || {};
-    const row = document.createElement("label");
-    row.className = "kin-row";
+    const row = document.createElement("div");
+    row.className = `kin-row selectable${state.selectedGroupId === group.groupId ? " selected" : ""}`;
+    row.tabIndex = 0;
+    row.setAttribute("role", "button");
+    row.setAttribute("aria-label", `Manage ${group.name || group.groupId || "Group"}`);
+    row.addEventListener("click", () => {
+      selectGroup(group.groupId);
+    });
+    row.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        selectGroup(group.groupId);
+      }
+    });
 
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";
     checkbox.checked = Boolean(subscription.enabled);
-    checkbox.addEventListener("change", () =>
+    checkbox.setAttribute("aria-label", `Monitor ${group.name || group.groupId || "Group"}`);
+    checkbox.addEventListener("click", (event) => {
+      event.stopPropagation();
+    });
+    checkbox.addEventListener("change", (event) => {
+      event.stopPropagation();
       runAction(checkbox.checked ? "Enabling group" : "Disabling group", async () => {
         await window.kinagent.setGroupEnabled({ groupId: group.groupId, enabled: checkbox.checked });
         await refreshStatus();
-      })
-    );
+      });
+    });
 
     const text = document.createElement("span");
     text.className = "kin-name";
@@ -400,6 +427,32 @@ function renderGroupSubscriptions() {
 }
 
 function renderMonitorState() {
+  const selectedGroup = currentSelectedGroup();
+  if (selectedGroup) {
+    const subscription = state.groupSubscriptions.find((item) => item.group?.groupId === selectedGroup.groupId);
+    const visibleCount = visibleMonitorMessages().length;
+    elements.monitorLine.textContent = [
+      subscription?.running
+        ? "Group subscription live"
+        : subscription?.enabled
+          ? "Group subscription queued"
+          : "Group off",
+      `${visibleCount} message${visibleCount === 1 ? "" : "s"} shown`
+    ].join(" · ");
+    return;
+  }
+
+  const selectedKin = state.activeTab === "monitor" ? currentSelectedKin() : null;
+  if (selectedKin) {
+    const subscription = state.subscriptions.find((item) => item.kin?.aiId === selectedKin.aiId);
+    const visibleCount = visibleMonitorMessages().length;
+    elements.monitorLine.textContent = [
+      subscription?.running ? "Kin subscription live" : subscription?.enabled ? "Kin subscription queued" : "Kin off",
+      `${visibleCount} message${visibleCount === 1 ? "" : "s"} shown`
+    ].join(" · ");
+    return;
+  }
+
   const runningCount = state.subscriptions.filter((subscription) => subscription.running).length;
   const runningGroupCount = state.groupSubscriptions.filter((subscription) => subscription.running).length;
   const totalRunning = runningCount + runningGroupCount;
@@ -412,13 +465,16 @@ async function selectKin(kinId) {
   }
 
   state.selectedKinId = kinId;
+  state.selectedGroupId = null;
   state.activeTab = state.activeTab === "monitor" ? "backstory" : state.activeTab;
+  state.selectedHistoryHash = null;
   state.captureLoading = true;
   state.captureError = null;
   state.selectedKinCapture = null;
   state.selectedKinVoice = null;
   state.voiceError = null;
   renderKinSubscriptions();
+  renderGroupSubscriptions();
   renderActivity();
   void loadKinVoice(kinId);
 
@@ -434,6 +490,27 @@ async function selectKin(kinId) {
     state.captureLoading = false;
     renderActivity();
   }
+}
+
+function selectGroup(groupId) {
+  if (!groupId) {
+    return;
+  }
+
+  state.selectedGroupId = groupId;
+  state.selectedKinId = null;
+  state.activeTab = "monitor";
+  state.selectedHistoryHash = null;
+  state.captureLoading = false;
+  state.captureError = null;
+  state.selectedKinCapture = null;
+  state.selectedKinVoice = null;
+  state.voiceError = null;
+  state.voiceLoading = false;
+  renderKinSubscriptions();
+  renderGroupSubscriptions();
+  renderMonitorState();
+  renderActivity();
 }
 
 async function loadKinVoice(kinId) {
@@ -457,6 +534,7 @@ function renderActivity() {
   const isVoice = activeTab === "voice";
 
   for (const button of elements.detailTabs.querySelectorAll("[data-tab]")) {
+    button.hidden = Boolean(state.selectedGroupId && button.dataset.tab !== "monitor");
     const selected = button.dataset.tab === activeTab;
     button.classList.toggle("active", selected);
     button.setAttribute("aria-selected", String(selected));
@@ -467,7 +545,15 @@ function renderActivity() {
   elements.clearButton.hidden = !isMonitor;
 
   if (isMonitor) {
-    elements.activityTitle.textContent = "Incoming Messages";
+    const selectedKin = currentSelectedKin();
+    const selectedGroup = currentSelectedGroup();
+    elements.activityTitle.textContent = selectedGroup
+      ? `${selectedGroup.name || "Group"} · Monitor`
+      : selectedKin
+        ? `${selectedKin.name || "Kin"} · Monitor`
+        : "Incoming Messages";
+    renderMessageList();
+    renderMonitorState();
     return;
   }
 
@@ -529,10 +615,14 @@ function renderDetailContent({ content, history, stats }) {
   elements.fieldContent.hidden = false;
   elements.voiceForm.hidden = true;
   elements.timeline.hidden = false;
-  elements.fieldContent.textContent = content;
+  const selectedEntry = history.find((entry) => entry.hash === state.selectedHistoryHash);
+  elements.fieldContent.textContent = selectedEntry ? formatSelectedHistoryContent(selectedEntry, content) : content;
 
   elements.detailStats.replaceChildren();
-  for (const stat of stats) {
+  const visibleStats = selectedEntry
+    ? [...stats, { label: "Viewing", value: `${formatTime(selectedEntry.committedAt)} (${selectedEntry.shortHash})` }]
+    : stats;
+  for (const stat of visibleStats) {
     const item = document.createElement("div");
     const label = document.createElement("span");
     label.textContent = stat.label;
@@ -551,21 +641,52 @@ function renderDetailContent({ content, history, stats }) {
     return;
   }
 
+  const currentItem = document.createElement("button");
+  currentItem.type = "button";
+  currentItem.className = `timeline-entry timeline-current${selectedEntry ? "" : " active"}`;
+  currentItem.addEventListener("click", () => {
+    state.selectedHistoryHash = null;
+    renderActivity();
+  });
+
+  const currentLabel = document.createElement("div");
+  currentLabel.className = "timeline-date";
+  currentLabel.textContent = "Current value";
+
+  const currentSummary = document.createElement("p");
+  currentSummary.textContent = summarizeTimelineContent(content);
+
+  const currentMeta = document.createElement("span");
+  currentMeta.textContent = "Latest captured file";
+
+  currentItem.append(currentLabel, currentSummary, currentMeta);
+  elements.timelineList.append(currentItem);
+
   for (const entry of history) {
-    const item = document.createElement("article");
-    item.className = "timeline-entry";
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = `timeline-entry${entry.hash === state.selectedHistoryHash ? " active" : ""}`;
+    item.title = entry.subject || "";
+    item.addEventListener("click", () => {
+      state.selectedHistoryHash = entry.hash;
+      renderActivity();
+    });
 
     const date = document.createElement("div");
     date.className = "timeline-date";
     date.textContent = formatTime(entry.committedAt);
 
-    const subject = document.createElement("p");
-    subject.textContent = entry.subject || "Captured state";
+    const summary = document.createElement("p");
+    summary.textContent = entry.summary || "Captured value";
+
+    const change = document.createElement("span");
+    change.className = "timeline-change";
+    change.textContent = formatTimelineChange(entry);
 
     const hash = document.createElement("span");
     hash.textContent = entry.shortHash;
 
-    item.append(date, subject, hash);
+    item.append(date, summary, change, hash);
     elements.timelineList.append(item);
   }
 }
@@ -717,12 +838,123 @@ function detailStats(selectedKin, field, capture) {
   ];
 }
 
+function formatSelectedHistoryContent(entry, currentContent) {
+  const lines = buildLineDiff(entry.content || "", currentContent || "");
+  const header = [
+    `Selected snapshot: ${formatTime(entry.committedAt)} (${entry.shortHash})`,
+    `Summary: ${entry.summary || "Captured value"}`,
+    "",
+    "Compared with the current value:",
+    "- only in selected snapshot",
+    "+ only in current value",
+    ""
+  ];
+
+  if (lines.length === 0) {
+    return [...header, "No text differences."].join("\n");
+  }
+
+  return [...header, ...lines.map((line) => `${line.prefix} ${line.text}`)].join("\n");
+}
+
+function buildLineDiff(selectedContent, currentContent) {
+  const selectedLines = splitDiffLines(selectedContent);
+  const currentLines = splitDiffLines(currentContent);
+  if (selectedContent === currentContent) {
+    return [];
+  }
+
+  if (selectedLines.length * currentLines.length > 250_000) {
+    return [
+      { prefix: "-", text: `${selectedLines.length} selected snapshot lines` },
+      { prefix: "+", text: `${currentLines.length} current lines` }
+    ];
+  }
+
+  const table = Array.from({ length: selectedLines.length + 1 }, () => new Array(currentLines.length + 1).fill(0));
+  for (let leftIndex = selectedLines.length - 1; leftIndex >= 0; leftIndex -= 1) {
+    for (let rightIndex = currentLines.length - 1; rightIndex >= 0; rightIndex -= 1) {
+      table[leftIndex][rightIndex] =
+        selectedLines[leftIndex] === currentLines[rightIndex]
+          ? table[leftIndex + 1][rightIndex + 1] + 1
+          : Math.max(table[leftIndex + 1][rightIndex], table[leftIndex][rightIndex + 1]);
+    }
+  }
+
+  const diff = [];
+  let leftIndex = 0;
+  let rightIndex = 0;
+  while (leftIndex < selectedLines.length && rightIndex < currentLines.length) {
+    if (selectedLines[leftIndex] === currentLines[rightIndex]) {
+      diff.push({ prefix: " ", text: selectedLines[leftIndex] });
+      leftIndex += 1;
+      rightIndex += 1;
+    } else if (table[leftIndex + 1][rightIndex] >= table[leftIndex][rightIndex + 1]) {
+      diff.push({ prefix: "-", text: selectedLines[leftIndex] });
+      leftIndex += 1;
+    } else {
+      diff.push({ prefix: "+", text: currentLines[rightIndex] });
+      rightIndex += 1;
+    }
+  }
+
+  while (leftIndex < selectedLines.length) {
+    diff.push({ prefix: "-", text: selectedLines[leftIndex] });
+    leftIndex += 1;
+  }
+
+  while (rightIndex < currentLines.length) {
+    diff.push({ prefix: "+", text: currentLines[rightIndex] });
+    rightIndex += 1;
+  }
+
+  return diff;
+}
+
+function splitDiffLines(value) {
+  const normalized = value.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  return normalized.length === 0 ? [] : normalized.split("\n");
+}
+
+function formatTimelineChange(entry) {
+  if (!entry.changed && entry.previousShortHash) {
+    return "No text change from previous snapshot";
+  }
+
+  const added = Number(entry.addedLines || 0);
+  const removed = Number(entry.removedLines || 0);
+  const characterDelta = Number(entry.characterDelta || 0);
+  const characterLabel = characterDelta === 0 ? "0 chars" : `${characterDelta > 0 ? "+" : ""}${characterDelta} chars`;
+
+  if (!entry.previousShortHash) {
+    return `Initial capture · +${added} lines · ${characterLabel}`;
+  }
+
+  return `Compared with ${entry.previousShortHash} · +${added} / -${removed} lines · ${characterLabel}`;
+}
+
+function summarizeTimelineContent(content) {
+  const firstLine = String(content || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim().replace(/^#+\s*/, ""))
+    .find(Boolean);
+  return truncate(firstLine || "No captured text", 100);
+}
+
+function truncate(value, maxLength) {
+  return value.length <= maxLength ? value : `${value.slice(0, maxLength - 1)}...`;
+}
+
 function currentCapturedField() {
   return state.selectedKinCapture?.fields?.find((field) => field.key === state.activeTab) || null;
 }
 
 function currentSelectedKin() {
   return state.kins.find((kin) => kin.aiId === state.selectedKinId) || null;
+}
+
+function currentSelectedGroup() {
+  return state.groups.find((group) => group.groupId === state.selectedGroupId) || null;
 }
 
 function clearMissingSelectedKin() {
@@ -739,6 +971,17 @@ function clearMissingSelectedKin() {
     state.captureLoading = false;
     state.voiceLoading = false;
     state.activeTab = "monitor";
+    state.selectedHistoryHash = null;
+  }
+}
+
+function clearMissingSelectedGroup() {
+  if (!state.selectedGroupId) {
+    return;
+  }
+
+  if (!state.groups.some((group) => group.groupId === state.selectedGroupId)) {
+    state.selectedGroupId = null;
   }
 }
 
@@ -814,7 +1057,7 @@ function audioPayloadToArrayBuffer(audio) {
 
 function handleMonitorLine(payload) {
   if (payload.type === "kindroid.chat.message") {
-    addMessage(payload);
+    addMonitorMessage(payload);
     return;
   }
 
@@ -828,7 +1071,40 @@ function handleMonitorLine(payload) {
   }
 }
 
-function addMessage(message) {
+function addMonitorMessage(message) {
+  state.monitorMessages.unshift(message);
+  state.monitorMessages = state.monitorMessages.slice(0, maxMonitorMessages);
+  renderMessageList();
+  renderMonitorState();
+}
+
+function renderMessageList() {
+  elements.messageList.replaceChildren();
+  for (const message of visibleMonitorMessages()) {
+    elements.messageList.append(createMessageElement(message));
+  }
+}
+
+function visibleMonitorMessages() {
+  if (state.selectedGroupId) {
+    return state.monitorMessages.filter((message) => message.groupId === state.selectedGroupId);
+  }
+
+  if (state.selectedKinId && state.activeTab === "monitor") {
+    return state.monitorMessages.filter((message) => message.kinId === state.selectedKinId);
+  }
+
+  return state.monitorMessages;
+}
+
+function clearVisibleMonitorMessages() {
+  const visible = new Set(visibleMonitorMessages());
+  state.monitorMessages = state.monitorMessages.filter((message) => !visible.has(message));
+  renderMessageList();
+  renderMonitorState();
+}
+
+function createMessageElement(message) {
   const item = document.createElement("article");
   item.className = `message ${message.sender || ""}`;
 
@@ -848,7 +1124,7 @@ function addMessage(message) {
   text.textContent = message.text || "";
 
   item.append(meta, text);
-  elements.messageList.prepend(item);
+  return item;
 }
 
 async function runAction(label, action) {

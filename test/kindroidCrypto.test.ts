@@ -21,6 +21,16 @@ describe("decryptKindroidValue", () => {
     });
   });
 
+  it("decrypts encrypted empty values to empty strings", () => {
+    const ciphertext = `!enc:${CryptoJS.AES.encrypt("", "firebase-uid").toString()}`;
+
+    expect(decryptKindroidValue(ciphertext, "firebase-uid")).toEqual({
+      encrypted: true,
+      decrypted: true,
+      value: ""
+    });
+  });
+
   it("leaves encrypted values intact when the passphrase does not decrypt to UTF-8 plaintext", () => {
     const ciphertext = `!enc:${CryptoJS.AES.encrypt("private message", "firebase-uid").toString()}`;
     const result = decryptKindroidValue(ciphertext, "wrong-uid");

@@ -21,11 +21,12 @@ export function decryptKindroidValue(value: string, key: string): KindroidDecryp
   try {
     const bytes = CryptoJS.AES.decrypt(value.slice(encryptedPrefix.length), key);
     const plaintext = bytes.toString(CryptoJS.enc.Utf8);
+    const decrypted = bytes.sigBytes >= 0 && (plaintext.length > 0 || bytes.sigBytes === 0);
 
     return {
       encrypted: true,
-      decrypted: plaintext.length > 0,
-      value: plaintext.length > 0 ? plaintext : value
+      decrypted,
+      value: decrypted ? plaintext : value
     };
   } catch (error) {
     return {

@@ -25,6 +25,13 @@ export interface CaptureHistoryEntry {
   shortHash: string;
   committedAt: string;
   subject: string;
+  content: string;
+  summary: string;
+  addedLines: number;
+  removedLines: number;
+  characterDelta: number;
+  changed: boolean;
+  previousShortHash?: string;
 }
 
 export interface CapturedKinFieldView {
@@ -58,6 +65,8 @@ interface CapturedJournalEntry {
 interface CapturedField {
   value?: unknown;
 }
+
+type RawCaptureHistoryEntry = Pick<CaptureHistoryEntry, "hash" | "shortHash" | "committedAt" | "subject">;
 
 export async function readCapturedKin(kinId: string, outputDir = defaultCaptureOutputDir): Promise<CapturedKinView> {
   const captureRoot = path.resolve(process.cwd(), outputDir);
@@ -145,7 +154,7 @@ async function readFieldView(
       available: true,
       kind: "markdown",
       content,
-      history: await fileHistory(captureRoot, workspaceRoot, markdownPath)
+      history: await fileHistory(captureRoot, workspaceRoot, markdownPath, "markdown")
     };
   }
 
@@ -174,7 +183,7 @@ async function readJsonView(
     available: true,
     kind: "json",
     content: JSON.stringify(value, null, 2),
-    history: await fileHistory(captureRoot, workspaceRoot, filePath)
+    history: await fileHistory(captureRoot, workspaceRoot, filePath, "json")
   };
 }
 
@@ -199,7 +208,7 @@ async function readJournalView(
     available: true,
     kind: "journal",
     content,
-    history: await fileHistory(captureRoot, workspaceRoot, filePath)
+    history: await fileHistory(captureRoot, workspaceRoot, filePath, "journal")
   };
 }
 
@@ -220,7 +229,8 @@ function formatJournalEntry(entry: CapturedJournalEntry): string {
 async function fileHistory(
   captureRoot: string,
   workspaceRoot: string,
-  filePath: string
+  filePath: string,
+  kind: CapturedKinFieldView["kind"]
 ): Promise<CaptureHistoryEntry[]> {
   const relativePath = toGitPath(path.relative(captureRoot, filePath));
   const workspaceRelativePath = toGitPath(path.relative(workspaceRoot, filePath));
@@ -231,30 +241,70 @@ async function fileHistory(
       ["log", "--follow", "--pretty=format:%H%x09%h%x09%cI%x09%s", "--", relativePath],
       { cwd: captureRoot, maxBuffer: 1024 * 1024, timeout: 5_000, windowsHide: true }
     );
-    return result.stdout
+    const entries = result.stdout
       .split(/\r?\n/)
       .filter(Boolean)
       .map(parseHistoryLine)
-      .filter((entry): entry is CaptureHistoryEntry => Boolean(entry));
+      .filter((entry): entry is RawCaptureHistoryEntry => Boolean(entry));
+    return enrichHistoryEntries(captureRoot, relativePath, entries, kind);
   } catch {
     try {
+      const workspaceGitRoot = path.join(captureRoot, "workspace");
       const result = await execFileAsync(
         "git",
         ["log", "--follow", "--pretty=format:%H%x09%h%x09%cI%x09%s", "--", workspaceRelativePath],
-        { cwd: path.join(captureRoot, "workspace"), maxBuffer: 1024 * 1024, timeout: 5_000, windowsHide: true }
+        { cwd: workspaceGitRoot, maxBuffer: 1024 * 1024, timeout: 5_000, windowsHide: true }
       );
-      return result.stdout
+      const entries = result.stdout
         .split(/\r?\n/)
         .filter(Boolean)
         .map(parseHistoryLine)
-        .filter((entry): entry is CaptureHistoryEntry => Boolean(entry));
+        .filter((entry): entry is RawCaptureHistoryEntry => Boolean(entry));
+      return enrichHistoryEntries(workspaceGitRoot, workspaceRelativePath, entries, kind);
     } catch {
       return [];
     }
   }
 }
 
-function parseHistoryLine(line: string): CaptureHistoryEntry | null {
+async function enrichHistoryEntries(
+  cwd: string,
+  gitPath: string,
+  entries: RawCaptureHistoryEntry[],
+  kind: CapturedKinFieldView["kind"]
+): Promise<CaptureHistoryEntry[]> {
+  const contents = await Promise.all(entries.map((entry) => readFileAtCommit(cwd, entry.hash, gitPath)));
+
+  return entries.map((entry, index) => {
+    const content = contents[index] ?? "";
+    const previousContent = contents[index + 1] ?? "";
+    const stats = lineDiffStats(previousContent, content);
+
+    return {
+      ...entry,
+      content,
+      summary: summarizeHistoryContent(content, kind),
+      ...stats,
+      previousShortHash: entries[index + 1]?.shortHash
+    };
+  });
+}
+
+async function readFileAtCommit(cwd: string, hash: string, gitPath: string): Promise<string> {
+  try {
+    const result = await execFileAsync("git", ["show", `${hash}:${gitPath}`], {
+      cwd,
+      maxBuffer: 10 * 1024 * 1024,
+      timeout: 5_000,
+      windowsHide: true
+    });
+    return result.stdout;
+  } catch {
+    return "";
+  }
+}
+
+function parseHistoryLine(line: string): RawCaptureHistoryEntry | null {
   const [hash, shortHash, committedAt, ...subjectParts] = line.split("\t");
   if (!hash || !shortHash || !committedAt) {
     return null;
@@ -266,6 +316,103 @@ function parseHistoryLine(line: string): CaptureHistoryEntry | null {
     committedAt,
     subject: subjectParts.join("\t")
   };
+}
+
+function summarizeHistoryContent(content: string, kind: CapturedKinFieldView["kind"]): string {
+  if (!content.trim()) {
+    return "Empty captured value";
+  }
+
+  if (kind === "json") {
+    try {
+      const value = JSON.parse(content) as unknown;
+      if (Array.isArray(value)) {
+        return `${value.length} captured item${value.length === 1 ? "" : "s"}`;
+      }
+      if (value && typeof value === "object") {
+        const keys = Object.keys(value);
+        return `${keys.length} captured field${keys.length === 1 ? "" : "s"}`;
+      }
+    } catch {
+      // Fall through to text summary.
+    }
+  }
+
+  if (kind === "journal") {
+    try {
+      const entries = JSON.parse(content) as unknown;
+      if (Array.isArray(entries)) {
+        return `${entries.length} journal entr${entries.length === 1 ? "y" : "ies"}`;
+      }
+    } catch {
+      // Fall through to text summary.
+    }
+  }
+
+  const firstLine = content
+    .split(/\r?\n/)
+    .map((line) => line.trim().replace(/^#+\s*/, ""))
+    .find(Boolean);
+
+  return truncate(firstLine || "Captured value", 120);
+}
+
+function lineDiffStats(previousContent: string, currentContent: string) {
+  const previousLines = splitDiffLines(previousContent);
+  const currentLines = splitDiffLines(currentContent);
+  const commonLineCount = lcsLength(previousLines, currentLines);
+
+  return {
+    addedLines: Math.max(0, currentLines.length - commonLineCount),
+    removedLines: Math.max(0, previousLines.length - commonLineCount),
+    characterDelta: currentContent.length - previousContent.length,
+    changed: previousContent !== currentContent
+  };
+}
+
+function splitDiffLines(value: string): string[] {
+  const normalized = value.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  return normalized.length === 0 ? [] : normalized.split("\n");
+}
+
+function lcsLength(left: string[], right: string[]): number {
+  if (left.length === 0 || right.length === 0) {
+    return 0;
+  }
+
+  if (left.length * right.length > 250_000) {
+    const rightCounts = new Map<string, number>();
+    for (const line of right) {
+      rightCounts.set(line, (rightCounts.get(line) ?? 0) + 1);
+    }
+
+    let overlap = 0;
+    for (const line of left) {
+      const count = rightCounts.get(line) ?? 0;
+      if (count > 0) {
+        overlap += 1;
+        rightCounts.set(line, count - 1);
+      }
+    }
+    return overlap;
+  }
+
+  let previous = new Array<number>(right.length + 1).fill(0);
+  let current = new Array<number>(right.length + 1).fill(0);
+
+  for (const leftLine of left) {
+    for (let index = 0; index < right.length; index += 1) {
+      current[index + 1] =
+        leftLine === right[index] ? previous[index] + 1 : Math.max(previous[index + 1], current[index]);
+    }
+    [previous, current] = [current, previous.fill(0)];
+  }
+
+  return previous[right.length];
+}
+
+function truncate(value: string, maxLength: number): string {
+  return value.length <= maxLength ? value : `${value.slice(0, maxLength - 1)}...`;
 }
 
 function emptyFieldViews(): CapturedKinFieldView[] {
