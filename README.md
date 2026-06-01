@@ -1,6 +1,6 @@
 # kinagent
 
-`kinagent` is a headless Node.js/TypeScript bridge prototype for watching Kindroid chat activity and, later, forwarding it into Hermes Agent. It can also send a single message back to a Kin through Kindroid's observed `send-message` endpoint.
+`kinagent` is a headless Node.js/TypeScript bridge prototype for watching Kindroid chat activity and forwarding it into Hermes Agent. It can also send a single message back to a Kin through Kindroid's observed `send-message` endpoint.
 
 This is intentionally a small service foundation. It does not depend on Cadence; the optional desktop control panel is an Electron wrapper around the same Node internals.
 
@@ -22,18 +22,19 @@ Working in this first milestone:
 - Live plaintext monitor for new incoming Firestore chat messages.
 - Kindroid outbound `POST https://api.kindroid.ai/v1/send-message` client.
 - In-memory outbound dedupe scaffolding.
-- Hermes adapter interface with a logging implementation.
+- Hermes chat adapter for the local Cadence Hermes gateway, including a narrow `current_scene` action executor.
 
 Not complete yet:
 
 - Installer/signing/start-with-Windows packaging.
 - Persistent SQLite-backed dedupe storage.
-- Actual Hermes HTTP/WebSocket integration.
-- Forwarding decrypted Firestore chat content from the listener into Hermes. The listener still emits notification events only until the Hermes content contract is nailed down.
+- Broader Hermes tool/action coverage beyond the current-scene proof of concept.
 
 The listener command uses Firestore's gRPC Listen API, not timer polling. It emits lightweight `kindroid.chat.changed` notifications; `probe-chat --decrypt` can verify readable message recovery separately, and `monitor-live` can print new decrypted messages as they arrive.
 
 ## Architecture
+
+The background runtime is the source of truth for subscriptions and side effects. The desktop app may manage, display, and manually toggle that runtime, but it should not introduce a separate listener path that bypasses Hermes, session warming, dedupe, or Kindroid mutation adapters.
 
 ```text
 Kindroid browser login
@@ -41,9 +42,10 @@ Kindroid browser login
   -> ./data/browser-session/storage-state.json
   -> Firebase auth extraction
   -> Firestore listener: Users/{uid}/AIs/{ai_id}/ChatMessages
-  -> chat change notification
-  -> TODO: decrypt and forward readable Firestore chat content
+  -> decrypted chat event
   -> HermesAdapter
+  -> optional current-scene action
+  -> KindroidClient POST /v1/update-info or /v1/groupchats-update
 
 Outbound:
 Hermes or CLI
@@ -73,6 +75,8 @@ Kindroid browser session data, cookies, Firebase ID tokens, refresh tokens, and 
 This prototype depends on observed Kindroid web behavior:
 
 - `POST https://api.kindroid.ai/v1/send-message`
+- `POST https://api.kindroid.ai/v1/update-info` for `current_scene`
+- `POST https://api.kindroid.ai/v1/groupchats-update` for group `current_scene`
 - Firebase project `kindroid-ai`
 - Firestore path `Users/{uid}/AIs/{ai_id}/ChatMessages`
 - `!enc:` chat text decrypts with CryptoJS AES using the Firebase UID as the observed passphrase
@@ -203,6 +207,15 @@ Run the headless background daemon. It uses the same dynamic Kin and group disco
 npm run daemon
 ```
 
+Forward decrypted chat events to a local Cadence Hermes gateway and allow Hermes to request `current_scene` updates:
+
+```powershell
+$env:HERMES_ENABLED = "true"
+$env:HERMES_BASE_URL = "http://127.0.0.1:8642/v1"
+$env:HERMES_API_KEY = "<local Hermes API key>"
+npm run daemon
+```
+
 Use a non-default config file:
 
 ```powershell
@@ -261,21 +274,26 @@ kindroid:
 
 bridge:
   dedupeWindowSeconds: 180
+  logPath: "./data/kinagent.log"
   logLevel: "info"
   sessionDir: "./data/browser-session"
   sqlitePath: "./data/bridge.sqlite"
 
 hermes:
   enabled: false
-  baseUrl: "http://localhost:8000"
+  baseUrl: "http://127.0.0.1:8642/v1"
+  apiKey: ""
   agentId: "kindroid-bridge"
+  currentSceneUpdates:
+    enabled: true
+    maxLength: 160
 ```
 
 Environment variables can override the main scalar settings; see `.env.example`.
 
 ## Next Milestones
 
-1. Decide the Hermes content contract and forward decrypted Firestore messages from the listener.
+1. Expand Hermes action coverage beyond `current_scene`.
 2. Expand live integration coverage around saved session refresh and Firestore listen behavior.
-3. Implement the real Hermes adapter.
+3. Add a native Hermes tool callback path if the local gateway exposes one.
 4. Add installer signing and start-with-Windows support.

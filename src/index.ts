@@ -6,13 +6,10 @@ import { runKindroidLogin } from "./auth/playwrightLogin.js";
 import { KindroidClient } from "./kindroid/kindroidClient.js";
 import { KindroidApiClient } from "./kindroid/client/index.js";
 import { KindroidChatListener } from "./firestore/chatListener.js";
-import { KindroidGroupChatListener } from "./firestore/groupChatListener.js";
 import { KindroidLiveMonitor } from "./firestore/liveMonitor.js";
 import { mapKindroidMessage } from "./firestore/messageMapper.js";
 import { createHermesAdapter } from "./hermes/hermesAdapter.js";
-import { KindroidSessionKeepAlive } from "./runtime/kindroidSessionKeepAlive.js";
-import { GroupSubscriptionSupervisor } from "./runtime/groupSubscriptionSupervisor.js";
-import { KinSubscriptionSupervisor } from "./runtime/kinSubscriptionSupervisor.js";
+import { BridgeRuntime } from "./runtime/bridgeRuntime.js";
 import { createDedupeStore } from "./state/sqliteStore.js";
 import { newRequestId } from "./util/ids.js";
 import { createLogger, redactSecrets } from "./util/logger.js";
@@ -219,78 +216,9 @@ program
   .description("Run dynamic background bridge listeners for all discovered Kins and groups.")
   .action(async () => {
     const { config, logger } = loadRuntime();
-    const hermes = createHermesAdapter(config, logger);
-    const dedupeStore = await createDedupeStore(config.bridge.sqlitePath, config.bridge.dedupeWindowSeconds);
-    const listener = new KindroidChatListener(config, hermes, dedupeStore, logger);
-    const groupListener = new KindroidGroupChatListener(config, hermes, dedupeStore, logger);
-    const sessionKeepAlive = new KindroidSessionKeepAlive({
-      config,
-      logger,
-      onKeepAlive: (event) => {
-        if (event.ok) {
-          logger.info("Kindroid session keepalive completed.", {
-            warmed: event.warmed,
-            method: event.method,
-            uidPresent: event.uidPresent,
-            expirationIso: event.expirationIso
-          });
-          return;
-        }
-
-        logger.warn("Kindroid session keepalive failed.", { error: event.error });
-      }
-    });
-    const supervisor = new KinSubscriptionSupervisor({
-      config,
-      logger,
-      startKin: async (kin, options) => {
-        logger.info("Starting discovered Kin listener.", { name: kin.name, aiId: kin.aiId });
-        await listener.start({ kinId: kin.aiId, pageSize: options.pageSize, signal: options.signal });
-      },
-      onKinsUpdated: (statuses) => {
-        logger.info("Kin subscriptions reconciled.", {
-          total: statuses.length,
-          running: statuses.filter((status) => status.running).length,
-          disabled: statuses.filter((status) => !status.enabled).length
-        });
-      },
-      onRefreshError: (error) => {
-        logger.warn("Kin subscription refresh failed.", { error });
-      },
-      onMonitorError: (kin, error) => {
-        logger.error("Kin listener failed.", { name: kin.name, aiId: kin.aiId, error });
-      }
-    });
-    const groupSupervisor = new GroupSubscriptionSupervisor({
-      config,
-      logger,
-      startGroup: async (group, options) => {
-        logger.info("Starting discovered group chat listener.", { name: group.name, groupId: group.groupId });
-        await groupListener.start({ groupId: group.groupId, pageSize: options.pageSize, signal: options.signal });
-      },
-      onGroupsUpdated: (statuses) => {
-        logger.info("Group subscriptions reconciled.", {
-          total: statuses.length,
-          running: statuses.filter((status) => status.running).length,
-          disabled: statuses.filter((status) => !status.enabled).length
-        });
-      },
-      onRefreshError: (error) => {
-        logger.warn("Group subscription refresh failed.", { error });
-      },
-      onMonitorError: (group, error) => {
-        logger.error("Group chat listener failed.", { name: group.name, groupId: group.groupId, error });
-      }
-    });
-
-    sessionKeepAlive.start();
-    supervisor.start();
-    groupSupervisor.start();
-    await waitForShutdown(() => {
-      supervisor.stop();
-      groupSupervisor.stop();
-      sessionKeepAlive.stop();
-    });
+    const runtime = await BridgeRuntime.create({ config, logger });
+    runtime.start();
+    await waitForShutdown(() => runtime.stop());
   });
 
 program.parseAsync(process.argv).catch((error: unknown) => {
@@ -302,7 +230,7 @@ program.parseAsync(process.argv).catch((error: unknown) => {
 function loadRuntime() {
   const globalOptions = program.opts<{ config?: string }>();
   const config = loadConfig({ configPath: globalOptions.config });
-  const logger = createLogger(config.bridge.logLevel);
+  const logger = createLogger(config.bridge.logLevel, { logPath: config.bridge.logPath });
   return { config, logger };
 }
 

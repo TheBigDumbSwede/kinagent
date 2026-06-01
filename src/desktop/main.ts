@@ -3,91 +3,35 @@ import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, Menu, nativeImage, shell, Tray, ipcMain } from "electron";
 import type { Event as ElectronEvent } from "electron";
 import { chromium, type Browser, type BrowserContext } from "playwright";
-import { extractFirebaseAppCheckState, loadBrowserSession, summarizeSessionAuth } from "../auth/firebaseSession.js";
 import { ensureSessionDir, storageStatePath } from "../auth/tokenStore.js";
 import { loadConfig } from "../config/loadConfig.js";
-import { KindroidLiveMonitor } from "../firestore/liveMonitor.js";
-import { mapKindroidMessage } from "../firestore/messageMapper.js";
-import { KindroidApiClient, type KindroidGroup, type KindroidKin } from "../kindroid/client/index.js";
-import { GroupSubscriptionSupervisor } from "../runtime/groupSubscriptionSupervisor.js";
-import { KindroidSessionKeepAlive } from "../runtime/kindroidSessionKeepAlive.js";
-import { KinSubscriptionSupervisor } from "../runtime/kinSubscriptionSupervisor.js";
+import { BridgeRuntime, type BridgeRuntimeEvent } from "../runtime/bridgeRuntime.js";
 import { createLogger } from "../util/logger.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const config = loadConfig();
-const logger = createLogger(config.bridge.logLevel);
+const logger = createLogger(config.bridge.logLevel, { logPath: config.bridge.logPath });
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let isQuitting = false;
 let loginSession: { browser: Browser; context: BrowserContext } | null = null;
-
-const sessionKeepAlive = new KindroidSessionKeepAlive({
-  config,
-  logger,
-  shouldSkipWarm: () => Boolean(loginSession),
-  onKeepAlive: (event) => {
-    sendRendererEvent("session-keepalive", event);
-  }
-});
-const kinSubscriptionSupervisor = new KinSubscriptionSupervisor({
-  config,
-  logger,
-  startKin: async (kin, options) => startKinMonitor(kin, options),
-  onKinsUpdated: (statuses) => {
-    sendRendererEvent("kins-updated", statuses);
-  },
-  onRefreshError: (error) => {
-    sendRendererEvent("kins-refresh-error", error);
-  },
-  onMonitorStarted: (kin) => {
-    sendRendererEvent("monitor-started", { kinId: kin.aiId, kinName: kin.name });
-  },
-  onMonitorStopped: (kinId, reason) => {
-    sendRendererEvent("monitor-stopped", { kinId, reason });
-  },
-  onMonitorExited: (kinId, aborted) => {
-    sendRendererEvent("monitor-exit", { kinId, aborted });
-  },
-  onMonitorError: (kin, error) => {
-    sendRendererEvent("monitor-error", { kinId: kin.aiId, kinName: kin.name, error });
-  }
-});
-const groupSubscriptionSupervisor = new GroupSubscriptionSupervisor({
-  config,
-  logger,
-  startGroup: async (group, options) => startGroupMonitor(group, options),
-  onGroupsUpdated: (statuses) => {
-    sendRendererEvent("groups-updated", statuses);
-  },
-  onRefreshError: (error) => {
-    sendRendererEvent("groups-refresh-error", error);
-  },
-  onMonitorStarted: (group) => {
-    sendRendererEvent("group-monitor-started", { groupId: group.groupId, groupName: group.name });
-  },
-  onMonitorStopped: (groupId, reason) => {
-    sendRendererEvent("group-monitor-stopped", { groupId, reason });
-  },
-  onMonitorExited: (groupId, aborted) => {
-    sendRendererEvent("group-monitor-exit", { groupId, aborted });
-  },
-  onMonitorError: (group, error) => {
-    sendRendererEvent("group-monitor-error", { groupId: group.groupId, groupName: group.name, error });
-  }
-});
+let runtime: BridgeRuntime | null = null;
 
 app.setName("Kinagent");
 
-void app.whenReady().then(() => {
+void app.whenReady().then(async () => {
+  runtime = await BridgeRuntime.create({
+    config,
+    logger,
+    shouldSkipSessionWarm: () => Boolean(loginSession),
+    onEvent: (event) => sendRuntimeEvent(event)
+  });
   createMainWindow();
   createTray();
   registerIpcHandlers();
-  sessionKeepAlive.start();
-  kinSubscriptionSupervisor.start();
-  groupSubscriptionSupervisor.start();
+  runtime.start();
 
   app.on("activate", () => {
     showMainWindow();
@@ -96,9 +40,7 @@ void app.whenReady().then(() => {
 
 app.on("before-quit", () => {
   isQuitting = true;
-  kinSubscriptionSupervisor.stop();
-  groupSubscriptionSupervisor.stop();
-  sessionKeepAlive.stop();
+  runtime?.stop();
   void closeLoginSession();
 });
 
@@ -156,8 +98,8 @@ function createTray(): void {
     Menu.buildFromTemplate([
       { label: "Show Kinagent", click: showMainWindow },
       { type: "separator" },
-      { label: "Refresh Kins", click: () => void kinSubscriptionSupervisor.refresh() },
-      { label: "Refresh Groups", click: () => void groupSubscriptionSupervisor.refresh() },
+      { label: "Refresh Kins", click: () => void requireRuntime().refreshKins() },
+      { label: "Refresh Groups", click: () => void requireRuntime().refreshGroups() },
       {
         label: "Quit",
         click: () => {
@@ -182,61 +124,28 @@ function registerIpcHandlers(): void {
   ipcMain.handle("monitor:start", async (_event, input: { kinId: string; pageSize?: number }) =>
     startMonitorProcess(input)
   );
-  ipcMain.handle("monitor:stop", async () => kinSubscriptionSupervisor.stopAll("manual"));
+  ipcMain.handle("monitor:stop", async () => requireRuntime().stopAllKins("manual"));
   ipcMain.handle("kins:set-enabled", async (_event, input: { kinId: string; enabled: boolean }) =>
     setKinSubscriptionEnabled(input)
   );
   ipcMain.handle("kins:refresh", async () => {
-    await kinSubscriptionSupervisor.refresh();
+    await requireRuntime().refreshKins();
     return { ok: true };
   });
   ipcMain.handle("groups:set-enabled", async (_event, input: { groupId: string; enabled: boolean }) =>
     setGroupSubscriptionEnabled(input)
   );
   ipcMain.handle("groups:refresh", async () => {
-    await groupSubscriptionSupervisor.refresh();
+    await requireRuntime().refreshGroups();
     return { ok: true };
   });
 }
 
 async function getDesktopStatus() {
-  const session = loadSessionSummary();
-  const appCheck = session.available
-    ? extractFirebaseAppCheckState(loadBrowserSession(config.bridge.sessionDir).storageState)
-    : null;
-
   return {
-    monitorRunning: kinSubscriptionSupervisor.runningCount() + groupSubscriptionSupervisor.runningCount() > 0,
-    loginOpen: Boolean(loginSession),
-    config: {
-      firebaseProjectId: config.kindroid.firebaseProjectId,
-      sessionDir: config.bridge.sessionDir,
-      configuredKins: config.kindroid.kins
-    },
-    session,
-    appCheckPresent: Boolean(appCheck?.token),
-    kins: kinSubscriptionSupervisor.statuses().map((subscription) => subscription.kin),
-    subscriptions: kinSubscriptionSupervisor.statuses(),
-    kinRefresh: kinSubscriptionSupervisor.refreshState(),
-    groups: groupSubscriptionSupervisor.statuses().map((subscription) => subscription.group),
-    groupSubscriptions: groupSubscriptionSupervisor.statuses(),
-    groupRefresh: groupSubscriptionSupervisor.refreshState()
+    ...requireRuntime().status(),
+    loginOpen: Boolean(loginSession)
   };
-}
-
-function loadSessionSummary() {
-  try {
-    const session = loadBrowserSession(config.bridge.sessionDir);
-    return {
-      available: true,
-      ...summarizeSessionAuth(session.storageState)
-    };
-  } catch (error) {
-    return {
-      available: false,
-      error: error instanceof Error ? error.message : String(error)
-    };
-  }
 }
 
 async function startLoginSession() {
@@ -263,8 +172,8 @@ async function saveLoginSession() {
   const statePath = storageStatePath(config.bridge.sessionDir);
   await loginSession.context.storageState({ path: statePath, indexedDB: true });
   await closeLoginSession();
-  await kinSubscriptionSupervisor.refresh();
-  await groupSubscriptionSupervisor.refresh();
+  await requireRuntime().refreshKins();
+  await requireRuntime().refreshGroups();
   sendRendererEvent("session-updated", await getDesktopStatus());
   return { ok: true, path: statePath };
 }
@@ -285,77 +194,18 @@ function startMonitorProcess(input: { kinId: string; pageSize?: number }) {
     throw new Error("Select a Kin before starting the monitor.");
   }
 
-  kinSubscriptionSupervisor.startKnownKin(input.kinId, input.pageSize);
+  requireRuntime().startKnownKin(input.kinId, input.pageSize);
   return { ok: true };
-}
-
-async function startKinMonitor(kin: KindroidKin, options: { pageSize: number; signal: AbortSignal }) {
-  const monitor = new KindroidLiveMonitor(config, logger);
-  await monitor.start({
-    kinId: kin.aiId,
-    pageSize: options.pageSize,
-    signal: options.signal,
-    onMessage: (message) => {
-      sendRendererEvent("monitor-line", { ...message, kinName: kin.name });
-    }
-  });
 }
 
 async function setKinSubscriptionEnabled(input: { kinId: string; enabled: boolean }) {
-  await kinSubscriptionSupervisor.setKinEnabled(input.kinId, input.enabled);
+  await requireRuntime().setKinEnabled(input.kinId, input.enabled);
   return { ok: true };
-}
-
-async function startGroupMonitor(group: KindroidGroup, options: { pageSize: number; signal: AbortSignal }) {
-  const client = new KindroidApiClient(config, logger);
-  const decryptionKey = resolveDecryptionKey();
-  await client.groupChats.listenMessages({
-    groupId: group.groupId,
-    pageSize: options.pageSize,
-    signal: options.signal,
-    onDocument: (document) => {
-      const data = document.data();
-      const record = typeof data === "object" && data !== null ? (data as Record<string, unknown>) : {};
-      const aiId = typeof record.ai_id === "string" && record.ai_id.length > 0 ? record.ai_id : group.groupId;
-      const message = mapKindroidMessage(document, aiId, { decryptionKey });
-      sendRendererEvent("monitor-line", {
-        type: "kindroid.chat.message",
-        id: message.id,
-        kinId: message.kinId,
-        groupId: group.groupId,
-        groupName: group.name,
-        timestamp: message.timestamp,
-        sender: message.sender,
-        role: message.role,
-        text: message.text,
-        textEncrypted: message.textEncrypted,
-        textDecrypted: message.textDecrypted,
-        textDecryptionError: message.textDecryptionError,
-        source: "firestore"
-      });
-    }
-  });
 }
 
 async function setGroupSubscriptionEnabled(input: { groupId: string; enabled: boolean }) {
-  await groupSubscriptionSupervisor.setGroupEnabled(input.groupId, input.enabled);
+  await requireRuntime().setGroupEnabled(input.groupId, input.enabled);
   return { ok: true };
-}
-
-function resolveDecryptionKey(): string {
-  if (config.kindroid.uid) {
-    return config.kindroid.uid;
-  }
-
-  const session = loadBrowserSession(config.bridge.sessionDir);
-  const uid = session.firebaseAuth?.uid;
-  if (!uid) {
-    throw new Error(
-      "Cannot decrypt live messages without a Firebase UID. Run npm run session-info to verify the saved session."
-    );
-  }
-
-  return uid;
 }
 
 function showMainWindow(): void {
@@ -369,6 +219,18 @@ function showMainWindow(): void {
 
 function sendRendererEvent(channel: string, payload: unknown): void {
   mainWindow?.webContents.send("app:event", { channel, payload });
+}
+
+function sendRuntimeEvent(event: BridgeRuntimeEvent): void {
+  sendRendererEvent(event.channel, event.payload);
+}
+
+function requireRuntime(): BridgeRuntime {
+  if (!runtime) {
+    throw new Error("Bridge runtime is not ready.");
+  }
+
+  return runtime;
 }
 
 function desktopIconPath(fileName: string): string {

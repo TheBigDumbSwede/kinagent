@@ -8,11 +8,16 @@ kindroid:
 
 bridge:
   dedupeWindowSeconds: 180
+  logPath: "./data/kinagent.log"
   logLevel: "info"
   sessionDir: "./data/browser-session"
   sqlitePath: "./data/bridge.sqlite"
 
 hermes:
   enabled: false
-  baseUrl: "http://localhost:8000"
+  baseUrl: "http://127.0.0.1:8642/v1"
+  apiKey: ""
   agentId: "kindroid-bridge"
+  currentSceneUpdates:
+    enabled: true
+    maxLength: 160

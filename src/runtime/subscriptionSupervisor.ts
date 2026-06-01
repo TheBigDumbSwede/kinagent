@@ -42,15 +42,17 @@ export class SubscriptionSupervisor<TResource> {
   private knownResources = new Map<string, TResource>();
   private refreshTimer: NodeJS.Timeout | null = null;
   private refreshInFlight = false;
+  private running = false;
   private lastRefresh: RefreshState = null;
 
   constructor(private readonly options: SubscriptionSupervisorOptions<TResource>) {}
 
   start(): void {
-    if (this.refreshTimer) {
+    if (this.running) {
       return;
     }
 
+    this.running = true;
     void this.refresh();
     this.refreshTimer = setInterval(() => {
       void this.refresh();
@@ -58,6 +60,7 @@ export class SubscriptionSupervisor<TResource> {
   }
 
   stop(): void {
+    this.running = false;
     if (this.refreshTimer) {
       clearInterval(this.refreshTimer);
       this.refreshTimer = null;
@@ -67,13 +70,17 @@ export class SubscriptionSupervisor<TResource> {
   }
 
   async refresh(): Promise<void> {
-    if (this.refreshInFlight) {
+    if (this.refreshInFlight || !this.running) {
       return;
     }
 
     this.refreshInFlight = true;
     try {
       const resources = await this.options.listResources();
+      if (!this.running) {
+        return;
+      }
+
       const nextKnownResources = new Map(resources.map((resource) => [this.options.getId(resource), resource]));
       const availableIds = new Set(nextKnownResources.keys());
 
@@ -173,6 +180,10 @@ export class SubscriptionSupervisor<TResource> {
   }
 
   private startResourceMonitor(resource: TResource, pageSize: number): void {
+    if (!this.running) {
+      return;
+    }
+
     const resourceId = this.options.getId(resource);
     if (this.activeMonitors.has(resourceId)) {
       return;

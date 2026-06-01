@@ -1,8 +1,11 @@
 import CryptoJS from "crypto-js";
 import { describe, expect, it } from "vitest";
+import type { AppConfig } from "../src/config/types.js";
 import type { FirestoreDocumentLike } from "../src/firestore/types.js";
 import { normalizeGroupDocument } from "../src/kindroid/client/groups.js";
 import { normalizeKinDocument } from "../src/kindroid/client/kins.js";
+import { KindroidClient } from "../src/kindroid/kindroidClient.js";
+import type { Logger } from "../src/util/logger.js";
 
 describe("Kindroid client normalizers", () => {
   it("uses Firestore AI fields for Kin identity", () => {
@@ -61,11 +64,67 @@ describe("Kindroid client normalizers", () => {
 
     expect(normalizeGroupDocument(document, { decryptionKey: "firebase-uid" })[0]?.name).toBe("Workshop");
   });
+
+  it("rejects current scene updates over Kindroid's 160 character limit before calling the endpoint", async () => {
+    const client = new KindroidClient(testConfig(), testLogger);
+
+    await expect(
+      client.updateCurrentScene({
+        aiId: "kin-1",
+        currentScene: "x".repeat(161)
+      })
+    ).rejects.toThrow("Current scene cannot exceed 160 characters.");
+  });
+
+  it("rejects group current scene updates over Kindroid's 160 character limit before calling the endpoint", async () => {
+    const client = new KindroidClient(testConfig(), testLogger);
+
+    await expect(
+      client.updateGroupCurrentScene({
+        groupId: "group-1",
+        currentScene: "x".repeat(161)
+      })
+    ).rejects.toThrow("Current scene cannot exceed 160 characters.");
+  });
 });
 
 function documentLike(id: string, data: Record<string, unknown>): FirestoreDocumentLike {
   return {
     id,
     data: () => data
+  };
+}
+
+const testLogger: Logger = {
+  debug: () => undefined,
+  info: () => undefined,
+  warn: () => undefined,
+  error: () => undefined
+};
+
+function testConfig(): AppConfig {
+  return {
+    kindroid: {
+      firebaseProjectId: "kindroid-ai",
+      uid: "",
+      kins: []
+    },
+    bridge: {
+      dedupeWindowSeconds: 180,
+      logPath: "kinagent.log",
+      logLevel: "info",
+      sessionDir: "session",
+      sqlitePath: "bridge.sqlite"
+    },
+    hermes: {
+      enabled: false,
+      baseUrl: "http://127.0.0.1:8642/v1",
+      apiKey: "",
+      agentId: "kindroid-bridge",
+      currentSceneUpdates: {
+        enabled: true,
+        maxLength: 160
+      }
+    }
   };
 }

@@ -1,9 +1,11 @@
 import type { AppConfig } from "../config/types.js";
+import { loadBrowserSession } from "../auth/firebaseSession.js";
 import type { HermesAdapter } from "../hermes/types.js";
 import { KindroidApiClient } from "../kindroid/client/index.js";
 import type { DedupeStore } from "../state/dedupeStore.js";
 import type { Logger } from "../util/logger.js";
 import type { FirestoreDocumentLike, KindroidGroupChatChangeNotification } from "./types.js";
+import { mapKindroidMessage } from "./messageMapper.js";
 
 export interface GroupChatListenerOptions {
   groupId: string;
@@ -22,6 +24,7 @@ export class KindroidGroupChatListener {
   async start(options: GroupChatListenerOptions): Promise<void> {
     const client = new KindroidApiClient(this.config, this.logger);
     const pageSize = options.pageSize ?? 50;
+    const decryptionKey = this.resolveDecryptionKey();
     this.logger.info("Preparing Firestore group chat listener.", {
       projectId: this.config.kindroid.firebaseProjectId,
       groupId: options.groupId,
@@ -34,28 +37,59 @@ export class KindroidGroupChatListener {
       pageSize,
       signal: options.signal,
       onDocument: async (document) => {
-        const notification = toGroupChatChangeNotification(document, options.groupId);
-        process.stdout.write(`${JSON.stringify(notification)}\n`);
+        const notification = toGroupChatChangeNotification(document, options.groupId, decryptionKey);
+        process.stdout.write(`${JSON.stringify(toSafeOutputNotification(notification))}\n`);
         await this.hermes.handleChatChanged(notification);
       }
     });
   }
+
+  private resolveDecryptionKey(): string {
+    if (this.config.kindroid.uid) {
+      return this.config.kindroid.uid;
+    }
+
+    const session = loadBrowserSession(this.config.bridge.sessionDir);
+    const uid = session.firebaseAuth?.uid;
+    if (!uid) {
+      throw new Error(
+        "Cannot decrypt live messages without a Firebase UID. Run npm run session-info to verify the saved session."
+      );
+    }
+
+    return uid;
+  }
+}
+
+function toSafeOutputNotification(notification: KindroidGroupChatChangeNotification) {
+  return {
+    ...notification,
+    text: undefined,
+    textPresent: Boolean(notification.text)
+  };
 }
 
 function toGroupChatChangeNotification(
   document: FirestoreDocumentLike,
-  groupId: string
+  groupId: string,
+  decryptionKey: string
 ): KindroidGroupChatChangeNotification {
   const data = document.data();
   const record = typeof data === "object" && data !== null ? (data as Record<string, unknown>) : {};
+  const aiId = stringValue(record.ai_id);
+  const message = mapKindroidMessage(document, aiId ?? groupId, { decryptionKey });
   return {
     type: "kindroid.group_chat.changed",
     groupId,
-    aiId: stringValue(record.ai_id),
+    aiId,
     documentId: document.id,
-    timestamp: normalizeTimestamp(record.timestamp ?? record._createTime ?? record._updateTime),
-    sender: stringValue(record.sender),
-    role: stringValue(record.role),
+    timestamp: message.timestamp ?? normalizeTimestamp(record.timestamp ?? record._createTime ?? record._updateTime),
+    text: message.text,
+    textEncrypted: message.textEncrypted,
+    textDecrypted: message.textDecrypted,
+    textDecryptionError: message.textDecryptionError,
+    sender: message.sender,
+    role: message.role,
     source: "firestore"
   };
 }

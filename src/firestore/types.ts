@@ -17,6 +17,10 @@ export interface KindroidChatChangeNotification {
   kinId: string;
   documentId: string;
   timestamp: string | null;
+  text?: string | null;
+  textEncrypted?: boolean;
+  textDecrypted?: boolean;
+  textDecryptionError?: string;
   sender: string | null;
   role: string | null;
   source: "firestore";
@@ -28,6 +32,10 @@ export interface KindroidGroupChatChangeNotification {
   aiId: string | null;
   documentId: string;
   timestamp: string | null;
+  text?: string | null;
+  textEncrypted?: boolean;
+  textDecrypted?: boolean;
+  textDecryptionError?: string;
   sender: string | null;
   role: string | null;
   source: "firestore";

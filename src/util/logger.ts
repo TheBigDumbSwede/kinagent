@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import type { LogLevel } from "../config/types.js";
 
 const levels: Record<LogLevel, number> = {
@@ -19,7 +21,11 @@ export interface Logger {
   error(message: string, meta?: unknown): void;
 }
 
-export function createLogger(level: LogLevel): Logger {
+export interface CreateLoggerOptions {
+  logPath?: string;
+}
+
+export function createLogger(level: LogLevel, options: CreateLoggerOptions = {}): Logger {
   const threshold = levels[level];
 
   function write(messageLevel: LogLevel, message: string, meta?: unknown): void {
@@ -30,6 +36,9 @@ export function createLogger(level: LogLevel): Logger {
     const line = format(messageLevel, message, meta);
     const stream = messageLevel === "error" || messageLevel === "warn" ? process.stderr : process.stdout;
     stream.write(`${line}\n`);
+    if (options.logPath) {
+      appendLogLine(options.logPath, line);
+    }
   }
 
   return {
@@ -38,6 +47,15 @@ export function createLogger(level: LogLevel): Logger {
     warn: (message, meta) => write("warn", message, meta),
     error: (message, meta) => write("error", message, meta)
   };
+}
+
+function appendLogLine(logPath: string, line: string): void {
+  try {
+    fs.mkdirSync(path.dirname(logPath), { recursive: true });
+    fs.appendFileSync(logPath, `${line}\n`, "utf8");
+  } catch {
+    // Logging must never break the bridge runtime.
+  }
 }
 
 function format(level: LogLevel, message: string, meta?: unknown): string {

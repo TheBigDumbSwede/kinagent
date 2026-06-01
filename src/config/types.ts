@@ -14,6 +14,7 @@ export interface KindroidConfig {
 
 export interface BridgeConfig {
   dedupeWindowSeconds: number;
+  logPath: string;
   logLevel: LogLevel;
   sessionDir: string;
   sqlitePath: string;
@@ -22,7 +23,12 @@ export interface BridgeConfig {
 export interface HermesConfig {
   enabled: boolean;
   baseUrl: string;
+  apiKey: string;
   agentId: string;
+  currentSceneUpdates: {
+    enabled: boolean;
+    maxLength: number;
+  };
 }
 
 export interface AppConfig {

@@ -7,6 +7,8 @@ import type { AppConfig, LogLevel } from "./types.js";
 
 dotenv.config({ quiet: true });
 
+const currentSceneMaxLengthLimit = 160;
+
 const defaultConfig: AppConfig = {
   kindroid: {
     firebaseProjectId: "kindroid-ai",
@@ -15,14 +17,20 @@ const defaultConfig: AppConfig = {
   },
   bridge: {
     dedupeWindowSeconds: 180,
+    logPath: "./data/kinagent.log",
     logLevel: "info",
     sessionDir: "./data/browser-session",
     sqlitePath: "./data/bridge.sqlite"
   },
   hermes: {
     enabled: false,
-    baseUrl: "http://localhost:8000",
-    agentId: "kindroid-bridge"
+    baseUrl: "http://127.0.0.1:8642/v1",
+    apiKey: "",
+    agentId: "kindroid-bridge",
+    currentSceneUpdates: {
+      enabled: true,
+      maxLength: currentSceneMaxLengthLimit
+    }
   }
 };
 
@@ -41,6 +49,7 @@ const appConfigSchema = z.object({
   }),
   bridge: z.object({
     dedupeWindowSeconds: z.number().finite().positive("bridge.dedupeWindowSeconds must be a positive number."),
+    logPath: z.string().min(1, "bridge.logPath is required."),
     logLevel: logLevelSchema,
     sessionDir: z.string().min(1, "bridge.sessionDir is required."),
     sqlitePath: z.string().min(1, "bridge.sqlitePath is required.")
@@ -48,7 +57,19 @@ const appConfigSchema = z.object({
   hermes: z.object({
     enabled: z.boolean(),
     baseUrl: z.string().min(1, "hermes.baseUrl is required."),
-    agentId: z.string().min(1, "hermes.agentId is required.")
+    apiKey: z.string(),
+    agentId: z.string().min(1, "hermes.agentId is required."),
+    currentSceneUpdates: z.object({
+      enabled: z.boolean(),
+      maxLength: z
+        .number()
+        .finite()
+        .positive("hermes.currentSceneUpdates.maxLength must be a positive number.")
+        .max(
+          currentSceneMaxLengthLimit,
+          `hermes.currentSceneUpdates.maxLength cannot exceed ${currentSceneMaxLengthLimit}.`
+        )
+    })
   })
 });
 
@@ -91,7 +112,11 @@ function mergeConfig(base: AppConfig, override: Partial<AppConfig>): AppConfig {
     },
     hermes: {
       ...base.hermes,
-      ...override.hermes
+      ...override.hermes,
+      currentSceneUpdates: {
+        ...base.hermes.currentSceneUpdates,
+        ...override.hermes?.currentSceneUpdates
+      }
     }
   };
 }
@@ -101,16 +126,27 @@ function applyEnvOverrides(config: AppConfig): void {
   config.kindroid.uid = process.env.KINDROID_UID ?? config.kindroid.uid;
 
   config.bridge.dedupeWindowSeconds = numberFromEnv("BRIDGE_DEDUPE_WINDOW_SECONDS", config.bridge.dedupeWindowSeconds);
+  config.bridge.logPath = process.env.BRIDGE_LOG_PATH ?? config.bridge.logPath;
   config.bridge.logLevel = logLevelFromEnv("BRIDGE_LOG_LEVEL", config.bridge.logLevel);
   config.bridge.sessionDir = process.env.BRIDGE_SESSION_DIR ?? config.bridge.sessionDir;
   config.bridge.sqlitePath = process.env.BRIDGE_SQLITE_PATH ?? config.bridge.sqlitePath;
 
   config.hermes.enabled = booleanFromEnv("HERMES_ENABLED", config.hermes.enabled);
   config.hermes.baseUrl = process.env.HERMES_BASE_URL ?? config.hermes.baseUrl;
+  config.hermes.apiKey = process.env.HERMES_API_KEY ?? config.hermes.apiKey;
   config.hermes.agentId = process.env.HERMES_AGENT_ID ?? config.hermes.agentId;
+  config.hermes.currentSceneUpdates.enabled = booleanFromEnv(
+    "HERMES_CURRENT_SCENE_UPDATES_ENABLED",
+    config.hermes.currentSceneUpdates.enabled
+  );
+  config.hermes.currentSceneUpdates.maxLength = numberFromEnv(
+    "HERMES_CURRENT_SCENE_MAX_LENGTH",
+    config.hermes.currentSceneUpdates.maxLength
+  );
 }
 
 function normalizePaths(config: AppConfig): void {
+  config.bridge.logPath = path.resolve(process.cwd(), config.bridge.logPath);
   config.bridge.sessionDir = path.resolve(process.cwd(), config.bridge.sessionDir);
   config.bridge.sqlitePath = path.resolve(process.cwd(), config.bridge.sqlitePath);
 }
