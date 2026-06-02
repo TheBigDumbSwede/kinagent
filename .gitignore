@@ -2,6 +2,7 @@ node_modules/
 dist/
 release/
 data/
+.local/
 .env
 config.yaml
 *.har

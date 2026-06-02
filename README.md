@@ -4,7 +4,7 @@
 
 This is intentionally a small service foundation. It does not depend on Cadence; the optional desktop control panel is an Electron wrapper around the same Node internals.
 
-Detailed observed Kindroid behavior is captured in [docs/kindroid-findings.md](docs/kindroid-findings.md).
+Detailed observed Kindroid integration notes are intentionally kept out of the public repository.
 
 ## Status
 

@@ -34,7 +34,6 @@ const secretPatterns = [
 
 const allowlistedContentFiles = new Set([
   "README.md",
-  "docs/kindroid-findings.md",
   "src/auth/firebaseSession.ts",
   "src/firestore/messageMapper.ts",
   "src/index.ts",
