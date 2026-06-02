@@ -2,6 +2,7 @@ import { extractFirebaseAppCheckState, loadBrowserSession, summarizeSessionAuth 
 import { captureKindroidState, type CaptureKindroidStateResult } from "../capture/kinStateCapture.js";
 import type { AppConfig } from "../config/types.js";
 import { KindroidLiveMonitor } from "../firestore/liveMonitor.js";
+import { isRecentOutboundEcho } from "../firestore/messageDedupe.js";
 import { mapKindroidMessage } from "../firestore/messageMapper.js";
 import type { KindroidChatNotification } from "../firestore/types.js";
 import { createHermesAdapter } from "../hermes/hermesAdapter.js";
@@ -17,6 +18,8 @@ import {
 } from "./kinSubscriptionSupervisor.js";
 import { VoiceRuntime, voiceProviderConfigured } from "../voice/voiceRuntime.js";
 import type { VoicePlaybackChunk } from "../voice/types.js";
+import type { DedupeStore } from "../state/dedupeStore.js";
+import { createDedupeStore } from "../state/sqliteStore.js";
 
 export type BridgeRuntimeEvent =
   | { channel: "session-keepalive"; payload: KindroidSessionKeepAliveEvent }
@@ -53,7 +56,10 @@ export class BridgeRuntime {
   private started = false;
   private startupCaptureStarted = false;
 
-  private constructor(private readonly options: BridgeRuntimeOptions) {
+  private constructor(
+    private readonly options: BridgeRuntimeOptions,
+    private readonly dedupeStore: DedupeStore
+  ) {
     this.hermes = createHermesAdapter(options.config, options.logger);
     this.voice = new VoiceRuntime({
       config: options.config,
@@ -135,7 +141,11 @@ export class BridgeRuntime {
   }
 
   static async create(options: BridgeRuntimeOptions): Promise<BridgeRuntime> {
-    return new BridgeRuntime(options);
+    const dedupeStore = await createDedupeStore(
+      options.config.bridge.sqlitePath,
+      options.config.bridge.dedupeWindowSeconds
+    );
+    return new BridgeRuntime(options, dedupeStore);
   }
 
   start(): void {
@@ -224,6 +234,17 @@ export class BridgeRuntime {
       pageSize: monitorOptions.pageSize,
       signal: monitorOptions.signal,
       onMessage: async (message) => {
+        if (
+          await isRecentOutboundEcho({
+            dedupeStore: this.dedupeStore,
+            logger: this.options.logger,
+            message,
+            scope: "direct"
+          })
+        ) {
+          return;
+        }
+
         this.emit({ channel: "monitor-line", payload: { ...message, kinName: kin.name } });
         this.voice.enqueue({
           id: message.id,
@@ -267,6 +288,17 @@ export class BridgeRuntime {
         const aiId = typeof record.ai_id === "string" && record.ai_id.length > 0 ? record.ai_id : group.groupId;
         const kinName = this.resolveKinName(aiId);
         const message = mapKindroidMessage(document, aiId, { decryptionKey });
+        if (
+          await isRecentOutboundEcho({
+            dedupeStore: this.dedupeStore,
+            logger: this.options.logger,
+            message,
+            scope: "group"
+          })
+        ) {
+          return;
+        }
+
         const notification: KindroidChatNotification = {
           type: "kindroid.group_chat.changed",
           groupId: group.groupId,

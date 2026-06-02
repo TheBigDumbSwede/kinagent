@@ -4,6 +4,7 @@ import type { HermesAdapter } from "../hermes/types.js";
 import type { DedupeStore } from "../state/dedupeStore.js";
 import type { Logger } from "../util/logger.js";
 import { KindroidApiClient } from "../kindroid/client/index.js";
+import { isRecentOutboundEcho } from "./messageDedupe.js";
 import { mapKindroidMessage } from "./messageMapper.js";
 import type { KindroidChatChangeNotification } from "./types.js";
 
@@ -38,6 +39,17 @@ export class KindroidChatListener {
       signal: options.signal,
       onDocument: async (document) => {
         const message = mapKindroidMessage(document, options.kinId, { decryptionKey });
+        if (
+          await isRecentOutboundEcho({
+            dedupeStore: this.dedupeStore,
+            logger: this.logger,
+            message,
+            scope: "direct"
+          })
+        ) {
+          return;
+        }
+
         const notification = toChatChangeNotification(message);
 
         process.stdout.write(`${JSON.stringify(toSafeOutputNotification(notification))}\n`);

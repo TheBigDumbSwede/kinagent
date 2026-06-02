@@ -5,6 +5,7 @@ import { KindroidApiClient } from "../kindroid/client/index.js";
 import type { DedupeStore } from "../state/dedupeStore.js";
 import type { Logger } from "../util/logger.js";
 import type { FirestoreDocumentLike, KindroidGroupChatChangeNotification } from "./types.js";
+import { isRecentOutboundEcho } from "./messageDedupe.js";
 import { mapKindroidMessage } from "./messageMapper.js";
 
 export interface GroupChatListenerOptions {
@@ -17,7 +18,7 @@ export class KindroidGroupChatListener {
   constructor(
     private readonly config: AppConfig,
     private readonly hermes: HermesAdapter,
-    _dedupeStore: DedupeStore,
+    private readonly dedupeStore: DedupeStore,
     private readonly logger: Logger
   ) {}
 
@@ -37,7 +38,18 @@ export class KindroidGroupChatListener {
       pageSize,
       signal: options.signal,
       onDocument: async (document) => {
-        const notification = toGroupChatChangeNotification(document, options.groupId, decryptionKey);
+        const { message, notification } = toGroupChatChangeNotification(document, options.groupId, decryptionKey);
+        if (
+          await isRecentOutboundEcho({
+            dedupeStore: this.dedupeStore,
+            logger: this.logger,
+            message,
+            scope: "group"
+          })
+        ) {
+          return;
+        }
+
         process.stdout.write(`${JSON.stringify(toSafeOutputNotification(notification))}\n`);
         await this.hermes.handleChatChanged(notification);
       }
@@ -73,24 +85,27 @@ function toGroupChatChangeNotification(
   document: FirestoreDocumentLike,
   groupId: string,
   decryptionKey: string
-): KindroidGroupChatChangeNotification {
+): { message: ReturnType<typeof mapKindroidMessage>; notification: KindroidGroupChatChangeNotification } {
   const data = document.data();
   const record = typeof data === "object" && data !== null ? (data as Record<string, unknown>) : {};
   const aiId = stringValue(record.ai_id);
   const message = mapKindroidMessage(document, aiId ?? groupId, { decryptionKey });
   return {
-    type: "kindroid.group_chat.changed",
-    groupId,
-    aiId,
-    documentId: document.id,
-    timestamp: message.timestamp ?? normalizeTimestamp(record.timestamp ?? record._createTime ?? record._updateTime),
-    text: message.text,
-    textEncrypted: message.textEncrypted,
-    textDecrypted: message.textDecrypted,
-    textDecryptionError: message.textDecryptionError,
-    sender: message.sender,
-    role: message.role,
-    source: "firestore"
+    message,
+    notification: {
+      type: "kindroid.group_chat.changed",
+      groupId,
+      aiId,
+      documentId: document.id,
+      timestamp: message.timestamp ?? normalizeTimestamp(record.timestamp ?? record._createTime ?? record._updateTime),
+      text: message.text,
+      textEncrypted: message.textEncrypted,
+      textDecrypted: message.textDecrypted,
+      textDecryptionError: message.textDecryptionError,
+      sender: message.sender,
+      role: message.role,
+      source: "firestore"
+    }
   };
 }
 
