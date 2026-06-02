@@ -17,6 +17,9 @@ const state = {
   selectedGroupId: null,
   selectedKinCapture: null,
   selectedKinVoice: null,
+  journalSuggestions: [],
+  journalSavingId: null,
+  journalError: null,
   captureLoading: false,
   captureError: null,
   voiceLoading: false,
@@ -48,6 +51,7 @@ const elements = {
   kinDetailEmpty: document.querySelector("#kinDetailEmpty"),
   kinDetailContent: document.querySelector("#kinDetailContent"),
   detailStats: document.querySelector("#detailStats"),
+  journalSuggestionPanel: document.querySelector("#journalSuggestionPanel"),
   fieldContent: document.querySelector("#fieldContent"),
   voiceForm: document.querySelector("#voiceForm"),
   voiceEnabledInput: document.querySelector("#voiceEnabledInput"),
@@ -174,6 +178,24 @@ window.kinagent.onEvent((message) => {
     return;
   }
 
+  if (message.channel === "journal-suggestion-created") {
+    upsertJournalSuggestion(message.payload);
+    renderJournalSuggestionNotice(message.payload);
+    renderActivity();
+    return;
+  }
+
+  if (message.channel === "journal-suggestions-updated") {
+    state.journalSuggestions = message.payload || [];
+    renderActivity();
+    return;
+  }
+
+  if (message.channel === "journal-suggestion-focus") {
+    void focusJournalSuggestion(message.payload);
+    return;
+  }
+
   if (message.channel === "monitor-started") {
     markSubscriptionRunning(message.payload?.kinId, true);
     updateMonitorRunning();
@@ -275,6 +297,7 @@ function renderStatus(status) {
   state.subscriptions = status.subscriptions || [];
   state.groups = status.groups || [];
   state.groupSubscriptions = status.groupSubscriptions || [];
+  state.journalSuggestions = status.journalSuggestions || [];
   state.monitorRunning = Boolean(status.monitorRunning);
   state.kinRefresh = status.kinRefresh || null;
   state.groupRefresh = status.groupRefresh || null;
@@ -510,6 +533,7 @@ async function selectKin(kinId) {
   state.captureError = null;
   state.selectedKinCapture = null;
   state.selectedKinVoice = null;
+  state.journalError = null;
   state.voiceError = null;
   renderKinSubscriptions();
   renderGroupSubscriptions();
@@ -660,12 +684,14 @@ function renderDetailContent({ content, history, stats }) {
   elements.kinDetailEmpty.hidden = true;
   elements.kinDetailContent.hidden = false;
   elements.fieldContent.hidden = false;
+  elements.journalSuggestionPanel.hidden = true;
   elements.voiceForm.hidden = true;
   elements.timeline.hidden = false;
   const selectedEntryIndex = history.findIndex((entry) => entry.hash === state.selectedHistoryHash);
   const selectedEntry = selectedEntryIndex >= 0 ? history[selectedEntryIndex] : null;
   const previousEntry = selectedEntryIndex >= 0 ? history[selectedEntryIndex + 1] : null;
   renderFieldContent(content, selectedEntry, previousEntry);
+  renderJournalSuggestions();
 
   elements.detailStats.replaceChildren();
   const visibleStats = selectedEntry
@@ -739,6 +765,7 @@ function renderVoiceTab(selectedKin) {
   elements.kinDetailEmpty.hidden = true;
   elements.kinDetailContent.hidden = false;
   elements.fieldContent.hidden = true;
+  elements.journalSuggestionPanel.hidden = true;
   elements.voiceForm.hidden = false;
   elements.timeline.hidden = true;
   elements.voiceEnabledInput.checked = Boolean(preference.enabled);
@@ -877,6 +904,152 @@ function renderFieldContent(content, selectedEntry, previousEntry) {
   for (const line of renderSelectedHistoryDiff(selectedEntry, previousEntry)) {
     elements.fieldContent.append(createDiffLine(line));
   }
+}
+
+function renderJournalSuggestions() {
+  const panel = elements.journalSuggestionPanel;
+  panel.replaceChildren();
+  const suggestions = selectedKinJournalSuggestions();
+  panel.hidden = state.activeTab !== "journal" || suggestions.length === 0;
+  if (panel.hidden) {
+    return;
+  }
+
+  if (state.journalError) {
+    const error = document.createElement("p");
+    error.className = "panel-note";
+    error.textContent = state.journalError;
+    panel.append(error);
+  }
+
+  for (const suggestion of suggestions) {
+    panel.append(createJournalSuggestionElement(suggestion));
+  }
+}
+
+function createJournalSuggestionElement(suggestion) {
+  const item = document.createElement("article");
+  item.className = "journal-suggestion";
+
+  const header = document.createElement("header");
+  const title = document.createElement("strong");
+  title.textContent = suggestion.strongEvent ? "Strong journal suggestion" : "Journal suggestion";
+  const date = document.createElement("span");
+  date.textContent = formatTime(suggestion.createdAt);
+  header.append(title, date);
+
+  const entry = document.createElement("p");
+  entry.textContent = suggestion.entry || "";
+
+  const details = document.createElement("dl");
+  appendSuggestionDetail(details, "Reason", suggestion.durabilityReason);
+  appendSuggestionDetail(details, "Evidence", (suggestion.evidence || []).join(" | "));
+  appendSuggestionDetail(details, "Keyphrases", (suggestion.keyphrases || []).join(", "));
+
+  const actions = document.createElement("div");
+  actions.className = "journal-suggestion-actions";
+
+  const accept = document.createElement("button");
+  accept.type = "button";
+  accept.textContent = state.journalSavingId === suggestion.id ? "Accepting" : "Accept";
+  accept.disabled = Boolean(state.journalSavingId);
+  accept.addEventListener("click", () => {
+    void acceptJournalSuggestion(suggestion.id);
+  });
+
+  const dismiss = document.createElement("button");
+  dismiss.type = "button";
+  dismiss.className = "secondary";
+  dismiss.textContent = "Dismiss";
+  dismiss.disabled = Boolean(state.journalSavingId);
+  dismiss.addEventListener("click", () => {
+    void dismissJournalSuggestion(suggestion.id);
+  });
+
+  actions.append(accept, dismiss);
+  item.append(header, entry, details, actions);
+  return item;
+}
+
+function appendSuggestionDetail(list, label, value) {
+  if (!value) {
+    return;
+  }
+
+  const term = document.createElement("dt");
+  term.textContent = label;
+  const detail = document.createElement("dd");
+  detail.textContent = value;
+  list.append(term, detail);
+}
+
+async function acceptJournalSuggestion(id) {
+  state.journalSavingId = id;
+  state.journalError = null;
+  renderActivity();
+  try {
+    await window.kinagent.acceptJournalSuggestion({ id });
+    state.journalSuggestions = await window.kinagent.listJournalSuggestions();
+    if (state.selectedKinId) {
+      state.selectedKinCapture = await withTimeout(
+        window.kinagent.getCapturedKin({ kinId: state.selectedKinId }),
+        captureRequestTimeoutMs,
+        "Captured settings request timed out."
+      );
+    }
+    elements.monitorLine.textContent = "Journal entry accepted.";
+  } catch (error) {
+    state.journalError = error.message || String(error);
+  } finally {
+    state.journalSavingId = null;
+    renderActivity();
+  }
+}
+
+async function dismissJournalSuggestion(id) {
+  state.journalError = null;
+  try {
+    await window.kinagent.dismissJournalSuggestion({ id });
+    state.journalSuggestions = await window.kinagent.listJournalSuggestions();
+  } catch (error) {
+    state.journalError = error.message || String(error);
+  }
+  renderActivity();
+}
+
+function selectedKinJournalSuggestions() {
+  if (!state.selectedKinId) {
+    return [];
+  }
+
+  return state.journalSuggestions.filter((suggestion) => suggestion.aiId === state.selectedKinId);
+}
+
+function upsertJournalSuggestion(suggestion) {
+  if (!suggestion?.id) {
+    return;
+  }
+
+  state.journalSuggestions = [
+    suggestion,
+    ...state.journalSuggestions.filter((current) => current.id !== suggestion.id)
+  ];
+}
+
+function renderJournalSuggestionNotice(suggestion) {
+  const selectedKin = state.kins.find((kin) => kin.aiId === suggestion?.aiId);
+  elements.monitorLine.textContent = `Journal suggestion ready for ${selectedKin?.name || suggestion?.aiId || "Kin"}.`;
+}
+
+async function focusJournalSuggestion(suggestion) {
+  if (!suggestion?.aiId) {
+    return;
+  }
+
+  state.activeTab = "journal";
+  await selectKin(suggestion.aiId);
+  state.activeTab = "journal";
+  renderActivity();
 }
 
 function currentCapturedField() {

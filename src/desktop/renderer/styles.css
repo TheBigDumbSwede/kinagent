@@ -419,6 +419,63 @@ h2 {
   overflow-wrap: anywhere;
 }
 
+.journal-suggestions {
+  display: grid;
+  gap: 10px;
+  max-height: 260px;
+  padding: 14px 20px;
+  border-bottom: 1px solid #d7e0e8;
+  background: #fbfcfd;
+  overflow: auto;
+}
+
+.journal-suggestion {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #d7e0e8;
+  border-radius: 6px;
+  background: #fff;
+  padding: 10px 12px;
+}
+
+.journal-suggestion header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: #63788c;
+  font-size: 12px;
+}
+
+.journal-suggestion p {
+  color: #182635;
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.journal-suggestion dl {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  color: #63788c;
+  font-size: 12px;
+}
+
+.journal-suggestion dt {
+  font-weight: 700;
+}
+
+.journal-suggestion dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.journal-suggestion-actions {
+  display: flex;
+  gap: 8px;
+}
+
 .diff-line {
   display: block;
   margin: 0 -20px;

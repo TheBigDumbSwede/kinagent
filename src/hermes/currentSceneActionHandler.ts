@@ -31,13 +31,13 @@ export interface KindroidSceneUpdater {
   }): Promise<UpdateKindroidGroupCurrentSceneResult>;
 }
 
-export interface HermesActionHandler {
+export interface HermesActionHandler<TAction = HermesAction> {
   promptLines(): string[];
-  normalizeActions(decision: HermesActionDecision): HermesAction[];
-  handle(notification: KindroidChatNotification, action: HermesAction): Promise<void>;
+  normalizeActions(decision: HermesActionDecision): TAction[];
+  handle(notification: KindroidChatNotification, action: TAction): Promise<void>;
 }
 
-export class CurrentSceneActionHandler implements HermesActionHandler {
+export class CurrentSceneActionHandler implements HermesActionHandler<HermesAction> {
   constructor(
     private readonly config: AppConfig,
     private readonly logger: Logger,

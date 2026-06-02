@@ -1,6 +1,10 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AppConfig } from "../src/config/types.js";
 import { HermesChatAdapter } from "../src/hermes/hermesAdapter.js";
+import { JournalSuggestionStore } from "../src/journal/journalSuggestionStore.js";
 import type { Logger } from "../src/util/logger.js";
 
 const logger: Logger = {
@@ -10,10 +14,15 @@ const logger: Logger = {
   error: vi.fn()
 };
 
+const tempDirs: string[] = [];
+
 describe("HermesChatAdapter", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.clearAllMocks();
+    for (const dir of tempDirs.splice(0)) {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("lets Hermes request a current scene update for direct Kin chat", async () => {
@@ -282,6 +291,161 @@ describe("HermesChatAdapter", () => {
     expect(kindroid.updateCurrentScene).not.toHaveBeenCalled();
     expect(kindroid.updateGroupCurrentScene).not.toHaveBeenCalled();
   });
+
+  it("stores high-confidence Hermes journal entry suggestions", async () => {
+    const kindroid = testKindroidUpdater();
+    const store = testJournalSuggestionStore();
+    const onSuggestionCreated = vi.fn();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  actions: [
+                    {
+                      type: "propose_journal_entry",
+                      ai_id: "kin-1",
+                      entry: "Sam and the user agreed that the old trust concern is now part of their history.",
+                      keyphrases: ["trust", "relationship milestone"],
+                      evidence: ["Sam said the old worry no longer applies."],
+                      durability_reason: "This changes how future relationship context should be interpreted.",
+                      confidence: "high",
+                      strong_event: false
+                    }
+                  ]
+                })
+              }
+            }
+          ]
+        })
+      )
+    );
+
+    const adapter = new HermesChatAdapter(testConfig(), logger, kindroid, {
+      journalSuggestions: store,
+      onJournalSuggestionCreated: onSuggestionCreated
+    });
+    await adapter.handleChatChanged({
+      type: "kindroid.chat.changed",
+      kinId: "kin-1",
+      documentId: "doc-1",
+      timestamp: "2026-06-01T12:00:00.000Z",
+      text: "That old worry no longer applies.",
+      sender: "ai",
+      role: null,
+      source: "firestore"
+    });
+
+    const suggestions = store.list("pending");
+    expect(suggestions).toHaveLength(1);
+    expect(suggestions[0]).toEqual(
+      expect.objectContaining({
+        aiId: "kin-1",
+        entry: "Sam and the user agreed that the old trust concern is now part of their history.",
+        keyphrases: ["trust", "relationship milestone"],
+        durabilityReason: "This changes how future relationship context should be interpreted.",
+        strongEvent: false
+      })
+    );
+    expect(onSuggestionCreated).toHaveBeenCalledWith(expect.objectContaining({ aiId: "kin-1" }));
+    expect(kindroid.updateCurrentScene).not.toHaveBeenCalled();
+    expect(kindroid.updateGroupCurrentScene).not.toHaveBeenCalled();
+  });
+
+  it("ignores journal entry suggestions from user-authored messages", async () => {
+    const store = testJournalSuggestionStore();
+    const onSuggestionCreated = vi.fn();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  actions: [
+                    {
+                      type: "propose_journal_entry",
+                      ai_id: "kin-1",
+                      entry: "The user shared a durable personal fact.",
+                      keyphrases: ["personal fact"],
+                      evidence: ["The user said the fact directly."],
+                      durability_reason: "This may matter later, but it came from the user message.",
+                      confidence: "high",
+                      strong_event: true
+                    }
+                  ]
+                })
+              }
+            }
+          ]
+        })
+      )
+    );
+
+    const adapter = new HermesChatAdapter(testConfig(), logger, testKindroidUpdater(), {
+      journalSuggestions: store,
+      onJournalSuggestionCreated: onSuggestionCreated
+    });
+    await adapter.handleChatChanged({
+      type: "kindroid.chat.changed",
+      kinId: "kin-1",
+      documentId: "doc-1",
+      timestamp: "2026-06-01T12:00:00.000Z",
+      text: "Here is an important thing about me.",
+      sender: "user",
+      role: null,
+      source: "firestore"
+    });
+
+    expect(store.list("pending")).toHaveLength(0);
+    expect(onSuggestionCreated).not.toHaveBeenCalled();
+  });
+
+  it("does not store lower-confidence journal suggestions", async () => {
+    const store = testJournalSuggestionStore();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  actions: [
+                    {
+                      type: "propose_journal_entry",
+                      ai_id: "kin-1",
+                      entry: "Maybe this banter matters.",
+                      durability_reason: "Unclear.",
+                      confidence: "medium"
+                    }
+                  ]
+                })
+              }
+            }
+          ]
+        })
+      )
+    );
+
+    const adapter = new HermesChatAdapter(testConfig(), logger, testKindroidUpdater(), { journalSuggestions: store });
+    await adapter.handleChatChanged({
+      type: "kindroid.chat.changed",
+      kinId: "kin-1",
+      documentId: "doc-1",
+      timestamp: null,
+      text: "A passing joke.",
+      sender: "user",
+      role: null,
+      source: "firestore"
+    });
+
+    expect(store.list("pending")).toHaveLength(0);
+  });
 });
 
 function testKindroidUpdater() {
@@ -289,6 +453,12 @@ function testKindroidUpdater() {
     updateCurrentScene: vi.fn(async () => ({ ok: true, status: 200 })),
     updateGroupCurrentScene: vi.fn(async () => ({ ok: true, status: 200 }))
   };
+}
+
+function testJournalSuggestionStore() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "kinagent-journal-suggestions-"));
+  tempDirs.push(dir);
+  return new JournalSuggestionStore(path.join(dir, "journal-suggestions.json"));
 }
 
 function testConfig(): AppConfig {

@@ -5,6 +5,7 @@ import type { FirestoreDocumentLike } from "../src/firestore/types.js";
 import { normalizeGroupDocument } from "../src/kindroid/client/groups.js";
 import { normalizeKinDocument } from "../src/kindroid/client/kins.js";
 import { KindroidClient } from "../src/kindroid/kindroidClient.js";
+import { buildCreateJournalEntryPayload, buildUpdateIdentityPayload } from "../src/kindroid/payloads.js";
 import type { Logger } from "../src/util/logger.js";
 
 describe("Kindroid client normalizers", () => {
@@ -85,6 +86,66 @@ describe("Kindroid client normalizers", () => {
         currentScene: "x".repeat(161)
       })
     ).rejects.toThrow("Current scene cannot exceed 160 characters.");
+  });
+
+  it("builds the observed Kindroid journal-create payload", () => {
+    expect(
+      buildCreateJournalEntryPayload({
+        aiId: "kin-1",
+        entry: "  The old trust hook has resolved into shared history.  ",
+        keyphrases: [" trust ", "", "trust", "history"]
+      })
+    ).toEqual({
+      entry: "The old trust hook has resolved into shared history.",
+      keyphrases: ["trust", "history"],
+      ai_id: "kin-1"
+    });
+  });
+
+  it("rejects empty journal entries before calling the endpoint", async () => {
+    const client = new KindroidClient(testConfig(), testLogger);
+
+    await expect(
+      client.createJournalEntry({
+        aiId: "kin-1",
+        entry: "   "
+      })
+    ).rejects.toThrow("Journal entry cannot be empty.");
+  });
+
+  it("builds the observed Kindroid update-info identity payload", () => {
+    expect(
+      buildUpdateIdentityPayload({
+        aiId: "kin-1",
+        backstory: "Revised backstory.",
+        memory: "Existing memory.",
+        exampleMessage: "Existing example.",
+        directive: "Existing directive.",
+        additionalContext: "Existing additional context."
+      })
+    ).toEqual({
+      ai_id: "kin-1",
+      ai_backstory: "Revised backstory.",
+      ai_memory: "Existing memory.",
+      ai_example_message: "Existing example.",
+      ai_directive: "Existing directive.",
+      ai_additional_context: "Existing additional context."
+    });
+  });
+
+  it("rejects empty backstory identity updates before calling the endpoint", async () => {
+    const client = new KindroidClient(testConfig(), testLogger);
+
+    await expect(
+      client.updateIdentity({
+        aiId: "kin-1",
+        backstory: "   ",
+        memory: "",
+        exampleMessage: "",
+        directive: "",
+        additionalContext: ""
+      })
+    ).rejects.toThrow("Backstory cannot be empty.");
   });
 });
 

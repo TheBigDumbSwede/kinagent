@@ -1,12 +1,13 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, Menu, nativeImage, shell, Tray, ipcMain } from "electron";
+import { app, BrowserWindow, Menu, nativeImage, Notification, shell, Tray, ipcMain } from "electron";
 import type { Event as ElectronEvent } from "electron";
 import { chromium, type Browser, type BrowserContext } from "playwright";
 import { ensureSessionDir, storageStatePath } from "../auth/tokenStore.js";
 import { loadConfig } from "../config/loadConfig.js";
 import { readCapturedKin } from "../capture/captureReader.js";
 import { BridgeRuntime, type BridgeRuntimeEvent } from "../runtime/bridgeRuntime.js";
+import type { JournalSuggestion } from "../journal/journalSuggestionStore.js";
 import { createLogger } from "../util/logger.js";
 import {
   loadKinVoicePreference,
@@ -170,6 +171,13 @@ function registerIpcHandlers(): void {
       throw error;
     }
   });
+  ipcMain.handle("journal:list-suggestions", async () => requireRuntime().pendingJournalSuggestions());
+  ipcMain.handle("journal:accept-suggestion", async (_event, input: { id?: string } = {}) =>
+    acceptJournalSuggestion(input.id ?? "")
+  );
+  ipcMain.handle("journal:dismiss-suggestion", async (_event, input: { id?: string } = {}) =>
+    dismissJournalSuggestion(input.id ?? "")
+  );
   ipcMain.handle("voice:get-kin-preference", async (_event, input: { kinId?: string } = {}) =>
     getKinVoicePreference(input.kinId ?? "")
   );
@@ -283,6 +291,26 @@ function setKinVoicePreference(kinId: string, preference: Partial<KinVoicePrefer
   };
 }
 
+async function acceptJournalSuggestion(id: string) {
+  if (!id) {
+    throw new Error("Journal suggestion id is required.");
+  }
+
+  const suggestion = await requireRuntime().acceptJournalSuggestion(id);
+  sendRendererEvent("journal-suggestions-updated", requireRuntime().pendingJournalSuggestions());
+  return { ok: true, suggestion };
+}
+
+function dismissJournalSuggestion(id: string) {
+  if (!id) {
+    throw new Error("Journal suggestion id is required.");
+  }
+
+  const suggestion = requireRuntime().dismissJournalSuggestion(id);
+  sendRendererEvent("journal-suggestions-updated", requireRuntime().pendingJournalSuggestions());
+  return { ok: true, suggestion };
+}
+
 function showMainWindow(): void {
   if (!mainWindow) {
     createMainWindow();
@@ -297,6 +325,9 @@ function sendRendererEvent(channel: string, payload: unknown): void {
 }
 
 function sendRuntimeEvent(event: BridgeRuntimeEvent): void {
+  if (event.channel === "journal-suggestion-created") {
+    showJournalSuggestionNotification(event.payload);
+  }
   sendRendererEvent(event.channel, event.payload);
 }
 
@@ -314,4 +345,33 @@ function requireRuntime(): BridgeRuntime {
 
 function desktopIconPath(fileName: string): string {
   return path.join(__dirname, "assets", fileName);
+}
+
+function showJournalSuggestionNotification(suggestion: JournalSuggestion): void {
+  if (!Notification.isSupported()) {
+    return;
+  }
+
+  const notification = new Notification({
+    title: "Journal entry suggested",
+    body: `Kinagent has a journal suggestion for ${resolveKinDisplayName(suggestion.aiId)}.`,
+    icon: desktopIconPath("icon.png")
+  });
+  notification.on("click", () => {
+    showMainWindow();
+    sendRendererEvent("journal-suggestion-focus", suggestion);
+  });
+  notification.show();
+}
+
+function resolveKinDisplayName(aiId: string): string {
+  try {
+    return (
+      requireRuntime()
+        .status()
+        .kins.find((kin) => kin.aiId === aiId)?.name || aiId
+    );
+  } catch {
+    return aiId;
+  }
 }

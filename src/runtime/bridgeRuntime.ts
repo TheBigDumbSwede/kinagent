@@ -7,7 +7,9 @@ import { mapKindroidMessage } from "../firestore/messageMapper.js";
 import type { KindroidChatNotification } from "../firestore/types.js";
 import { createHermesAdapter } from "../hermes/hermesAdapter.js";
 import type { HermesAdapter } from "../hermes/types.js";
+import { JournalSuggestionStore, type JournalSuggestion } from "../journal/journalSuggestionStore.js";
 import { KindroidApiClient, type KindroidGroup, type KindroidKin } from "../kindroid/client/index.js";
+import { KindroidClient } from "../kindroid/kindroidClient.js";
 import type { Logger } from "../util/logger.js";
 import { GroupSubscriptionSupervisor, type GroupSubscriptionStatus } from "./groupSubscriptionSupervisor.js";
 import { KindroidSessionKeepAlive, type KindroidSessionKeepAliveEvent } from "./kindroidSessionKeepAlive.js";
@@ -36,6 +38,8 @@ export type BridgeRuntimeEvent =
   | { channel: "group-monitor-exit"; payload: { groupId: string; aborted: boolean } }
   | { channel: "group-monitor-error"; payload: { groupId: string; groupName: string; error: string } }
   | { channel: "monitor-line"; payload: Record<string, unknown> }
+  | { channel: "journal-suggestion-created"; payload: JournalSuggestion }
+  | { channel: "journal-suggestions-updated"; payload: JournalSuggestion[] }
   | { channel: "identity-capture-completed"; payload: CaptureKindroidStateResult }
   | { channel: "identity-capture-failed"; payload: { error: string } };
 
@@ -50,6 +54,7 @@ export interface BridgeRuntimeOptions {
 export class BridgeRuntime {
   readonly hermes: HermesAdapter;
   readonly voice: VoiceRuntime;
+  readonly journalSuggestions: JournalSuggestionStore;
   private readonly sessionKeepAlive: KindroidSessionKeepAlive;
   private readonly kinSubscriptionSupervisor: KinSubscriptionSupervisor;
   private readonly groupSubscriptionSupervisor: GroupSubscriptionSupervisor;
@@ -60,7 +65,14 @@ export class BridgeRuntime {
     private readonly options: BridgeRuntimeOptions,
     private readonly dedupeStore: DedupeStore
   ) {
-    this.hermes = createHermesAdapter(options.config, options.logger);
+    this.journalSuggestions = JournalSuggestionStore.fromConfig(options.config);
+    this.hermes = createHermesAdapter(options.config, options.logger, {
+      journalSuggestions: this.journalSuggestions,
+      onJournalSuggestionCreated: (suggestion) => {
+        this.emit({ channel: "journal-suggestion-created", payload: suggestion });
+        this.emit({ channel: "journal-suggestions-updated", payload: this.pendingJournalSuggestions() });
+      }
+    });
     this.voice = new VoiceRuntime({
       config: options.config,
       logger: options.logger,
@@ -195,6 +207,50 @@ export class BridgeRuntime {
     await this.groupSubscriptionSupervisor.setGroupEnabled(groupId, enabled);
   }
 
+  pendingJournalSuggestions(): JournalSuggestion[] {
+    return this.journalSuggestions.list("pending");
+  }
+
+  dismissJournalSuggestion(id: string): JournalSuggestion {
+    const suggestion = this.journalSuggestions.markDismissed(id);
+    this.emit({ channel: "journal-suggestions-updated", payload: this.pendingJournalSuggestions() });
+    return suggestion;
+  }
+
+  async acceptJournalSuggestion(id: string): Promise<JournalSuggestion> {
+    const suggestion = this.journalSuggestions.get(id);
+    if (!suggestion) {
+      throw new Error("Journal suggestion not found.");
+    }
+    if (suggestion.status !== "pending") {
+      throw new Error("Journal suggestion has already been handled.");
+    }
+
+    const client = new KindroidClient(this.options.config, this.options.logger);
+    const result = await client.createJournalEntry({
+      aiId: suggestion.aiId,
+      entry: suggestion.entry,
+      keyphrases: suggestion.keyphrases
+    });
+    if (!result.ok) {
+      throw new Error(`Kindroid journal-create failed with HTTP ${result.status}.`);
+    }
+
+    const capture = await captureKindroidState(this.options.config, this.options.logger, {
+      message: `Capture Kindroid journal entry ${suggestion.aiId}`
+    });
+    const accepted = this.journalSuggestions.markAccepted(id, {
+      ok: result.ok,
+      status: result.status,
+      responseText: result.responseText,
+      captureCommitHash: capture.commitHash,
+      captureCreatedCommit: capture.createdCommit
+    });
+    this.emit({ channel: "journal-suggestions-updated", payload: this.pendingJournalSuggestions() });
+    this.emit({ channel: "identity-capture-completed", payload: capture });
+    return accepted;
+  }
+
   status(): BridgeRuntimeStatus {
     const session = this.loadSessionSummary();
     const appCheck = session.available
@@ -222,7 +278,8 @@ export class BridgeRuntime {
       voice: {
         ...voiceProviderConfigured(this.options.config),
         desktopPlayback: Boolean(this.options.onVoicePlayback)
-      }
+      },
+      journalSuggestions: this.pendingJournalSuggestions()
     };
   }
 
@@ -448,6 +505,7 @@ export interface BridgeRuntimeStatus {
   groupSubscriptions: GroupSubscriptionStatus[];
   groupRefresh: ReturnType<GroupSubscriptionSupervisor["refreshState"]>;
   voice: ReturnType<typeof voiceProviderConfigured> & { desktopPlayback: boolean };
+  journalSuggestions: JournalSuggestion[];
 }
 
 export type BridgeSessionSummary =

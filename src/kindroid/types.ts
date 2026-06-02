@@ -30,3 +30,26 @@ export interface UpdateKindroidGroupCurrentSceneInput {
 }
 
 export type UpdateKindroidGroupCurrentSceneResult = UpdateKindroidCurrentSceneResult;
+
+export interface CreateKindroidJournalEntryInput {
+  aiId: string;
+  entry: string;
+  keyphrases?: string[];
+}
+
+export interface CreateKindroidJournalEntryResult {
+  status: number;
+  ok: boolean;
+  responseText?: string;
+}
+
+export interface UpdateKindroidIdentityInput {
+  aiId: string;
+  backstory: string;
+  memory: string;
+  exampleMessage: string;
+  directive: string;
+  additionalContext: string;
+}
+
+export type UpdateKindroidIdentityResult = UpdateKindroidCurrentSceneResult;
