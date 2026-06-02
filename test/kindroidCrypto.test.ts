@@ -39,4 +39,24 @@ describe("decryptKindroidValue", () => {
     expect(result.decrypted).toBe(false);
     expect(result.value).toBe(ciphertext);
   });
+
+  it("leaves encrypted values intact when decrypted text contains suspicious control characters", () => {
+    const ciphertext = `!enc:${CryptoJS.AES.encrypt("private\u0000message", "firebase-uid").toString()}`;
+    const result = decryptKindroidValue(ciphertext, "firebase-uid");
+
+    expect(result.encrypted).toBe(true);
+    expect(result.decrypted).toBe(false);
+    expect(result.value).toBe(ciphertext);
+    expect(result.error).toContain("sanity checks");
+  });
+
+  it("allows ordinary multiline decrypted text", () => {
+    const ciphertext = `!enc:${CryptoJS.AES.encrypt("line one\nline two\tindented", "firebase-uid").toString()}`;
+
+    expect(decryptKindroidValue(ciphertext, "firebase-uid")).toEqual({
+      encrypted: true,
+      decrypted: true,
+      value: "line one\nline two\tindented"
+    });
+  });
 });
