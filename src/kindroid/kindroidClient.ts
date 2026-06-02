@@ -4,6 +4,8 @@ import type { Logger } from "../util/logger.js";
 import type {
   CreateKindroidJournalEntryInput,
   CreateKindroidJournalEntryResult,
+  DeleteKindroidJournalEntryInput,
+  DeleteKindroidJournalEntryResult,
   SendKindroidMessageInput,
   SendKindroidMessageResult,
   UpdateKindroidCurrentSceneInput,
@@ -15,6 +17,7 @@ import type {
 } from "./types.js";
 import {
   buildCreateJournalEntryPayload,
+  buildDeleteJournalEntryPayload,
   buildSendMessagePayload,
   buildUpdateCurrentScenePayload,
   buildUpdateGroupCurrentScenePayload,
@@ -25,6 +28,7 @@ const sendMessageUrl = "https://api.kindroid.ai/v1/send-message";
 const updateInfoUrl = "https://api.kindroid.ai/v1/update-info";
 const updateGroupChatUrl = "https://api.kindroid.ai/v1/groupchats-update";
 const journalCreateUrl = "https://api.kindroid.ai/v1/journal-create";
+const journalDeleteUrl = "https://api.kindroid.ai/v1/journal-delete";
 
 export class KindroidClient {
   constructor(
@@ -120,6 +124,30 @@ export class KindroidClient {
       ok: response.ok,
       aiId: input.aiId,
       keyphraseCount: payload.keyphrases instanceof Array ? payload.keyphrases.length : 0,
+      responseText: response.ok ? undefined : responseText.slice(0, 500)
+    });
+
+    return {
+      status: response.status,
+      ok: response.ok,
+      responseText: response.ok ? undefined : responseText.slice(0, 1000)
+    };
+  }
+
+  async deleteJournalEntry(input: DeleteKindroidJournalEntryInput): Promise<DeleteKindroidJournalEntryResult> {
+    const payload = buildDeleteJournalEntryPayload(input);
+    const response = await fetch(journalDeleteUrl, {
+      method: "POST",
+      headers: await this.authHeaders(),
+      body: JSON.stringify(payload)
+    });
+
+    const responseText = await response.text();
+    this.logger.info("Kindroid journal-delete request completed.", {
+      status: response.status,
+      ok: response.ok,
+      aiId: input.aiId,
+      journalEntryId: input.id,
       responseText: response.ok ? undefined : responseText.slice(0, 500)
     });
 

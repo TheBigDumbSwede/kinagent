@@ -453,6 +453,11 @@ h2 {
   padding: 10px 12px;
 }
 
+.journal-suggestion.delete {
+  border-color: #d9b7ad;
+  background: #fffafa;
+}
+
 .journal-suggestion header {
   display: flex;
   justify-content: space-between;

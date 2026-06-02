@@ -227,17 +227,29 @@ export class BridgeRuntime {
     }
 
     const client = new KindroidClient(this.options.config, this.options.logger);
-    const result = await client.createJournalEntry({
-      aiId: suggestion.aiId,
-      entry: suggestion.entry,
-      keyphrases: suggestion.keyphrases
-    });
+    const action = suggestion.action ?? "create";
+    const result =
+      action === "delete"
+        ? await client.deleteJournalEntry({
+            aiId: suggestion.aiId,
+            id: suggestion.targetJournalEntryId ?? ""
+          })
+        : await client.createJournalEntry({
+            aiId: suggestion.aiId,
+            entry: suggestion.entry,
+            keyphrases: suggestion.keyphrases
+          });
     if (!result.ok) {
-      throw new Error(`Kindroid journal-create failed with HTTP ${result.status}.`);
+      throw new Error(
+        `Kindroid journal-${action === "delete" ? "delete" : "create"} failed with HTTP ${result.status}.`
+      );
     }
 
     const capture = await captureKindroidState(this.options.config, this.options.logger, {
-      message: `Capture Kindroid journal entry ${suggestion.aiId}`
+      message:
+        action === "delete"
+          ? `Capture Kindroid journal deletion ${suggestion.aiId}`
+          : `Capture Kindroid journal entry ${suggestion.aiId}`
     });
     const accepted = this.journalSuggestions.markAccepted(id, {
       ok: result.ok,

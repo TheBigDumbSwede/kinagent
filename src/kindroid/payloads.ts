@@ -1,5 +1,6 @@
 import type {
   CreateKindroidJournalEntryInput,
+  DeleteKindroidJournalEntryInput,
   SendKindroidMessageInput,
   UpdateKindroidCurrentSceneInput,
   UpdateKindroidGroupCurrentSceneInput,
@@ -64,6 +65,21 @@ export function buildCreateJournalEntryPayload(input: CreateKindroidJournalEntry
     entry,
     keyphrases: normalizeKeyphrases(input.keyphrases),
     ai_id: input.aiId
+  };
+}
+
+export function buildDeleteJournalEntryPayload(input: DeleteKindroidJournalEntryInput): Record<string, unknown> {
+  if (!input.aiId) {
+    throw new Error("Missing Kindroid ai_id for journal entry deletion.");
+  }
+
+  if (!input.id) {
+    throw new Error("Missing Kindroid journal entry id for deletion.");
+  }
+
+  return {
+    ai_id: input.aiId,
+    id: input.id
   };
 }
 

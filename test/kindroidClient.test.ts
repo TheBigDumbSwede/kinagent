@@ -5,7 +5,11 @@ import type { FirestoreDocumentLike } from "../src/firestore/types.js";
 import { normalizeGroupDocument } from "../src/kindroid/client/groups.js";
 import { normalizeKinDocument } from "../src/kindroid/client/kins.js";
 import { KindroidClient } from "../src/kindroid/kindroidClient.js";
-import { buildCreateJournalEntryPayload, buildUpdateIdentityPayload } from "../src/kindroid/payloads.js";
+import {
+  buildCreateJournalEntryPayload,
+  buildDeleteJournalEntryPayload,
+  buildUpdateIdentityPayload
+} from "../src/kindroid/payloads.js";
 import type { Logger } from "../src/util/logger.js";
 
 describe("Kindroid client normalizers", () => {
@@ -111,6 +115,18 @@ describe("Kindroid client normalizers", () => {
         entry: "   "
       })
     ).rejects.toThrow("Journal entry cannot be empty.");
+  });
+
+  it("builds the observed Kindroid journal-delete payload", () => {
+    expect(
+      buildDeleteJournalEntryPayload({
+        aiId: "kin-1",
+        id: "journal-1"
+      })
+    ).toEqual({
+      ai_id: "kin-1",
+      id: "journal-1"
+    });
   });
 
   it("builds the observed Kindroid update-info identity payload", () => {

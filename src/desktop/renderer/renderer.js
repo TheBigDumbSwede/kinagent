@@ -930,7 +930,8 @@ function renderJournalSuggestions() {
 
 function createJournalSuggestionElement(suggestion) {
   const item = document.createElement("article");
-  item.className = "journal-suggestion";
+  const action = suggestionAction(suggestion);
+  item.className = `journal-suggestion ${action}`;
 
   const header = document.createElement("header");
   const heading = document.createElement("div");
@@ -939,11 +940,14 @@ function createJournalSuggestionElement(suggestion) {
   title.textContent = suggestion.title || (suggestion.strongEvent ? "Strong journal suggestion" : "Journal suggestion");
   const meta = document.createElement("div");
   meta.className = "journal-suggestion-meta";
-  const bucketLabel = categoryLabel(suggestion.category);
-  const detailLabel = categoryDetailLabel(suggestion.categoryDetail);
-  appendSuggestionBadge(meta, bucketLabel);
-  if (detailLabel && detailLabel !== bucketLabel) {
-    appendSuggestionBadge(meta, detailLabel);
+  appendSuggestionBadge(meta, action === "delete" ? "Delete review" : "Create review");
+  if (action === "create") {
+    const bucketLabel = categoryLabel(suggestion.category);
+    const detailLabel = categoryDetailLabel(suggestion.categoryDetail);
+    appendSuggestionBadge(meta, bucketLabel);
+    if (detailLabel && detailLabel !== bucketLabel) {
+      appendSuggestionBadge(meta, detailLabel);
+    }
   }
   if (suggestion.strongEvent) {
     appendSuggestionBadge(meta, "Strong event");
@@ -954,19 +958,34 @@ function createJournalSuggestionElement(suggestion) {
   header.append(heading, date);
 
   const entry = document.createElement("p");
-  entry.textContent = suggestion.entry || "";
+  entry.textContent =
+    action === "delete"
+      ? suggestion.targetJournalEntry || suggestion.targetJournalTitle || "Selected journal entry will be deleted."
+      : suggestion.entry || "";
 
   const details = document.createElement("dl");
+  if (action === "delete") {
+    appendSuggestionDetail(details, "Target", suggestion.targetJournalTitle || suggestion.targetJournalEntryId);
+  }
   appendSuggestionDetail(details, "Reason", suggestion.durabilityReason);
   appendSuggestionListDetail(details, "Evidence", suggestion.evidence || []);
-  appendSuggestionListDetail(details, "Keyphrases", suggestion.keyphrases || []);
+  if (action === "create") {
+    appendSuggestionListDetail(details, "Keyphrases", suggestion.keyphrases || []);
+  }
 
   const actions = document.createElement("div");
   actions.className = "journal-suggestion-actions";
 
   const accept = document.createElement("button");
   accept.type = "button";
-  accept.textContent = state.journalSavingId === suggestion.id ? "Accepting" : "Accept";
+  accept.textContent =
+    state.journalSavingId === suggestion.id
+      ? action === "delete"
+        ? "Deleting"
+        : "Accepting"
+      : action === "delete"
+        ? "Delete"
+        : "Accept";
   accept.disabled = Boolean(state.journalSavingId);
   accept.addEventListener("click", () => {
     void acceptJournalSuggestion(suggestion.id);
@@ -1077,7 +1096,7 @@ async function acceptJournalSuggestion(id) {
         "Captured settings request timed out."
       );
     }
-    elements.monitorLine.textContent = "Journal entry accepted and capture refreshed.";
+    elements.monitorLine.textContent = "Journal review accepted and capture refreshed.";
   } catch (error) {
     state.journalError = error.message || String(error);
   } finally {
@@ -1103,6 +1122,10 @@ function selectedKinJournalSuggestions() {
   }
 
   return state.journalSuggestions.filter((suggestion) => suggestion.aiId === state.selectedKinId);
+}
+
+function suggestionAction(suggestion) {
+  return suggestion?.action === "delete" ? "delete" : "create";
 }
 
 function pendingJournalSuggestionCount() {

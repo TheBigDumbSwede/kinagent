@@ -380,6 +380,7 @@ describe("HermesChatAdapter", () => {
       journalContextProvider: async () => ({
         existingEntries: [
           {
+            id: "journal-1",
             title: "Old Trust Concern",
             entry: "Sam and the user already resolved the old trust concern.",
             keyphrases: ["old trust concern"]
@@ -409,6 +410,7 @@ describe("HermesChatAdapter", () => {
     expect(event.journalContext).toEqual({
       existingEntries: [
         {
+          id: "journal-1",
           title: "Old Trust Concern",
           entry: "Sam and the user already resolved the old trust concern.",
           keyphrases: ["old trust concern"]
@@ -416,6 +418,78 @@ describe("HermesChatAdapter", () => {
       ],
       fieldExcerpts: [{ field: "Key Memories", value: "Sam treats the old trust concern as resolved." }]
     });
+  });
+
+  it("stores high-confidence Hermes journal deletion suggestions for captured entries", async () => {
+    const store = testJournalSuggestionStore();
+    const onSuggestionCreated = vi.fn();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  actions: [
+                    {
+                      type: "delete_journal_entry",
+                      ai_id: "kin-1",
+                      journal_entry_id: "journal-1",
+                      title: "Remove stale trust concern",
+                      target_title: "Old Trust Concern",
+                      target_entry: "Sam still treats the old trust concern as unresolved.",
+                      evidence: ["Sam said the concern has now been resolved."],
+                      durability_reason: "Keeping this entry would preserve stale recall.",
+                      confidence: "high",
+                      strong_event: true
+                    }
+                  ]
+                })
+              }
+            }
+          ]
+        })
+      )
+    );
+
+    const adapter = new HermesChatAdapter(testConfig(), logger, testKindroidUpdater(), {
+      journalSuggestions: store,
+      onJournalSuggestionCreated: onSuggestionCreated,
+      journalContextProvider: async () => ({
+        existingEntries: [
+          {
+            id: "journal-1",
+            title: "Old Trust Concern",
+            entry: "Sam still treats the old trust concern as unresolved.",
+            keyphrases: ["old trust concern"]
+          }
+        ],
+        fieldExcerpts: []
+      })
+    });
+    await adapter.handleChatChanged({
+      type: "kindroid.chat.changed",
+      kinId: "kin-1",
+      documentId: "doc-1",
+      timestamp: "2026-06-01T12:00:00.000Z",
+      text: "That old worry no longer applies.",
+      sender: "ai",
+      role: null,
+      source: "firestore"
+    });
+
+    expect(store.list("pending")).toEqual([
+      expect.objectContaining({
+        action: "delete",
+        aiId: "kin-1",
+        targetJournalEntryId: "journal-1",
+        targetJournalTitle: "Old Trust Concern",
+        targetJournalEntry: "Sam still treats the old trust concern as unresolved.",
+        durabilityReason: "Keeping this entry would preserve stale recall."
+      })
+    ]);
+    expect(onSuggestionCreated).toHaveBeenCalledWith(expect.objectContaining({ action: "delete" }));
   });
 
   it("ignores journal entry suggestions from user-authored messages", async () => {

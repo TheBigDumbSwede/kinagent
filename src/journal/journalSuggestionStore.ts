@@ -25,6 +25,7 @@ export interface JournalSuggestionStoreOptions {
 
 export type JournalSuggestionStatus = "pending" | "accepted" | "dismissed";
 export type JournalSuggestionCategory = (typeof journalSuggestionCategories)[number];
+export type JournalSuggestionAction = "create" | "delete";
 
 export interface JournalSuggestionInput {
   title: string;
@@ -39,9 +40,21 @@ export interface JournalSuggestionInput {
   existingEntries?: ExistingJournalEntry[];
 }
 
+export interface JournalDeletionSuggestionInput {
+  title: string;
+  targetJournalEntryId: string;
+  targetJournalTitle?: string;
+  targetJournalEntry?: string;
+  evidence: string[];
+  durabilityReason: string;
+  confidence: "high";
+  strongEvent: boolean;
+}
+
 export interface JournalSuggestion {
   id: string;
   aiId: string;
+  action: JournalSuggestionAction;
   title: string;
   status: JournalSuggestionStatus;
   createdAt: string;
@@ -58,6 +71,9 @@ export interface JournalSuggestion {
   durabilityReason: string;
   confidence: "high";
   strongEvent: boolean;
+  targetJournalEntryId?: string;
+  targetJournalTitle?: string;
+  targetJournalEntry?: string;
   acceptedAt?: string;
   dismissedAt?: string;
   result?: {
@@ -165,6 +181,7 @@ export class JournalSuggestionStore {
     const suggestion: JournalSuggestion = {
       id: `${now}-${aiId}-${notification.documentId}`.replace(/[^\w.-]+/g, "-"),
       aiId,
+      action: "create",
       title,
       status: "pending",
       createdAt: now,
@@ -181,6 +198,82 @@ export class JournalSuggestionStore {
       durabilityReason,
       confidence: "high",
       strongEvent: input.strongEvent
+    };
+
+    pacing[aiId] = {
+      messagesSinceLastProposal: 0,
+      lastProposalAt: now,
+      lastProposalDocumentId: notification.documentId
+    };
+    this.write({ ...file, suggestions: [suggestion, ...suggestions], pacing });
+    return suggestion;
+  }
+
+  createPendingDelete(
+    notification: KindroidChatNotification,
+    input: JournalDeletionSuggestionInput
+  ): JournalSuggestion | null {
+    const aiId = aiIdFromNotification(notification);
+    if (!aiId) {
+      return null;
+    }
+
+    const title = input.title.trim();
+    const targetJournalEntryId = input.targetJournalEntryId.trim();
+    const durabilityReason = input.durabilityReason.trim();
+    if (!title || !targetJournalEntryId || !durabilityReason) {
+      return null;
+    }
+
+    const file = this.read();
+    const suggestions = file.suggestions ?? [];
+    if (
+      suggestions.some(
+        (suggestion) =>
+          suggestion.aiId === aiId &&
+          suggestion.status === "pending" &&
+          suggestion.action === "delete" &&
+          suggestion.targetJournalEntryId === targetJournalEntryId
+      )
+    ) {
+      return null;
+    }
+
+    const pacing = file.pacing ?? {};
+    const currentPacing = pacing[aiId] ?? { messagesSinceLastProposal: this.options.throttleMessages };
+    const hasPendingForKin = suggestions.some(
+      (suggestion) => suggestion.aiId === aiId && suggestion.status === "pending"
+    );
+    const eligible =
+      (input.strongEvent && this.options.strongEventBypass) ||
+      (!hasPendingForKin && currentPacing.messagesSinceLastProposal >= this.options.throttleMessages);
+
+    if (!eligible) {
+      return null;
+    }
+
+    const now = new Date().toISOString();
+    const suggestion: JournalSuggestion = {
+      id: `${now}-${aiId}-${notification.documentId}-delete-${targetJournalEntryId}`.replace(/[^\w.-]+/g, "-"),
+      aiId,
+      action: "delete",
+      title,
+      status: "pending",
+      createdAt: now,
+      updatedAt: now,
+      source: notification.type === "kindroid.group_chat.changed" ? "group" : "direct",
+      groupId: notification.type === "kindroid.group_chat.changed" ? notification.groupId : undefined,
+      documentId: notification.documentId,
+      timestamp: notification.timestamp,
+      entry: "",
+      keyphrases: [],
+      evidence: normalizeStringArray(input.evidence, 6),
+      durabilityReason,
+      confidence: "high",
+      strongEvent: input.strongEvent,
+      targetJournalEntryId,
+      targetJournalTitle: normalizeOptionalString(input.targetJournalTitle),
+      targetJournalEntry: normalizeOptionalString(input.targetJournalEntry)
     };
 
     pacing[aiId] = {
@@ -258,6 +351,11 @@ function aiIdFromNotification(notification: KindroidChatNotification): string | 
 
 function normalizeStringArray(values: string[], maxCount: number): string[] {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))].slice(0, maxCount);
+}
+
+function normalizeOptionalString(value: string | undefined): string | undefined {
+  const normalized = value?.trim();
+  return normalized ? normalized : undefined;
 }
 
 function normalizeCategoryInput(

@@ -97,6 +97,31 @@ describe("JournalSuggestionStore", () => {
     );
   });
 
+  it("stores reviewed deletion suggestions for existing journal entries", () => {
+    const store = testStore();
+
+    expect(
+      store.createPendingDelete(notification("doc-1"), {
+        title: "Remove outdated trust entry",
+        targetJournalEntryId: "journal-1",
+        targetJournalTitle: "Old Trust Concern",
+        targetJournalEntry: "Sam still treats the old trust concern as unresolved.",
+        evidence: ["Sam said the concern has been resolved."],
+        durabilityReason: "Keeping the old entry would cause stale recall.",
+        confidence: "high",
+        strongEvent: false
+      })
+    ).toEqual(
+      expect.objectContaining({
+        action: "delete",
+        aiId: "kin-1",
+        targetJournalEntryId: "journal-1",
+        targetJournalTitle: "Old Trust Concern",
+        targetJournalEntry: "Sam still treats the old trust concern as unresolved."
+      })
+    );
+  });
+
   it("rejects near-duplicates of accepted or captured journal entries", () => {
     const store = testStore();
     const first = store.createPending(
@@ -127,6 +152,7 @@ describe("JournalSuggestionStore", () => {
         keyphrases: ["lighthouse key", "outsiders"],
         existingEntries: [
           {
+            id: "journal-existing",
             title: "Hidden Lighthouse Key",
             entry: "Sam promised to keep the lighthouse key hidden from outsiders.",
             keyphrases: ["lighthouse key"]

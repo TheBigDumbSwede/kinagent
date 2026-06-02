@@ -5,6 +5,7 @@ import type { KindroidChatNotification } from "../firestore/types.js";
 import type { Logger } from "../util/logger.js";
 
 export interface ExistingJournalEntry {
+  id: string;
   title: string;
   entry: string;
   keyphrases: string[];
@@ -95,6 +96,7 @@ async function readExistingEntries(kinDir: string): Promise<ExistingJournalEntry
     .map((entry) => {
       const fields = entry.fields ?? {};
       return {
+        id: typeof entry.id === "string" ? entry.id : "",
         title: typeof entry.id === "string" ? entry.id : "Journal entry",
         entry: stringValue(fields.entry?.value),
         keyphrases: Array.isArray(fields.keyphrases?.value)
@@ -102,7 +104,7 @@ async function readExistingEntries(kinDir: string): Promise<ExistingJournalEntry
           : []
       };
     })
-    .filter((entry) => entry.entry)
+    .filter((entry) => entry.id && entry.entry)
     .slice(0, 12);
 }
 

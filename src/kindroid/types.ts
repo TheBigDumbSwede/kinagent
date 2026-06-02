@@ -43,6 +43,13 @@ export interface CreateKindroidJournalEntryResult {
   responseText?: string;
 }
 
+export interface DeleteKindroidJournalEntryInput {
+  aiId: string;
+  id: string;
+}
+
+export type DeleteKindroidJournalEntryResult = CreateKindroidJournalEntryResult;
+
 export interface UpdateKindroidIdentityInput {
   aiId: string;
   backstory: string;
