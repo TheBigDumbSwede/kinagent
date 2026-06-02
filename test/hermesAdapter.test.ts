@@ -309,8 +309,10 @@ describe("HermesChatAdapter", () => {
                       type: "propose_journal_entry",
                       ai_id: "kin-1",
                       title: "Old Trust Concern Resolved",
+                      category: "resolved_conflict",
+                      category_detail: "old trust repair",
                       entry: "Sam and the user agreed that the old trust concern is now part of their history.",
-                      keyphrases: ["trust", "relationship milestone"],
+                      keyphrases: ["old trust concern", "Sam history"],
                       evidence: ["Sam said the old worry no longer applies."],
                       durability_reason: "This changes how future relationship context should be interpreted.",
                       confidence: "high",
@@ -347,7 +349,9 @@ describe("HermesChatAdapter", () => {
         aiId: "kin-1",
         title: "Old Trust Concern Resolved",
         entry: "Sam and the user agreed that the old trust concern is now part of their history.",
-        keyphrases: ["trust", "relationship milestone"],
+        category: "resolved_conflict",
+        categoryDetail: "old trust repair",
+        keyphrases: ["old trust concern", "Sam history"],
         durabilityReason: "This changes how future relationship context should be interpreted.",
         strongEvent: false
       })
@@ -355,6 +359,63 @@ describe("HermesChatAdapter", () => {
     expect(onSuggestionCreated).toHaveBeenCalledWith(expect.objectContaining({ aiId: "kin-1" }));
     expect(kindroid.updateCurrentScene).not.toHaveBeenCalled();
     expect(kindroid.updateGroupCurrentScene).not.toHaveBeenCalled();
+  });
+
+  it("includes captured journal context in Hermes requests when available", async () => {
+    const fetchMock = vi.fn(async () =>
+      Response.json({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({ actions: [] })
+            }
+          }
+        ]
+      })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const adapter = new HermesChatAdapter(testConfig(), logger, testKindroidUpdater(), {
+      journalSuggestions: testJournalSuggestionStore(),
+      journalContextProvider: async () => ({
+        existingEntries: [
+          {
+            title: "Old Trust Concern",
+            entry: "Sam and the user already resolved the old trust concern.",
+            keyphrases: ["old trust concern"]
+          }
+        ],
+        fieldExcerpts: [{ field: "Key Memories", value: "Sam treats the old trust concern as resolved." }]
+      })
+    });
+    await adapter.handleChatChanged({
+      type: "kindroid.chat.changed",
+      kinId: "kin-1",
+      documentId: "doc-1",
+      timestamp: "2026-06-01T12:00:00.000Z",
+      text: "That old worry no longer applies.",
+      sender: "ai",
+      role: null,
+      source: "firestore"
+    });
+
+    const fetchCall = fetchMock.mock.calls[0] as unknown as [string, { body?: string }];
+    const body = JSON.parse(String(fetchCall[1]?.body)) as {
+      messages: Array<{ role: string; content: string }>;
+    };
+    const event = JSON.parse(body.messages.find((message) => message.role === "user")?.content ?? "{}") as {
+      journalContext?: unknown;
+    };
+    expect(event.journalContext).toEqual({
+      existingEntries: [
+        {
+          title: "Old Trust Concern",
+          entry: "Sam and the user already resolved the old trust concern.",
+          keyphrases: ["old trust concern"]
+        }
+      ],
+      fieldExcerpts: [{ field: "Key Memories", value: "Sam treats the old trust concern as resolved." }]
+    });
   });
 
   it("ignores journal entry suggestions from user-authored messages", async () => {
@@ -373,8 +434,9 @@ describe("HermesChatAdapter", () => {
                       type: "propose_journal_entry",
                       ai_id: "kin-1",
                       title: "User Personal Fact",
+                      category: "personal_fact",
                       entry: "The user shared a durable personal fact.",
-                      keyphrases: ["personal fact"],
+                      keyphrases: ["favorite observatory"],
                       evidence: ["The user said the fact directly."],
                       durability_reason: "This may matter later, but it came from the user message.",
                       confidence: "high",
@@ -423,7 +485,9 @@ describe("HermesChatAdapter", () => {
                       type: "propose_journal_entry",
                       ai_id: "kin-1",
                       title: "Passing Banter",
+                      category: "other_durable_event",
                       entry: "Maybe this banter matters.",
+                      keyphrases: ["passing joke"],
                       durability_reason: "Unclear.",
                       confidence: "medium"
                     }

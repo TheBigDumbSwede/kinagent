@@ -34,7 +34,11 @@ describe("JournalSuggestionStore", () => {
 
     store.recordReadableMessage(notification("message-20", "ai"));
     expect(store.createPending(notification("doc-4"), suggestionInput("Eligible again."))).toEqual(
-      expect.objectContaining({ title: "Durable Event", entry: "Eligible again." })
+      expect.objectContaining({
+        title: "Durable Event",
+        category: "relationship_milestone",
+        entry: "Eligible again."
+      })
     );
   });
 
@@ -60,6 +64,74 @@ describe("JournalSuggestionStore", () => {
       store.createPending(notification("doc-2"), {
         ...suggestionInput("Strong event."),
         strongEvent: true
+      })
+    ).toBeNull();
+  });
+
+  it("rejects suggestions that only have generic keyphrases", () => {
+    const store = testStore();
+
+    expect(
+      store.createPending(notification("doc-1"), {
+        ...suggestionInput("A durable entry with weak trigger words."),
+        keyphrases: ["memory", "important", "relationship"]
+      })
+    ).toBeNull();
+  });
+
+  it("preserves custom category labels as details under the catch-all bucket", () => {
+    const store = testStore();
+
+    expect(
+      store.createPending(notification("doc-1"), {
+        ...suggestionInput("Sam and the user established a shared Sunday ritual."),
+        category: "shared_ritual",
+        categoryDetail: "shared Sunday ritual",
+        keyphrases: ["Sunday ritual", "shared breakfast"]
+      })
+    ).toEqual(
+      expect.objectContaining({
+        category: "other_durable_event",
+        categoryDetail: "shared Sunday ritual"
+      })
+    );
+  });
+
+  it("rejects near-duplicates of accepted or captured journal entries", () => {
+    const store = testStore();
+    const first = store.createPending(
+      notification("doc-1"),
+      suggestionInput("Sam and the user resolved the old trust concern and agreed to treat it as history.")
+    );
+    if (!first) {
+      throw new Error("Expected first suggestion.");
+    }
+    store.markAccepted(first.id, { ok: true });
+
+    store.recordReadableMessage(notification("message-1", "ai"));
+    expect(
+      store.createPending(notification("doc-2"), {
+        ...suggestionInput(
+          "Sam and the user resolved the old trust concern, agreeing it now belongs to their history."
+        ),
+        strongEvent: true
+      })
+    ).toBeNull();
+
+    for (let index = 0; index < journalSuggestionThrottleMessages; index += 1) {
+      store.recordReadableMessage(notification(`message-${index + 2}`, "ai"));
+    }
+    expect(
+      store.createPending(notification("doc-3"), {
+        ...suggestionInput("Sam promised to keep the lighthouse key hidden from outsiders."),
+        keyphrases: ["lighthouse key", "outsiders"],
+        existingEntries: [
+          {
+            title: "Hidden Lighthouse Key",
+            entry: "Sam promised to keep the lighthouse key hidden from outsiders.",
+            keyphrases: ["lighthouse key"]
+          }
+        ]
       })
     ).toBeNull();
   });
@@ -91,7 +163,8 @@ function suggestionInput(entry: string) {
   return {
     title: "Durable Event",
     entry,
-    keyphrases: ["milestone"],
+    category: "relationship_milestone" as const,
+    keyphrases: ["old trust concern"],
     evidence: ["specific evidence"],
     durabilityReason: "This changes future interpretation.",
     confidence: "high" as const,

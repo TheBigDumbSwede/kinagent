@@ -1,6 +1,7 @@
 import type { AppConfig } from "../config/types.js";
 import type { KindroidChatNotification } from "../firestore/types.js";
 import { type JournalSuggestion, type JournalSuggestionStore } from "../journal/journalSuggestionStore.js";
+import { createCapturedJournalContextProvider, type JournalSuggestionContext } from "../journal/journalContext.js";
 import { KindroidClient } from "../kindroid/kindroidClient.js";
 import type { Logger } from "../util/logger.js";
 import {
@@ -25,6 +26,7 @@ export type { KindroidSceneUpdater } from "./currentSceneActionHandler.js";
 export interface HermesChatAdapterOptions {
   journalSuggestions?: JournalSuggestionStore;
   onJournalSuggestionCreated?: (suggestion: JournalSuggestion) => void;
+  journalContextProvider?: (notification: KindroidChatNotification) => Promise<JournalSuggestionContext>;
 }
 
 export class LoggingHermesAdapter implements HermesAdapter {
@@ -37,6 +39,9 @@ export class LoggingHermesAdapter implements HermesAdapter {
 
 export class HermesChatAdapter implements HermesAdapter {
   private readonly actionHandlers: Array<HermesActionHandler<unknown>>;
+  private readonly journalContextProvider?: (
+    notification: KindroidChatNotification
+  ) => Promise<JournalSuggestionContext>;
 
   constructor(
     private readonly config: AppConfig,
@@ -46,8 +51,11 @@ export class HermesChatAdapter implements HermesAdapter {
   ) {
     this.actionHandlers = [new CurrentSceneActionHandler(config, logger, this.kindroidClient)];
     if (options.journalSuggestions) {
+      this.journalContextProvider = options.journalContextProvider ?? createCapturedJournalContextProvider(logger);
       this.actionHandlers.push(
-        new JournalSuggestionActionHandler(logger, options.journalSuggestions, options.onJournalSuggestionCreated)
+        new JournalSuggestionActionHandler(logger, options.journalSuggestions, options.onJournalSuggestionCreated, {
+          contextProvider: this.journalContextProvider
+        })
       );
     }
   }
@@ -88,6 +96,7 @@ export class HermesChatAdapter implements HermesAdapter {
   }
 
   private async requestDecision(notification: KindroidChatNotification): Promise<HermesActionDecision> {
+    const journalContext = await this.journalContextProvider?.(notification);
     const response = await fetch(`${normalizeBaseUrl(this.config.hermes.baseUrl)}/chat/completions`, {
       method: "POST",
       headers: {
@@ -103,7 +112,7 @@ export class HermesChatAdapter implements HermesAdapter {
           },
           {
             role: "user",
-            content: JSON.stringify(toHermesEvent(notification))
+            content: JSON.stringify(toHermesEvent(notification, journalContext))
           }
         ]
       })
@@ -189,7 +198,17 @@ function extractJsonObject(content: string): string | null {
   return start >= 0 && end > start ? content.slice(start, end + 1) : null;
 }
 
-function toHermesEvent(notification: KindroidChatNotification) {
+function toHermesEvent(notification: KindroidChatNotification, journalContext?: JournalSuggestionContext) {
+  const context =
+    journalContext && (journalContext.existingEntries.length > 0 || journalContext.fieldExcerpts.length > 0)
+      ? {
+          journalContext: {
+            existingEntries: journalContext.existingEntries,
+            fieldExcerpts: journalContext.fieldExcerpts
+          }
+        }
+      : {};
+
   if (notification.type === "kindroid.chat.changed") {
     return {
       agentId: "kindroid",
@@ -200,7 +219,8 @@ function toHermesEvent(notification: KindroidChatNotification) {
       timestamp: notification.timestamp,
       sender: notification.sender,
       role: notification.role,
-      text: notification.text
+      text: notification.text,
+      ...context
     };
   }
 
@@ -214,7 +234,8 @@ function toHermesEvent(notification: KindroidChatNotification) {
     timestamp: notification.timestamp,
     sender: notification.sender,
     role: notification.role,
-    text: notification.text
+    text: notification.text,
+    ...context
   };
 }
 

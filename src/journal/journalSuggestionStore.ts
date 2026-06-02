@@ -2,9 +2,21 @@ import fs from "node:fs";
 import path from "node:path";
 import type { AppConfig } from "../config/types.js";
 import type { KindroidChatNotification } from "../firestore/types.js";
+import type { ExistingJournalEntry } from "./journalContext.js";
 
 export const journalSuggestionThrottleMessages = 20;
 export const journalSuggestionMaxKeyphrases = 8;
+export const journalSuggestionCategories = [
+  "relationship_milestone",
+  "world_capsule",
+  "behavior_callback",
+  "personal_fact",
+  "resolved_conflict",
+  "backstory_hook",
+  "important_decision",
+  "recurring_pattern",
+  "other_durable_event"
+] as const;
 
 export interface JournalSuggestionStoreOptions {
   throttleMessages: number;
@@ -12,15 +24,19 @@ export interface JournalSuggestionStoreOptions {
 }
 
 export type JournalSuggestionStatus = "pending" | "accepted" | "dismissed";
+export type JournalSuggestionCategory = (typeof journalSuggestionCategories)[number];
 
 export interface JournalSuggestionInput {
   title: string;
   entry: string;
+  category?: string;
+  categoryDetail?: string;
   keyphrases: string[];
   evidence: string[];
   durabilityReason: string;
   confidence: "high";
   strongEvent: boolean;
+  existingEntries?: ExistingJournalEntry[];
 }
 
 export interface JournalSuggestion {
@@ -35,6 +51,8 @@ export interface JournalSuggestion {
   documentId: string;
   timestamp: string | null;
   entry: string;
+  category?: JournalSuggestionCategory;
+  categoryDetail?: string;
   keyphrases: string[];
   evidence: string[];
   durabilityReason: string;
@@ -118,12 +136,18 @@ export class JournalSuggestionStore {
     const title = input.title.trim();
     const entry = input.entry.trim();
     const durabilityReason = input.durabilityReason.trim();
-    if (!title || !entry || !durabilityReason) {
+    const category = normalizeCategoryInput(input.category, input.categoryDetail);
+    const keyphrases = normalizeKeyphrases(input.keyphrases);
+    if (!title || !entry || !durabilityReason || keyphrases.length === 0) {
       return null;
     }
 
     const file = this.read();
     const suggestions = file.suggestions ?? [];
+    if (isDuplicateSuggestion(aiId, title, entry, keyphrases, suggestions, input.existingEntries ?? [])) {
+      return null;
+    }
+
     const pacing = file.pacing ?? {};
     const currentPacing = pacing[aiId] ?? { messagesSinceLastProposal: this.options.throttleMessages };
     const hasPendingForKin = suggestions.some(
@@ -150,7 +174,9 @@ export class JournalSuggestionStore {
       documentId: notification.documentId,
       timestamp: notification.timestamp,
       entry,
-      keyphrases: normalizeStringArray(input.keyphrases, journalSuggestionMaxKeyphrases),
+      category: category.category,
+      categoryDetail: category.categoryDetail,
+      keyphrases,
       evidence: normalizeStringArray(input.evidence, 6),
       durabilityReason,
       confidence: "high",
@@ -232,4 +258,132 @@ function aiIdFromNotification(notification: KindroidChatNotification): string | 
 
 function normalizeStringArray(values: string[], maxCount: number): string[] {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))].slice(0, maxCount);
+}
+
+function normalizeCategoryInput(
+  categoryValue: string | undefined,
+  detailValue: string | undefined
+): { category: JournalSuggestionCategory; categoryDetail?: string } {
+  const category = normalizeCategoryText(categoryValue);
+  const detail = normalizeCategoryDetail(detailValue);
+  if (journalSuggestionCategories.includes(category as JournalSuggestionCategory)) {
+    return {
+      category: category as JournalSuggestionCategory,
+      categoryDetail: detail
+    };
+  }
+
+  return {
+    category: "other_durable_event",
+    categoryDetail: detail || category || undefined
+  };
+}
+
+function normalizeCategoryText(value: string | undefined): string {
+  return (
+    value
+      ?.trim()
+      .toLowerCase()
+      .replace(/[\s-]+/g, "_")
+      .replace(/[^\w]+/g, "") ?? ""
+  );
+}
+
+function normalizeCategoryDetail(value: string | undefined): string | undefined {
+  const normalized = value?.trim().replace(/\s+/g, " ");
+  return normalized ? normalized.slice(0, 80) : undefined;
+}
+
+const genericKeyphrases = new Set([
+  "memory",
+  "important",
+  "relationship",
+  "feelings",
+  "emotion",
+  "emotions",
+  "event",
+  "moment",
+  "milestone",
+  "fact",
+  "personal fact",
+  "journal",
+  "update"
+]);
+
+function normalizeKeyphrases(values: string[]): string[] {
+  return normalizeStringArray(values, journalSuggestionMaxKeyphrases).filter((value) => {
+    const normalized = value.toLowerCase().replace(/\s+/g, " ").trim();
+    return normalized.length >= 3 && !genericKeyphrases.has(normalized);
+  });
+}
+
+function isDuplicateSuggestion(
+  aiId: string,
+  title: string,
+  entry: string,
+  keyphrases: string[],
+  suggestions: JournalSuggestion[],
+  existingEntries: ExistingJournalEntry[]
+): boolean {
+  const comparableSuggestions = suggestions
+    .filter((suggestion) => suggestion.aiId === aiId && suggestion.status !== "dismissed")
+    .map((suggestion) => ({
+      title: suggestion.title,
+      entry: suggestion.entry,
+      keyphrases: suggestion.keyphrases
+    }));
+
+  return [...comparableSuggestions, ...existingEntries].some((existing) => {
+    return (
+      normalizedText(existing.title) === normalizedText(title) ||
+      textSimilarity(existing.entry, entry) >= 0.74 ||
+      (keyphraseOverlap(existing.keyphrases, keyphrases) >= 0.75 && textSimilarity(existing.entry, entry) >= 0.35)
+    );
+  });
+}
+
+function normalizedText(value: string): string {
+  return tokenize(value).join(" ");
+}
+
+function textSimilarity(left: string, right: string): number {
+  const leftTokens = new Set(tokenize(left));
+  const rightTokens = new Set(tokenize(right));
+  if (leftTokens.size === 0 || rightTokens.size === 0) {
+    return 0;
+  }
+
+  let overlap = 0;
+  for (const token of leftTokens) {
+    if (rightTokens.has(token)) {
+      overlap += 1;
+    }
+  }
+
+  return overlap / Math.max(leftTokens.size, rightTokens.size);
+}
+
+function keyphraseOverlap(left: string[], right: string[]): number {
+  const leftPhrases = new Set(left.map(normalizedText).filter(Boolean));
+  const rightPhrases = new Set(right.map(normalizedText).filter(Boolean));
+  if (leftPhrases.size === 0 || rightPhrases.size === 0) {
+    return 0;
+  }
+
+  let overlap = 0;
+  for (const phrase of leftPhrases) {
+    if (rightPhrases.has(phrase)) {
+      overlap += 1;
+    }
+  }
+
+  return overlap / Math.min(leftPhrases.size, rightPhrases.size);
+}
+
+function tokenize(value: string): string[] {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]+/g, " ")
+    .split(/\s+/)
+    .filter((token) => token.length > 2 && !genericKeyphrases.has(token));
 }

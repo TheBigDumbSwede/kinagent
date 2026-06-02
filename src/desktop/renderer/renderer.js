@@ -933,19 +933,33 @@ function createJournalSuggestionElement(suggestion) {
   item.className = "journal-suggestion";
 
   const header = document.createElement("header");
+  const heading = document.createElement("div");
+  heading.className = "journal-suggestion-heading";
   const title = document.createElement("strong");
   title.textContent = suggestion.title || (suggestion.strongEvent ? "Strong journal suggestion" : "Journal suggestion");
+  const meta = document.createElement("div");
+  meta.className = "journal-suggestion-meta";
+  const bucketLabel = categoryLabel(suggestion.category);
+  const detailLabel = categoryDetailLabel(suggestion.categoryDetail);
+  appendSuggestionBadge(meta, bucketLabel);
+  if (detailLabel && detailLabel !== bucketLabel) {
+    appendSuggestionBadge(meta, detailLabel);
+  }
+  if (suggestion.strongEvent) {
+    appendSuggestionBadge(meta, "Strong event");
+  }
+  heading.append(title, meta);
   const date = document.createElement("span");
   date.textContent = formatTime(suggestion.createdAt);
-  header.append(title, date);
+  header.append(heading, date);
 
   const entry = document.createElement("p");
   entry.textContent = suggestion.entry || "";
 
   const details = document.createElement("dl");
   appendSuggestionDetail(details, "Reason", suggestion.durabilityReason);
-  appendSuggestionDetail(details, "Evidence", (suggestion.evidence || []).join(" | "));
-  appendSuggestionDetail(details, "Keyphrases", (suggestion.keyphrases || []).join(", "));
+  appendSuggestionListDetail(details, "Evidence", suggestion.evidence || []);
+  appendSuggestionListDetail(details, "Keyphrases", suggestion.keyphrases || []);
 
   const actions = document.createElement("div");
   actions.className = "journal-suggestion-actions";
@@ -972,6 +986,17 @@ function createJournalSuggestionElement(suggestion) {
   return item;
 }
 
+function appendSuggestionBadge(container, label) {
+  if (!label) {
+    return;
+  }
+
+  const badge = document.createElement("span");
+  badge.className = "journal-suggestion-badge";
+  badge.textContent = label;
+  container.append(badge);
+}
+
 function appendSuggestionDetail(list, label, value) {
   if (!value) {
     return;
@@ -982,6 +1007,44 @@ function appendSuggestionDetail(list, label, value) {
   const detail = document.createElement("dd");
   detail.textContent = value;
   list.append(term, detail);
+}
+
+function appendSuggestionListDetail(list, label, values) {
+  const visibleValues = values.map((value) => String(value).trim()).filter(Boolean);
+  if (visibleValues.length === 0) {
+    return;
+  }
+
+  const term = document.createElement("dt");
+  term.textContent = label;
+  const detail = document.createElement("dd");
+  const valueList = document.createElement("ul");
+  for (const value of visibleValues) {
+    const item = document.createElement("li");
+    item.textContent = value;
+    valueList.append(item);
+  }
+  detail.append(valueList);
+  list.append(term, detail);
+}
+
+function categoryLabel(category) {
+  const labels = {
+    relationship_milestone: "Relationship milestone",
+    world_capsule: "World capsule",
+    behavior_callback: "Behavior callback",
+    personal_fact: "Personal fact",
+    resolved_conflict: "Resolved conflict",
+    backstory_hook: "Backstory hook",
+    important_decision: "Important decision",
+    recurring_pattern: "Recurring pattern",
+    other_durable_event: "Durable event"
+  };
+  return labels[category] || "";
+}
+
+function categoryDetailLabel(detail) {
+  return typeof detail === "string" ? detail.trim() : "";
 }
 
 function renderJournalTabBadge() {
@@ -1014,7 +1077,7 @@ async function acceptJournalSuggestion(id) {
         "Captured settings request timed out."
       );
     }
-    elements.monitorLine.textContent = "Journal entry accepted.";
+    elements.monitorLine.textContent = "Journal entry accepted and capture refreshed.";
   } catch (error) {
     state.journalError = error.message || String(error);
   } finally {
