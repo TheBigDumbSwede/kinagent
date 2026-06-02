@@ -2,6 +2,7 @@
   "name": "kinagent",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "main": "dist/desktop/main.js",
   "author": "TheBigDumbSwede",
