@@ -1,3 +1,8 @@
+import { createVoiceAudioPlayer } from "./audioPlayback.js";
+import { formatTime, formatTimelineChange, providerLabel } from "./formatters.js";
+import { createMessageElement, visibleMonitorMessages as filterVisibleMonitorMessages } from "./monitorMessages.js";
+import { createDiffLine, renderSelectedHistoryDiff } from "./timelineDiff.js";
+
 const state = {
   kins: [],
   subscriptions: [],
@@ -69,6 +74,12 @@ const elements = {
   refreshGroupsButton: document.querySelector("#refreshGroupsButton"),
   clearButton: document.querySelector("#clearButton")
 };
+
+const playVoiceAudio = createVoiceAudioPlayer({
+  onError(error) {
+    elements.monitorLine.textContent = `Voice playback failed: ${error.message || String(error)}`;
+  }
+});
 
 elements.loginStartButton.addEventListener("click", () =>
   runAction("Opening login", () => window.kinagent.startLogin())
@@ -863,102 +874,9 @@ function renderFieldContent(content, selectedEntry, previousEntry) {
     return;
   }
 
-  for (const line of formatSelectedHistoryDiff(selectedEntry, previousEntry)) {
+  for (const line of renderSelectedHistoryDiff(selectedEntry, previousEntry)) {
     elements.fieldContent.append(createDiffLine(line));
   }
-}
-
-function formatSelectedHistoryDiff(entry, previousEntry) {
-  const lines = buildLineDiff(previousEntry?.content || "", entry.content || "");
-  return lines.length > 0 ? lines : [{ prefix: " ", text: "No text differences." }];
-}
-
-function createDiffLine(line) {
-  const element = document.createElement("span");
-  element.className =
-    line.prefix === "+"
-      ? "diff-line diff-added"
-      : line.prefix === "-"
-        ? "diff-line diff-removed"
-        : "diff-line diff-context";
-  element.textContent = `${line.prefix} ${line.text}`;
-  return element;
-}
-
-function buildLineDiff(previousContent, selectedContent) {
-  const previousLines = splitDiffLines(previousContent);
-  const selectedLines = splitDiffLines(selectedContent);
-  if (previousContent === selectedContent) {
-    return [];
-  }
-
-  if (previousLines.length * selectedLines.length > 250_000) {
-    return [
-      { prefix: "-", text: `${previousLines.length} previous snapshot lines` },
-      { prefix: "+", text: `${selectedLines.length} selected snapshot lines` }
-    ];
-  }
-
-  const table = Array.from({ length: previousLines.length + 1 }, () => new Array(selectedLines.length + 1).fill(0));
-  for (let leftIndex = previousLines.length - 1; leftIndex >= 0; leftIndex -= 1) {
-    for (let rightIndex = selectedLines.length - 1; rightIndex >= 0; rightIndex -= 1) {
-      table[leftIndex][rightIndex] =
-        previousLines[leftIndex] === selectedLines[rightIndex]
-          ? table[leftIndex + 1][rightIndex + 1] + 1
-          : Math.max(table[leftIndex + 1][rightIndex], table[leftIndex][rightIndex + 1]);
-    }
-  }
-
-  const diff = [];
-  let leftIndex = 0;
-  let rightIndex = 0;
-  while (leftIndex < previousLines.length && rightIndex < selectedLines.length) {
-    if (previousLines[leftIndex] === selectedLines[rightIndex]) {
-      diff.push({ prefix: " ", text: previousLines[leftIndex] });
-      leftIndex += 1;
-      rightIndex += 1;
-    } else if (table[leftIndex + 1][rightIndex] >= table[leftIndex][rightIndex + 1]) {
-      diff.push({ prefix: "-", text: previousLines[leftIndex] });
-      leftIndex += 1;
-    } else {
-      diff.push({ prefix: "+", text: selectedLines[rightIndex] });
-      rightIndex += 1;
-    }
-  }
-
-  while (leftIndex < previousLines.length) {
-    diff.push({ prefix: "-", text: previousLines[leftIndex] });
-    leftIndex += 1;
-  }
-
-  while (rightIndex < selectedLines.length) {
-    diff.push({ prefix: "+", text: selectedLines[rightIndex] });
-    rightIndex += 1;
-  }
-
-  return diff;
-}
-
-function splitDiffLines(value) {
-  const normalized = value.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-  return normalized.length === 0 ? [] : normalized.split("\n");
-}
-
-function formatTimelineChange(entry) {
-  if (!entry.changed && entry.previousShortHash) {
-    return "No text change from previous snapshot";
-  }
-
-  const added = Number(entry.addedLines || 0);
-  const removed = Number(entry.removedLines || 0);
-  const characterDelta = Number(entry.characterDelta || 0);
-  const characterLabel = characterDelta === 0 ? "0 chars" : `${characterDelta > 0 ? "+" : ""}${characterDelta} chars`;
-
-  if (!entry.previousShortHash) {
-    return `Initial capture · +${added} lines · ${characterLabel}`;
-  }
-
-  return `Compared with ${entry.previousShortHash} · +${added} / -${removed} lines · ${characterLabel}`;
 }
 
 function currentCapturedField() {
@@ -1043,10 +961,6 @@ function subtitleForDetailMode(mode) {
   return "Captured settings history";
 }
 
-function providerLabel(provider) {
-  return provider === "elevenlabs" ? "ElevenLabs" : "OpenAI";
-}
-
 function withTimeout(promise, timeoutMs, message) {
   let timeoutId;
   const timeout = new Promise((_, reject) => {
@@ -1056,56 +970,6 @@ function withTimeout(promise, timeoutMs, message) {
   return Promise.race([promise, timeout]).finally(() => {
     window.clearTimeout(timeoutId);
   });
-}
-
-const voiceAudio = {
-  context: null,
-  nextStartTime: 0
-};
-
-async function playVoiceAudio(payload) {
-  if (!payload?.audio || payload.format !== "mp3") {
-    return;
-  }
-
-  try {
-    const context = voiceAudio.context || new AudioContext();
-    voiceAudio.context = context;
-    if (context.state === "suspended") {
-      await context.resume();
-    }
-
-    const audio = audioPayloadToArrayBuffer(payload.audio);
-    const decoded = await context.decodeAudioData(audio.slice(0));
-    const source = context.createBufferSource();
-    source.buffer = decoded;
-    source.connect(context.destination);
-
-    const now = context.currentTime;
-    const boundaryGapSeconds = Math.max(0, Number(payload.boundaryGapMs ?? 80)) / 1000;
-    const startAt = Math.max(now + 0.02, voiceAudio.nextStartTime + boundaryGapSeconds);
-    source.start(startAt);
-    voiceAudio.nextStartTime = startAt + decoded.duration;
-    source.onended = () => {
-      if (context.currentTime >= voiceAudio.nextStartTime - 0.05) {
-        voiceAudio.nextStartTime = 0;
-      }
-    };
-  } catch (error) {
-    elements.monitorLine.textContent = `Voice playback failed: ${error.message || String(error)}`;
-  }
-}
-
-function audioPayloadToArrayBuffer(audio) {
-  if (audio instanceof ArrayBuffer) {
-    return audio;
-  }
-
-  if (ArrayBuffer.isView(audio)) {
-    return audio.buffer.slice(audio.byteOffset, audio.byteOffset + audio.byteLength);
-  }
-
-  throw new Error("Unsupported audio payload.");
 }
 
 function handleMonitorLine(payload) {
@@ -1139,15 +1003,7 @@ function renderMessageList() {
 }
 
 function visibleMonitorMessages() {
-  if (state.selectedGroupId) {
-    return state.monitorMessages.filter((message) => message.groupId === state.selectedGroupId);
-  }
-
-  if (state.selectedKinId && state.activeTab === "monitor") {
-    return state.monitorMessages.filter((message) => message.kinId === state.selectedKinId);
-  }
-
-  return state.monitorMessages;
+  return filterVisibleMonitorMessages(state.monitorMessages, state);
 }
 
 function clearVisibleMonitorMessages() {
@@ -1155,29 +1011,6 @@ function clearVisibleMonitorMessages() {
   state.monitorMessages = state.monitorMessages.filter((message) => !visible.has(message));
   renderMessageList();
   renderMonitorState();
-}
-
-function createMessageElement(message) {
-  const item = document.createElement("article");
-  item.className = `message ${message.sender || ""}`;
-
-  const meta = document.createElement("div");
-  meta.className = "message-meta";
-  meta.textContent = [
-    message.kinName,
-    message.groupName,
-    message.sender || "unknown",
-    formatTime(message.timestamp),
-    message.textDecrypted ? "decrypted" : "not decrypted"
-  ]
-    .filter(Boolean)
-    .join(" · ");
-
-  const text = document.createElement("p");
-  text.textContent = message.text || "";
-
-  item.append(meta, text);
-  return item;
 }
 
 async function runAction(label, action) {
@@ -1221,13 +1054,4 @@ function updateMonitorRunning() {
   state.monitorRunning =
     state.subscriptions.some((subscription) => subscription.running) ||
     state.groupSubscriptions.some((subscription) => subscription.running);
-}
-
-function formatTime(value) {
-  if (!value) {
-    return "";
-  }
-
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }

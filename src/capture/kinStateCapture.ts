@@ -1,14 +1,23 @@
-import { execFile } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { promisify } from "node:util";
 import type { AppConfig } from "../config/types.js";
 import { FirestoreRestClient } from "../firestore/firestoreRestClient.js";
 import type { FirestoreDocumentLike } from "../firestore/types.js";
-import { decryptKindroidValue } from "../kindroid/kindroidCrypto.js";
 import type { Logger } from "../util/logger.js";
+import { captureDocument, type CapturedDocument } from "./capturedValue.js";
+import {
+  cleanupTransientWorkspaces,
+  commitCapture,
+  ensureGitRepository,
+  promoteWorkspace,
+  recoverInterruptedWorkspace,
+  resetStagingDirectory,
+  stageCapture,
+  writeJson,
+  writeText
+} from "./captureWorkspace.js";
 
-const execFileAsync = promisify(execFile);
+export { captureValue } from "./capturedValue.js";
 
 export const defaultCaptureOutputDir = "./data/kin-source-control";
 const identityFields = [
@@ -63,30 +72,6 @@ export interface CaptureKindroidStateResult {
   groupCount: number;
   kinJournalEntryCount: number;
   globalJournalEntryCount: number;
-}
-
-interface CapturedField {
-  kind: "string" | "number" | "boolean" | "array" | "object" | "null" | "unknown";
-  encrypted?: boolean;
-  decrypted?: boolean;
-  rawLength?: number;
-  valueLength?: number;
-  value?: unknown;
-  keys?: string[];
-  count?: number;
-}
-
-interface CapturedDocument {
-  id: string;
-  createTime?: string;
-  updateTime?: string;
-  fields: Record<string, CapturedField>;
-}
-
-interface CapturedNestedValue {
-  value: unknown;
-  encrypted: boolean;
-  decrypted: boolean;
 }
 
 export async function captureKindroidState(
@@ -191,110 +176,6 @@ export async function captureKindroidState(
   }
 }
 
-function captureDocument(
-  document: FirestoreDocumentLike,
-  decryptionKey: string,
-  fields: readonly string[]
-): CapturedDocument {
-  const data = document.data();
-  const record = typeof data === "object" && data !== null ? (data as Record<string, unknown>) : {};
-  const capturedFields = Object.fromEntries(
-    fields.filter((field) => field in record).map((field) => [field, captureValue(record[field], decryptionKey)])
-  );
-
-  return {
-    id: document.id,
-    createTime: typeof record._createTime === "string" ? record._createTime : undefined,
-    updateTime: typeof record._updateTime === "string" ? record._updateTime : undefined,
-    fields: capturedFields
-  };
-}
-
-export function captureValue(value: unknown, decryptionKey: string): CapturedField {
-  if (typeof value === "string") {
-    const decrypted = decryptKindroidValue(value, decryptionKey);
-    return {
-      kind: "string",
-      encrypted: decrypted.encrypted,
-      decrypted: decrypted.decrypted,
-      rawLength: value.length,
-      valueLength: decrypted.value.length,
-      value: decrypted.value
-    };
-  }
-
-  if (typeof value === "number") {
-    return { kind: "number", value };
-  }
-
-  if (typeof value === "boolean") {
-    return { kind: "boolean", value };
-  }
-
-  if (value === null) {
-    return { kind: "null", value: null };
-  }
-
-  if (Array.isArray(value)) {
-    const captured = captureNestedValue(value, decryptionKey);
-    return {
-      kind: "array",
-      count: value.length,
-      encrypted: captured.encrypted || undefined,
-      decrypted: captured.decrypted || undefined,
-      value: captured.value
-    };
-  }
-
-  if (typeof value === "object" && value !== null) {
-    const captured = captureNestedValue(value, decryptionKey);
-    return {
-      kind: "object",
-      keys: Object.keys(value).sort(),
-      encrypted: captured.encrypted || undefined,
-      decrypted: captured.decrypted || undefined,
-      value: captured.value
-    };
-  }
-
-  return { kind: "unknown" };
-}
-
-function captureNestedValue(value: unknown, decryptionKey: string): CapturedNestedValue {
-  if (typeof value === "string") {
-    const decrypted = decryptKindroidValue(value, decryptionKey);
-    return {
-      value: decrypted.value,
-      encrypted: decrypted.encrypted,
-      decrypted: decrypted.decrypted
-    };
-  }
-
-  if (Array.isArray(value)) {
-    const items = value.map((item) => captureNestedValue(item, decryptionKey));
-    return {
-      value: items.map((item) => item.value),
-      encrypted: items.some((item) => item.encrypted),
-      decrypted: items.some((item) => item.decrypted)
-    };
-  }
-
-  if (value && typeof value === "object") {
-    const entries = Object.entries(value).map(([key, item]) => [key, captureNestedValue(item, decryptionKey)] as const);
-    return {
-      value: Object.fromEntries(entries.map(([key, item]) => [key, item.value])),
-      encrypted: entries.some(([, item]) => item.encrypted),
-      decrypted: entries.some(([, item]) => item.decrypted)
-    };
-  }
-
-  return {
-    value,
-    encrypted: false,
-    decrypted: false
-  };
-}
-
 function writeCapturedDocument(dir: string, document: CapturedDocument): void {
   writeJson(path.join(dir, "profile.json"), document);
   const fieldsDir = path.join(dir, "fields");
@@ -352,65 +233,6 @@ function safeFileName(value: string): string {
   return normalized || "unnamed";
 }
 
-function resetStagingDirectory(dir: string, outputDir: string): void {
-  const resolved = path.resolve(dir);
-  const resolvedOutputDir = path.resolve(outputDir);
-  if (
-    !path.basename(resolved).startsWith(".workspace-next-") ||
-    !resolved.startsWith(`${resolvedOutputDir}${path.sep}`)
-  ) {
-    throw new Error(`Refusing to reset unexpected capture staging directory: ${resolved}`);
-  }
-
-  fs.rmSync(resolved, { recursive: true, force: true });
-  fs.mkdirSync(resolved, { recursive: true });
-}
-
-function promoteWorkspace(stagingDir: string, workspaceDir: string, outputDir: string): void {
-  const resolvedOutputDir = path.resolve(outputDir);
-  const resolvedStagingDir = path.resolve(stagingDir);
-  const resolvedWorkspaceDir = path.resolve(workspaceDir);
-  const backupDir = path.join(outputDir, `.workspace-prev-${process.pid}-${Date.now()}`);
-
-  if (
-    !path.basename(resolvedStagingDir).startsWith(".workspace-next-") ||
-    !resolvedStagingDir.startsWith(`${resolvedOutputDir}${path.sep}`) ||
-    path.basename(resolvedWorkspaceDir) !== "workspace" ||
-    !resolvedWorkspaceDir.startsWith(`${resolvedOutputDir}${path.sep}`)
-  ) {
-    throw new Error("Refusing to promote unexpected capture workspace paths.");
-  }
-
-  let backupCreated = false;
-  try {
-    if (fs.existsSync(resolvedWorkspaceDir)) {
-      fs.renameSync(resolvedWorkspaceDir, backupDir);
-      backupCreated = true;
-    }
-
-    fs.renameSync(resolvedStagingDir, resolvedWorkspaceDir);
-    if (backupCreated) {
-      fs.rmSync(backupDir, { recursive: true, force: true });
-    }
-  } catch (error) {
-    if (backupCreated && !fs.existsSync(resolvedWorkspaceDir) && fs.existsSync(backupDir)) {
-      fs.renameSync(backupDir, resolvedWorkspaceDir);
-    }
-
-    throw error;
-  }
-}
-
-function writeJson(filePath: string, value: unknown): void {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, `${JSON.stringify(stableValue(value), null, 2)}\n`, "utf8");
-}
-
-function writeText(filePath: string, value: string): void {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, value, "utf8");
-}
-
 function captureReadme(): string {
   return [
     "# Kindroid Identity State",
@@ -422,100 +244,4 @@ function captureReadme(): string {
     "- `journal/entries.json` and journal markdown files capture Kin journal entries.",
     ""
   ].join("\n");
-}
-
-async function ensureGitRepository(outputDir: string): Promise<void> {
-  if (!fs.existsSync(path.join(outputDir, ".git"))) {
-    await execFileAsync("git", ["init"], { cwd: outputDir });
-    await execFileAsync("git", ["config", "user.name", "Kinagent Capture"], { cwd: outputDir });
-    await execFileAsync("git", ["config", "user.email", "kinagent-capture@local"], { cwd: outputDir });
-  }
-
-  ensureCaptureGitExcludes(outputDir);
-}
-
-function recoverInterruptedWorkspace(outputDir: string, workspaceDir: string): void {
-  if (fs.existsSync(workspaceDir)) {
-    return;
-  }
-
-  const backups = transientWorkspaceDirs(outputDir, ".workspace-prev-");
-  const latestBackup = backups.at(-1);
-  if (latestBackup) {
-    fs.renameSync(latestBackup, workspaceDir);
-  }
-}
-
-function cleanupTransientWorkspaces(outputDir: string): void {
-  for (const dir of transientWorkspaceDirs(outputDir, ".workspace-next-")) {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
-
-  for (const dir of transientWorkspaceDirs(outputDir, ".workspace-prev-")) {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
-}
-
-function transientWorkspaceDirs(outputDir: string, prefix: string): string[] {
-  return fs
-    .readdirSync(outputDir, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory() && entry.name.startsWith(prefix))
-    .map((entry) => path.join(outputDir, entry.name))
-    .sort();
-}
-
-function ensureCaptureGitExcludes(outputDir: string): void {
-  const excludePath = path.join(outputDir, ".git", "info", "exclude");
-  const excludeLines = [".workspace-next-*", ".workspace-prev-*"];
-  const existing = fs.existsSync(excludePath) ? fs.readFileSync(excludePath, "utf8") : "";
-  const missing = excludeLines.filter((line) => !existing.split(/\r?\n/).includes(line));
-  if (missing.length > 0) {
-    fs.mkdirSync(path.dirname(excludePath), { recursive: true });
-    fs.appendFileSync(
-      excludePath,
-      `${existing.endsWith("\n") || existing.length === 0 ? "" : "\n"}${missing.join("\n")}\n`
-    );
-  }
-}
-
-async function stageCapture(outputDir: string): Promise<void> {
-  await execFileAsync("git", ["add", "--", "workspace"], { cwd: outputDir });
-}
-
-async function commitCapture(
-  outputDir: string,
-  message: string
-): Promise<{ commitHash?: string; createdCommit: boolean }> {
-  const status = await execFileAsync("git", ["status", "--porcelain", "--", "workspace"], { cwd: outputDir });
-  if (!status.stdout.trim()) {
-    return { commitHash: await currentCommit(outputDir), createdCommit: false };
-  }
-
-  await execFileAsync("git", ["commit", "-m", message], { cwd: outputDir });
-  return { commitHash: await currentCommit(outputDir), createdCommit: true };
-}
-
-async function currentCommit(outputDir: string): Promise<string | undefined> {
-  try {
-    const result = await execFileAsync("git", ["rev-parse", "--short", "HEAD"], { cwd: outputDir });
-    return result.stdout.trim();
-  } catch {
-    return undefined;
-  }
-}
-
-function stableValue(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    return value.map(stableValue);
-  }
-
-  if (!value || typeof value !== "object") {
-    return value;
-  }
-
-  return Object.fromEntries(
-    Object.entries(value)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, item]) => [key, stableValue(item)])
-  );
 }

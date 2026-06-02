@@ -9,11 +9,15 @@ import type {
   UpdateKindroidGroupCurrentSceneInput,
   UpdateKindroidGroupCurrentSceneResult
 } from "./types.js";
+import {
+  buildSendMessagePayload,
+  buildUpdateCurrentScenePayload,
+  buildUpdateGroupCurrentScenePayload
+} from "./payloads.js";
 
 const sendMessageUrl = "https://api.kindroid.ai/v1/send-message";
 const updateInfoUrl = "https://api.kindroid.ai/v1/update-info";
 const updateGroupChatUrl = "https://api.kindroid.ai/v1/groupchats-update";
-const currentSceneMaxLengthLimit = 160;
 
 export class KindroidClient {
   constructor(
@@ -22,24 +26,11 @@ export class KindroidClient {
   ) {}
 
   async sendMessage(input: SendKindroidMessageInput): Promise<SendKindroidMessageResult> {
+    const payload = buildSendMessagePayload(input);
     const response = await fetch(sendMessageUrl, {
       method: "POST",
       headers: await this.authHeaders(),
-      body: JSON.stringify({
-        ai_id: input.aiId,
-        message: input.message,
-        stream: false,
-        idempotency_key: input.idempotencyKey,
-        request_id: input.requestId,
-        image_urls: null,
-        image_description: null,
-        video_url: null,
-        video_description: null,
-        internet_response: null,
-        link_url: null,
-        link_description: null,
-        client_platform: "web"
-      })
+      body: JSON.stringify(payload)
     });
 
     const responseText = await response.text();
@@ -59,18 +50,11 @@ export class KindroidClient {
   }
 
   async updateCurrentScene(input: UpdateKindroidCurrentSceneInput): Promise<UpdateKindroidCurrentSceneResult> {
-    if (!input.aiId) {
-      throw new Error("Missing Kindroid ai_id for current scene update.");
-    }
-    const currentScene = validateCurrentScene(input.currentScene);
-
+    const payload = buildUpdateCurrentScenePayload(input);
     const response = await fetch(updateInfoUrl, {
       method: "POST",
       headers: await this.authHeaders(),
-      body: JSON.stringify({
-        ai_id: input.aiId,
-        current_scene: currentScene
-      })
+      body: JSON.stringify(payload)
     });
 
     const responseText = await response.text();
@@ -92,18 +76,11 @@ export class KindroidClient {
   async updateGroupCurrentScene(
     input: UpdateKindroidGroupCurrentSceneInput
   ): Promise<UpdateKindroidGroupCurrentSceneResult> {
-    if (!input.groupId) {
-      throw new Error("Missing Kindroid group_id for current scene update.");
-    }
-    const currentScene = validateCurrentScene(input.currentScene);
-
+    const payload = buildUpdateGroupCurrentScenePayload(input);
     const response = await fetch(updateGroupChatUrl, {
       method: "POST",
       headers: await this.authHeaders(),
-      body: JSON.stringify({
-        group_id: input.groupId,
-        current_scene: currentScene
-      })
+      body: JSON.stringify(payload)
     });
 
     const responseText = await response.text();
@@ -131,16 +108,4 @@ export class KindroidClient {
       authorization: `Bearer ${auth.accessToken}`
     };
   }
-}
-
-function validateCurrentScene(value: string): string {
-  const currentScene = value.trim();
-  if (!currentScene) {
-    throw new Error("Current scene cannot be empty.");
-  }
-  if (currentScene.length > currentSceneMaxLengthLimit) {
-    throw new Error(`Current scene cannot exceed ${currentSceneMaxLengthLimit} characters.`);
-  }
-
-  return currentScene;
 }
