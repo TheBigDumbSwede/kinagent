@@ -3,10 +3,6 @@ import { decryptKindroidValue } from "../kindroid/kindroidCrypto.js";
 
 export interface CapturedField {
   kind: "string" | "number" | "boolean" | "array" | "object" | "null" | "unknown";
-  encrypted?: boolean;
-  decrypted?: boolean;
-  rawLength?: number;
-  valueLength?: number;
   value?: unknown;
   keys?: string[];
   count?: number;
@@ -21,8 +17,6 @@ export interface CapturedDocument {
 
 interface CapturedNestedValue {
   value: unknown;
-  encrypted: boolean;
-  decrypted: boolean;
 }
 
 export function captureDocument(
@@ -49,10 +43,6 @@ export function captureValue(value: unknown, decryptionKey: string): CapturedFie
     const decrypted = decryptKindroidValue(value, decryptionKey);
     return {
       kind: "string",
-      encrypted: decrypted.encrypted,
-      decrypted: decrypted.decrypted,
-      rawLength: value.length,
-      valueLength: decrypted.value.length,
       value: decrypted.value
     };
   }
@@ -74,8 +64,6 @@ export function captureValue(value: unknown, decryptionKey: string): CapturedFie
     return {
       kind: "array",
       count: value.length,
-      encrypted: captured.encrypted || undefined,
-      decrypted: captured.decrypted || undefined,
       value: captured.value
     };
   }
@@ -85,8 +73,6 @@ export function captureValue(value: unknown, decryptionKey: string): CapturedFie
     return {
       kind: "object",
       keys: Object.keys(value).sort(),
-      encrypted: captured.encrypted || undefined,
-      decrypted: captured.decrypted || undefined,
       value: captured.value
     };
   }
@@ -98,33 +84,25 @@ function captureNestedValue(value: unknown, decryptionKey: string): CapturedNest
   if (typeof value === "string") {
     const decrypted = decryptKindroidValue(value, decryptionKey);
     return {
-      value: decrypted.value,
-      encrypted: decrypted.encrypted,
-      decrypted: decrypted.decrypted
+      value: decrypted.value
     };
   }
 
   if (Array.isArray(value)) {
     const items = value.map((item) => captureNestedValue(item, decryptionKey));
     return {
-      value: items.map((item) => item.value),
-      encrypted: items.some((item) => item.encrypted),
-      decrypted: items.some((item) => item.decrypted)
+      value: items.map((item) => item.value)
     };
   }
 
   if (value && typeof value === "object") {
     const entries = Object.entries(value).map(([key, item]) => [key, captureNestedValue(item, decryptionKey)] as const);
     return {
-      value: Object.fromEntries(entries.map(([key, item]) => [key, item.value])),
-      encrypted: entries.some(([, item]) => item.encrypted),
-      decrypted: entries.some(([, item]) => item.decrypted)
+      value: Object.fromEntries(entries.map(([key, item]) => [key, item.value]))
     };
   }
 
   return {
-    value,
-    encrypted: false,
-    decrypted: false
+    value
   };
 }
