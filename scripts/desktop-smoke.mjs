@@ -1,9 +1,11 @@
 import { createRequire } from "node:module";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 
 const require = createRequire(import.meta.url);
+ensureElectronInstalled();
 const electronPath = require("electron");
 const appEntry = path.resolve(process.cwd(), "dist", "desktop", "main.js");
 
@@ -48,3 +50,27 @@ child.on("exit", (code) => {
 
   process.stdout.write("Desktop smoke passed.\n");
 });
+
+function ensureElectronInstalled() {
+  const electronDir = path.resolve(process.cwd(), "node_modules", "electron");
+  if (fs.existsSync(path.join(electronDir, "path.txt"))) {
+    return;
+  }
+
+  const installScript = path.join(electronDir, "install.js");
+  const result = spawnSync(process.execPath, [installScript], {
+    cwd: process.cwd(),
+    env: process.env,
+    stdio: "inherit",
+    shell: false
+  });
+
+  if (result.error) {
+    process.stderr.write(`${result.error.message}\n`);
+    process.exit(1);
+  }
+
+  if (result.status !== 0) {
+    process.exit(result.status ?? 1);
+  }
+}
