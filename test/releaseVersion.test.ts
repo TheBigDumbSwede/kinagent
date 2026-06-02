@@ -1,8 +1,10 @@
 import { spawnSync } from "node:child_process";
+import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 const scriptPath = path.resolve("scripts/check-release-version.mjs");
+const packageVersion = JSON.parse(fs.readFileSync("package.json", "utf8")).version as string;
 
 describe("check-release-version", () => {
   it("skips validation for an explicitly blank workflow-dispatch tag", () => {
@@ -13,10 +15,10 @@ describe("check-release-version", () => {
   });
 
   it("accepts a tag that matches package.json", () => {
-    const result = runCheckReleaseVersion(["v0.1.1"]);
+    const result = runCheckReleaseVersion([`v${packageVersion}`]);
 
     expect(result.status).toBe(0);
-    expect(result.stdout).toContain("matches package.json version 0.1.1");
+    expect(result.stdout).toContain(`matches package.json version ${packageVersion}`);
   });
 
   it("rejects a branch name when it is validated as the release tag", () => {
