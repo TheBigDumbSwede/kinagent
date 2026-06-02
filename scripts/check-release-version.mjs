@@ -1,7 +1,8 @@
 import fs from "node:fs";
 import process from "node:process";
 
-const tag = (process.argv[2] || process.env.GITHUB_REF_NAME || "").trim();
+const suppliedTag = process.argv.length > 2 ? process.argv[2] : process.env.GITHUB_REF_NAME;
+const tag = (suppliedTag || "").trim();
 
 if (!tag) {
   process.stdout.write("No release tag supplied; skipping package version check.\n");
