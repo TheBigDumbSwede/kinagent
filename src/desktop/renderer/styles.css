@@ -393,6 +393,27 @@ h2 {
   overflow-wrap: anywhere;
 }
 
+.diff-line {
+  display: block;
+  margin: 0 -20px;
+  padding: 0 20px;
+  white-space: pre-wrap;
+}
+
+.diff-context {
+  color: #24292f;
+}
+
+.diff-added {
+  color: #1a7f37;
+  background: #dafbe1;
+}
+
+.diff-removed {
+  color: #cf222e;
+  background: #ffebe9;
+}
+
 .voice-form {
   display: grid;
   align-content: start;

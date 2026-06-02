@@ -616,7 +616,7 @@ function renderDetailContent({ content, history, stats }) {
   elements.voiceForm.hidden = true;
   elements.timeline.hidden = false;
   const selectedEntry = history.find((entry) => entry.hash === state.selectedHistoryHash);
-  elements.fieldContent.textContent = selectedEntry ? formatSelectedHistoryContent(selectedEntry, content) : content;
+  renderFieldContent(content, selectedEntry);
 
   elements.detailStats.replaceChildren();
   const visibleStats = selectedEntry
@@ -838,23 +838,34 @@ function detailStats(selectedKin, field, capture) {
   ];
 }
 
-function formatSelectedHistoryContent(entry, currentContent) {
-  const lines = buildLineDiff(entry.content || "", currentContent || "");
-  const header = [
-    `Selected snapshot: ${formatTime(entry.committedAt)} (${entry.shortHash})`,
-    `Summary: ${entry.summary || "Captured value"}`,
-    "",
-    "Compared with the current value:",
-    "- only in selected snapshot",
-    "+ only in current value",
-    ""
-  ];
+function renderFieldContent(content, selectedEntry) {
+  elements.fieldContent.replaceChildren();
 
-  if (lines.length === 0) {
-    return [...header, "No text differences."].join("\n");
+  if (!selectedEntry) {
+    elements.fieldContent.textContent = content;
+    return;
   }
 
-  return [...header, ...lines.map((line) => `${line.prefix} ${line.text}`)].join("\n");
+  for (const line of formatSelectedHistoryDiff(selectedEntry, content)) {
+    elements.fieldContent.append(createDiffLine(line));
+  }
+}
+
+function formatSelectedHistoryDiff(entry, currentContent) {
+  const lines = buildLineDiff(entry.content || "", currentContent || "");
+  return lines.length > 0 ? lines : [{ prefix: " ", text: "No text differences." }];
+}
+
+function createDiffLine(line) {
+  const element = document.createElement("span");
+  element.className =
+    line.prefix === "+"
+      ? "diff-line diff-added"
+      : line.prefix === "-"
+        ? "diff-line diff-removed"
+        : "diff-line diff-context";
+  element.textContent = `${line.prefix} ${line.text}`;
+  return element;
 }
 
 function buildLineDiff(selectedContent, currentContent) {
