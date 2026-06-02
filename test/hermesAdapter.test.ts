@@ -308,6 +308,7 @@ describe("HermesChatAdapter", () => {
                     {
                       type: "propose_journal_entry",
                       ai_id: "kin-1",
+                      title: "Old Trust Concern Resolved",
                       entry: "Sam and the user agreed that the old trust concern is now part of their history.",
                       keyphrases: ["trust", "relationship milestone"],
                       evidence: ["Sam said the old worry no longer applies."],
@@ -344,6 +345,7 @@ describe("HermesChatAdapter", () => {
     expect(suggestions[0]).toEqual(
       expect.objectContaining({
         aiId: "kin-1",
+        title: "Old Trust Concern Resolved",
         entry: "Sam and the user agreed that the old trust concern is now part of their history.",
         keyphrases: ["trust", "relationship milestone"],
         durabilityReason: "This changes how future relationship context should be interpreted.",
@@ -370,6 +372,7 @@ describe("HermesChatAdapter", () => {
                     {
                       type: "propose_journal_entry",
                       ai_id: "kin-1",
+                      title: "User Personal Fact",
                       entry: "The user shared a durable personal fact.",
                       keyphrases: ["personal fact"],
                       evidence: ["The user said the fact directly."],
@@ -419,6 +422,7 @@ describe("HermesChatAdapter", () => {
                     {
                       type: "propose_journal_entry",
                       ai_id: "kin-1",
+                      title: "Passing Banter",
                       entry: "Maybe this banter matters.",
                       durability_reason: "Unclear.",
                       confidence: "medium"
@@ -483,6 +487,11 @@ function testConfig(): AppConfig {
       currentSceneUpdates: {
         enabled: true,
         maxLength: 160
+      },
+      journalSuggestions: {
+        enabled: true,
+        throttleMessages: 20,
+        strongEventBypass: true
       }
     },
     voice: {

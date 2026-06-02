@@ -18,6 +18,11 @@ describe("loadConfig", () => {
     expect(config.kindroid.firebaseProjectId).toBe("kindroid-ai");
     expect(config.bridge.sessionDir).toBe(path.resolve(process.cwd(), "./data/browser-session"));
     expect(config.hermes.enabled).toBe(false);
+    expect(config.hermes.journalSuggestions).toEqual({
+      enabled: true,
+      throttleMessages: 20,
+      strongEventBypass: true
+    });
     expect(config.voice).toMatchObject({
       enabled: false,
       provider: "none",
@@ -58,6 +63,10 @@ describe("loadConfig", () => {
         "  currentSceneUpdates:",
         "    enabled: false",
         "    maxLength: 120",
+        "  journalSuggestions:",
+        "    enabled: false",
+        "    throttleMessages: 12",
+        "    strongEventBypass: false",
         "voice:",
         "  enabled: true",
         '  provider: "openai"',
@@ -75,6 +84,9 @@ describe("loadConfig", () => {
     vi.stubEnv("HERMES_ENABLED", "false");
     vi.stubEnv("HERMES_API_KEY", "env-token");
     vi.stubEnv("HERMES_CURRENT_SCENE_UPDATES_ENABLED", "true");
+    vi.stubEnv("HERMES_JOURNAL_SUGGESTIONS_ENABLED", "true");
+    vi.stubEnv("HERMES_JOURNAL_SUGGESTION_THROTTLE_MESSAGES", "15");
+    vi.stubEnv("HERMES_JOURNAL_STRONG_EVENT_BYPASS", "true");
     vi.stubEnv("KINAGENT_VOICE_PROVIDER", "elevenlabs");
     vi.stubEnv("KINAGENT_OPENAI_API_KEY", "env-openai");
     vi.stubEnv("KINAGENT_OPENAI_TTS_VOICE", "alloy");
@@ -93,6 +105,11 @@ describe("loadConfig", () => {
     expect(config.hermes.baseUrl).toBe("http://example.test");
     expect(config.hermes.apiKey).toBe("env-token");
     expect(config.hermes.currentSceneUpdates).toEqual({ enabled: true, maxLength: 120 });
+    expect(config.hermes.journalSuggestions).toEqual({
+      enabled: true,
+      throttleMessages: 15,
+      strongEventBypass: true
+    });
     expect(config.voice.enabled).toBe(true);
     expect(config.voice.provider).toBe("elevenlabs");
     expect(config.voice.openai).toMatchObject({

@@ -31,6 +31,11 @@ const defaultConfig: AppConfig = {
     currentSceneUpdates: {
       enabled: true,
       maxLength: currentSceneMaxLengthLimit
+    },
+    journalSuggestions: {
+      enabled: true,
+      throttleMessages: 20,
+      strongEventBypass: true
     }
   },
   voice: {
@@ -86,6 +91,15 @@ const appConfigSchema = z.object({
           currentSceneMaxLengthLimit,
           `hermes.currentSceneUpdates.maxLength cannot exceed ${currentSceneMaxLengthLimit}.`
         )
+    }),
+    journalSuggestions: z.object({
+      enabled: z.boolean(),
+      throttleMessages: z
+        .number()
+        .finite()
+        .int("hermes.journalSuggestions.throttleMessages must be an integer.")
+        .positive("hermes.journalSuggestions.throttleMessages must be a positive number."),
+      strongEventBypass: z.boolean()
     })
   }),
   voice: z.object({
@@ -148,6 +162,10 @@ function mergeConfig(base: AppConfig, override: Partial<AppConfig>): AppConfig {
       currentSceneUpdates: {
         ...base.hermes.currentSceneUpdates,
         ...override.hermes?.currentSceneUpdates
+      },
+      journalSuggestions: {
+        ...base.hermes.journalSuggestions,
+        ...override.hermes?.journalSuggestions
       }
     },
     voice: {
@@ -186,6 +204,18 @@ function applyEnvOverrides(config: AppConfig): void {
   config.hermes.currentSceneUpdates.maxLength = numberFromEnv(
     "HERMES_CURRENT_SCENE_MAX_LENGTH",
     config.hermes.currentSceneUpdates.maxLength
+  );
+  config.hermes.journalSuggestions.enabled = booleanFromEnv(
+    "HERMES_JOURNAL_SUGGESTIONS_ENABLED",
+    config.hermes.journalSuggestions.enabled
+  );
+  config.hermes.journalSuggestions.throttleMessages = numberFromEnv(
+    "HERMES_JOURNAL_SUGGESTION_THROTTLE_MESSAGES",
+    config.hermes.journalSuggestions.throttleMessages
+  );
+  config.hermes.journalSuggestions.strongEventBypass = booleanFromEnv(
+    "HERMES_JOURNAL_STRONG_EVENT_BYPASS",
+    config.hermes.journalSuggestions.strongEventBypass
   );
 
   config.voice.enabled = booleanFromEnv("KINAGENT_VOICE_ENABLED", config.voice.enabled);

@@ -25,13 +25,16 @@ describe("JournalSuggestionStore", () => {
 
     store.markDismissed(first.id);
     for (let index = 0; index < journalSuggestionThrottleMessages - 1; index += 1) {
-      store.recordReadableMessage(notification(`message-${index}`));
+      store.recordReadableMessage(notification(`message-${index}`, "ai"));
     }
     expect(store.createPending(notification("doc-3"), suggestionInput("Still too soon."))).toBeNull();
 
-    store.recordReadableMessage(notification("message-20"));
+    store.recordReadableMessage(notification("user-message", "user"));
+    expect(store.createPending(notification("doc-user"), suggestionInput("User messages do not count."))).toBeNull();
+
+    store.recordReadableMessage(notification("message-20", "ai"));
     expect(store.createPending(notification("doc-4"), suggestionInput("Eligible again."))).toEqual(
-      expect.objectContaining({ entry: "Eligible again." })
+      expect.objectContaining({ title: "Durable Event", entry: "Eligible again." })
     );
   });
 
@@ -47,22 +50,38 @@ describe("JournalSuggestionStore", () => {
       })
     ).toEqual(expect.objectContaining({ entry: "Strong event.", strongEvent: true }));
   });
+
+  it("can disable strong event bypass", () => {
+    const store = testStore({ strongEventBypass: false });
+    const first = store.createPending(notification("doc-1"), suggestionInput("First durable event."));
+    store.markDismissed(first?.id ?? "");
+
+    expect(
+      store.createPending(notification("doc-2"), {
+        ...suggestionInput("Strong event."),
+        strongEvent: true
+      })
+    ).toBeNull();
+  });
 });
 
-function testStore() {
+function testStore(options: { strongEventBypass?: boolean } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "kinagent-journal-store-"));
   tempDirs.push(dir);
-  return new JournalSuggestionStore(path.join(dir, "journal-suggestions.json"));
+  return new JournalSuggestionStore(path.join(dir, "journal-suggestions.json"), {
+    throttleMessages: journalSuggestionThrottleMessages,
+    strongEventBypass: options.strongEventBypass ?? true
+  });
 }
 
-function notification(documentId: string) {
+function notification(documentId: string, sender: "user" | "ai" = "ai") {
   return {
     type: "kindroid.chat.changed" as const,
     kinId: "kin-1",
     documentId,
     timestamp: "2026-06-01T12:00:00.000Z",
     text: "Readable message.",
-    sender: "user",
+    sender,
     role: null,
     source: "firestore" as const
   };
@@ -70,6 +89,7 @@ function notification(documentId: string) {
 
 function suggestionInput(entry: string) {
   return {
+    title: "Durable Event",
     entry,
     keyphrases: ["milestone"],
     evidence: ["specific evidence"],

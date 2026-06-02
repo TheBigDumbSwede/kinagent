@@ -67,7 +67,7 @@ export class BridgeRuntime {
   ) {
     this.journalSuggestions = JournalSuggestionStore.fromConfig(options.config);
     this.hermes = createHermesAdapter(options.config, options.logger, {
-      journalSuggestions: this.journalSuggestions,
+      journalSuggestions: options.config.hermes.journalSuggestions.enabled ? this.journalSuggestions : undefined,
       onJournalSuggestionCreated: (suggestion) => {
         this.emit({ channel: "journal-suggestion-created", payload: suggestion });
         this.emit({ channel: "journal-suggestions-updated", payload: this.pendingJournalSuggestions() });

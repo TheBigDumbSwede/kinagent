@@ -4,10 +4,17 @@ import type { AppConfig } from "../config/types.js";
 import type { KindroidChatNotification } from "../firestore/types.js";
 
 export const journalSuggestionThrottleMessages = 20;
+export const journalSuggestionMaxKeyphrases = 8;
+
+export interface JournalSuggestionStoreOptions {
+  throttleMessages: number;
+  strongEventBypass: boolean;
+}
 
 export type JournalSuggestionStatus = "pending" | "accepted" | "dismissed";
 
 export interface JournalSuggestionInput {
+  title: string;
   entry: string;
   keyphrases: string[];
   evidence: string[];
@@ -19,6 +26,7 @@ export interface JournalSuggestionInput {
 export interface JournalSuggestion {
   id: string;
   aiId: string;
+  title: string;
   status: JournalSuggestionStatus;
   createdAt: string;
   updatedAt: string;
@@ -55,10 +63,19 @@ interface JournalSuggestionFile {
 }
 
 export class JournalSuggestionStore {
-  constructor(private readonly filePath: string) {}
+  constructor(
+    private readonly filePath: string,
+    private readonly options: JournalSuggestionStoreOptions = {
+      throttleMessages: journalSuggestionThrottleMessages,
+      strongEventBypass: true
+    }
+  ) {}
 
   static fromConfig(config: AppConfig): JournalSuggestionStore {
-    return new JournalSuggestionStore(journalSuggestionsPath(config));
+    return new JournalSuggestionStore(journalSuggestionsPath(config), {
+      throttleMessages: config.hermes.journalSuggestions.throttleMessages,
+      strongEventBypass: config.hermes.journalSuggestions.strongEventBypass
+    });
   }
 
   list(status?: JournalSuggestionStatus): JournalSuggestion[] {
@@ -73,6 +90,10 @@ export class JournalSuggestionStore {
   }
 
   recordReadableMessage(notification: KindroidChatNotification): void {
+    if (notification.sender !== "ai") {
+      return;
+    }
+
     const aiId = aiIdFromNotification(notification);
     if (!aiId) {
       return;
@@ -80,7 +101,7 @@ export class JournalSuggestionStore {
 
     const file = this.read();
     const pacing = file.pacing ?? {};
-    const current = pacing[aiId] ?? { messagesSinceLastProposal: journalSuggestionThrottleMessages };
+    const current = pacing[aiId] ?? { messagesSinceLastProposal: this.options.throttleMessages };
     pacing[aiId] = {
       ...current,
       messagesSinceLastProposal: Math.max(0, current.messagesSinceLastProposal) + 1
@@ -94,16 +115,23 @@ export class JournalSuggestionStore {
       return null;
     }
 
+    const title = input.title.trim();
+    const entry = input.entry.trim();
+    const durabilityReason = input.durabilityReason.trim();
+    if (!title || !entry || !durabilityReason) {
+      return null;
+    }
+
     const file = this.read();
     const suggestions = file.suggestions ?? [];
     const pacing = file.pacing ?? {};
-    const currentPacing = pacing[aiId] ?? { messagesSinceLastProposal: journalSuggestionThrottleMessages };
+    const currentPacing = pacing[aiId] ?? { messagesSinceLastProposal: this.options.throttleMessages };
     const hasPendingForKin = suggestions.some(
       (suggestion) => suggestion.aiId === aiId && suggestion.status === "pending"
     );
     const eligible =
-      input.strongEvent ||
-      (!hasPendingForKin && currentPacing.messagesSinceLastProposal >= journalSuggestionThrottleMessages);
+      (input.strongEvent && this.options.strongEventBypass) ||
+      (!hasPendingForKin && currentPacing.messagesSinceLastProposal >= this.options.throttleMessages);
 
     if (!eligible) {
       return null;
@@ -113,6 +141,7 @@ export class JournalSuggestionStore {
     const suggestion: JournalSuggestion = {
       id: `${now}-${aiId}-${notification.documentId}`.replace(/[^\w.-]+/g, "-"),
       aiId,
+      title,
       status: "pending",
       createdAt: now,
       updatedAt: now,
@@ -120,10 +149,10 @@ export class JournalSuggestionStore {
       groupId: notification.type === "kindroid.group_chat.changed" ? notification.groupId : undefined,
       documentId: notification.documentId,
       timestamp: notification.timestamp,
-      entry: input.entry.trim(),
-      keyphrases: normalizeStringArray(input.keyphrases, 12),
+      entry,
+      keyphrases: normalizeStringArray(input.keyphrases, journalSuggestionMaxKeyphrases),
       evidence: normalizeStringArray(input.evidence, 6),
-      durabilityReason: input.durabilityReason.trim(),
+      durabilityReason,
       confidence: "high",
       strongEvent: input.strongEvent
     };

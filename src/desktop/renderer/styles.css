@@ -288,6 +288,9 @@ h2 {
 }
 
 .detail-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   min-height: 32px;
   border: 0;
   border-bottom: 2px solid transparent;
@@ -302,6 +305,18 @@ h2 {
   border-bottom-color: #2d5a7b;
   color: #182635;
   font-weight: 700;
+}
+
+.tab-badge {
+  min-width: 18px;
+  border-radius: 999px;
+  padding: 1px 6px;
+  background: #2d5a7b;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.4;
+  text-align: center;
 }
 
 .setting-tabs {

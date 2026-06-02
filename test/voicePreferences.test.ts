@@ -63,6 +63,11 @@ function testConfig(): AppConfig {
       currentSceneUpdates: {
         enabled: true,
         maxLength: 160
+      },
+      journalSuggestions: {
+        enabled: true,
+        throttleMessages: 20,
+        strongEventBypass: true
       }
     },
     voice: {

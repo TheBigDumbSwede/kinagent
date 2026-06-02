@@ -596,6 +596,7 @@ function renderActivity() {
   const isMonitor = activeMode === "monitor";
   const isVoice = activeMode === "voice";
 
+  renderJournalTabBadge();
   for (const button of elements.detailTabs.querySelectorAll("[data-mode]")) {
     button.hidden = Boolean(state.selectedGroupId && button.dataset.mode !== "monitor");
     const selected = button.dataset.mode === activeMode;
@@ -933,7 +934,7 @@ function createJournalSuggestionElement(suggestion) {
 
   const header = document.createElement("header");
   const title = document.createElement("strong");
-  title.textContent = suggestion.strongEvent ? "Strong journal suggestion" : "Journal suggestion";
+  title.textContent = suggestion.title || (suggestion.strongEvent ? "Strong journal suggestion" : "Journal suggestion");
   const date = document.createElement("span");
   date.textContent = formatTime(suggestion.createdAt);
   header.append(title, date);
@@ -983,6 +984,22 @@ function appendSuggestionDetail(list, label, value) {
   list.append(term, detail);
 }
 
+function renderJournalTabBadge() {
+  const button = elements.detailTabs.querySelector('[data-mode="journal"]');
+  if (!button) {
+    return;
+  }
+
+  const count = pendingJournalSuggestionCount();
+  button.replaceChildren(document.createTextNode("Journal"));
+  if (count > 0) {
+    const badge = document.createElement("span");
+    badge.className = "tab-badge";
+    badge.textContent = String(count);
+    button.append(badge);
+  }
+}
+
 async function acceptJournalSuggestion(id) {
   state.journalSavingId = id;
   state.journalError = null;
@@ -1023,6 +1040,10 @@ function selectedKinJournalSuggestions() {
   }
 
   return state.journalSuggestions.filter((suggestion) => suggestion.aiId === state.selectedKinId);
+}
+
+function pendingJournalSuggestionCount() {
+  return state.selectedKinId ? selectedKinJournalSuggestions().length : state.journalSuggestions.length;
 }
 
 function upsertJournalSuggestion(suggestion) {
@@ -1093,6 +1114,10 @@ function clearMissingSelectedGroup() {
 }
 
 function tabLabelFor(tab) {
+  if (tab === "journal") {
+    return "Journal";
+  }
+
   const settingButton = elements.settingTabs.querySelector(`[data-setting="${tab}"]`);
   if (settingButton) {
     return settingButton.textContent?.trim() || "Detail";

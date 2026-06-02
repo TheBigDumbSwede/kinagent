@@ -20,16 +20,16 @@ Most broken Kins fail because those boundaries blur. A temporary emotional state
 
 ### The field architecture at a glance
 
-| Field | Best use | Avoid using it for |
-|---|---|---|
-| Backstory | Stable identity, durable traits, world premise, behavioural constitution | Temporary relationship states, scene-specific details, long speeches, user assumptions |
-| Additional Context | Extended always-on mechanics, deeper behavioural rules, stable interaction constraints | Disposable scene state, duplicated backstory, contradictory instructions |
-| Key Memories | Important facts, current relationship state, user preferences, boundary anchors | General prose, full backstory, vague mood |
-| Journal Entries | Triggered recall, topic-specific callbacks, worldbuilding capsules, conditional emotional behaviour | Always-on rules, untriggered lore dumps, generic memories |
-| Response Directive | Output control: length, POV, format, narration/dialogue balance, pacing | Full personality, deep lore, temporary facts |
-| Greeting Message | Scene launch, tone seed, response invitation | Vague ambience, excessive exposition, user backstory invention |
-| Example Message | Voice fossil: cadence, formatting, paragraph rhythm, emotional register | Random sample dialogue, contradictory formatting, scenes unlike normal use |
-| Tags / Tagline | Discovery and expectation-setting | Overly generic filler, misleading genre signals |
+| Field              | Best use                                                                                            | Avoid using it for                                                                     |
+| ------------------ | --------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| Backstory          | Stable identity, durable traits, world premise, behavioural constitution                            | Temporary relationship states, scene-specific details, long speeches, user assumptions |
+| Additional Context | Extended always-on mechanics, deeper behavioural rules, stable interaction constraints              | Disposable scene state, duplicated backstory, contradictory instructions               |
+| Key Memories       | Important facts, current relationship state, user preferences, boundary anchors                     | General prose, full backstory, vague mood                                              |
+| Journal Entries    | Triggered recall, topic-specific callbacks, worldbuilding capsules, conditional emotional behaviour | Always-on rules, untriggered lore dumps, generic memories                              |
+| Response Directive | Output control: length, POV, format, narration/dialogue balance, pacing                             | Full personality, deep lore, temporary facts                                           |
+| Greeting Message   | Scene launch, tone seed, response invitation                                                        | Vague ambience, excessive exposition, user backstory invention                         |
+| Example Message    | Voice fossil: cadence, formatting, paragraph rhythm, emotional register                             | Random sample dialogue, contradictory formatting, scenes unlike normal use             |
+| Tags / Tagline     | Discovery and expectation-setting                                                                   | Overly generic filler, misleading genre signals                                        |
 
 ---
 

@@ -6,6 +6,7 @@ import type { HermesActionDecision, HermesActionHandler } from "./currentSceneAc
 export interface ProposeJournalEntryAction {
   type: "propose_journal_entry";
   ai_id?: string;
+  title: string;
   entry: string;
   keyphrases?: string[];
   evidence?: string[];
@@ -24,10 +25,13 @@ export class JournalSuggestionActionHandler implements HermesActionHandler<Propo
 
   promptLines(): string[] {
     return [
-      'For durable Kin memories, you may request: {"type":"propose_journal_entry","ai_id":"<same ai_id>","entry":"<journal entry>","keyphrases":["<short phrase>"],"evidence":["<specific message evidence>"],"durability_reason":"<why this changes future interpretation>","confidence":"high","strong_event":false}.',
+      'For durable Kin memories, you may request a triggerable capsule: {"type":"propose_journal_entry","ai_id":"<same ai_id>","title":"<specific short title>","entry":"<concise third-person journal capsule>","keyphrases":["<distinctive recall phrase>"],"evidence":["<specific message evidence>"],"durability_reason":"<why this changes future interpretation>","confidence":"high","strong_event":false}.',
       "Only propose journal entries from Kin-authored messages where sender is ai. Never propose journal entries from user-authored messages.",
-      "A journal entry is only for durable events, decisions, milestones, relationship changes, important personal facts, recurring patterns, or backstory hook movement.",
-      "Do not propose journal entries for routine greetings, small talk, transient moods, scene movement, playful banter without durable consequence, ambiguity, or speculation.",
+      "Use the Kin design reference model: journals are triggerable capsules, not always-on rules or duplicated backstory.",
+      "A journal entry is only for durable events, decisions, milestones, relationship changes, important personal facts, recurring patterns, behaviour callbacks, place/world capsules, or backstory hook movement.",
+      "Keep entries short, specific, third-person, and useful when recalled later. Prefer names and concrete nouns over generic emotion labels.",
+      "Use 1 to 8 distinctive keyphrases that would naturally trigger recall; avoid generic keyphrases like memory, important, relationship, or feelings by themselves.",
+      "Do not propose journal entries for routine greetings, small talk, transient moods, scene movement, playful banter without durable consequence, ambiguity, speculation, untagged emotional mush, or content that belongs in Key Memories.",
       "Use strong_event only for explicit commitments, clear relationship transitions, resolved conflicts, important personal facts, major reveals, or backstory hook advancement/resolution."
     ];
   }
@@ -47,7 +51,7 @@ export class JournalSuggestionActionHandler implements HermesActionHandler<Propo
         return [];
       }
 
-      if (record.confidence !== "high" || typeof record.entry !== "string") {
+      if (record.confidence !== "high" || typeof record.title !== "string" || typeof record.entry !== "string") {
         return [];
       }
 
@@ -65,6 +69,7 @@ export class JournalSuggestionActionHandler implements HermesActionHandler<Propo
         {
           type: "propose_journal_entry",
           ai_id: typeof record.ai_id === "string" ? record.ai_id : undefined,
+          title: record.title,
           entry: record.entry,
           keyphrases: stringArray(record.keyphrases),
           evidence: stringArray(record.evidence),
@@ -96,6 +101,7 @@ export class JournalSuggestionActionHandler implements HermesActionHandler<Propo
     }
 
     const suggestion = this.store.createPending(notification, {
+      title: action.title,
       entry: action.entry,
       keyphrases: action.keyphrases ?? [],
       evidence: action.evidence ?? [],

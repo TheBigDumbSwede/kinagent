@@ -29,6 +29,11 @@ export interface HermesConfig {
     enabled: boolean;
     maxLength: number;
   };
+  journalSuggestions: {
+    enabled: boolean;
+    throttleMessages: number;
+    strongEventBypass: boolean;
+  };
 }
 
 export type VoiceProvider = "none" | "openai" | "elevenlabs";

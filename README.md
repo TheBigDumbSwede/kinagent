@@ -339,9 +339,16 @@ hermes:
   currentSceneUpdates:
     enabled: true
     maxLength: 160
+  journalSuggestions:
+    enabled: true
+    throttleMessages: 20
+    strongEventBypass: true
 ```
 
 Environment variables can override the main scalar settings; see `.env.example`.
+
+Hermes journal suggestions are review-only until accepted in the desktop app. The throttle counts Kin-authored
+messages per Kin; strong events can bypass that spacing when `strongEventBypass` is enabled.
 
 ## Next Milestones
 
