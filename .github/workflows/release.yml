@@ -1,0 +1,74 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to upload, for example v0.1.0. Leave blank to build a downloadable workflow artifact only."
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  windows-portable:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Install
+        run: npm ci
+
+      - name: Check release version
+        run: node scripts/check-release-version.mjs "${{ github.event_name == 'push' && github.ref_name || inputs.tag }}"
+
+      - name: Build Windows portable
+        run: npm run dist:win
+
+      - name: Locate portable artifact
+        shell: pwsh
+        run: |
+          $artifact = Get-ChildItem -Path release -Filter "Kinagent-*-portable.exe" |
+            Sort-Object Length -Descending |
+            Select-Object -First 1
+          if (-not $artifact) {
+            throw "Portable Kinagent exe was not found in release/."
+          }
+          "PORTABLE_EXE=$($artifact.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "PORTABLE_NAME=$($artifact.Name)" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.PORTABLE_NAME }}
+          path: ${{ env.PORTABLE_EXE }}
+          if-no-files-found: error
+
+      - name: Publish GitHub release asset
+        if: ${{ github.event_name == 'push' || inputs.tag != '' }}
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+        run: |
+          $version = $env:RELEASE_TAG.TrimStart("v")
+          gh release view $env:RELEASE_TAG *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $env:RELEASE_TAG $env:PORTABLE_EXE --clobber
+          } else {
+            gh release create $env:RELEASE_TAG $env:PORTABLE_EXE `
+              --title "Kinagent $version" `
+              --notes "Windows portable build for Kinagent $version." `
+              --target $env:GITHUB_SHA
+          }

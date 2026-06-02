@@ -31,6 +31,7 @@
     "generate:icons": "node scripts/generate-icons.mjs",
     "smoke:desktop": "npm run build && node scripts/desktop-smoke.mjs",
     "dist:win": "node scripts/dist-win.mjs",
+    "release:check-version": "node scripts/check-release-version.mjs",
     "smoke:portable": "node scripts/smoke-portable.mjs",
     "test:live": "vitest run --config vitest.live.config.ts",
     "check": "npm run secret-scan && npm run lint && npm run format && npm run typecheck && npm test && npm run build",
@@ -60,8 +61,10 @@
             "x64"
           ]
         }
-      ],
-      "artifactName": "Kinagent-${version}-${arch}.${ext}"
+      ]
+    },
+    "portable": {
+      "artifactName": "Kinagent-${version}-portable.${ext}"
     }
   },
   "dependencies": {

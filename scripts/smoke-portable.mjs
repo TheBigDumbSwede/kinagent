@@ -10,7 +10,7 @@ if (!fs.existsSync(releaseDir)) {
 
 const portableExe = fs
   .readdirSync(releaseDir)
-  .filter((file) => /^Kinagent-\d+\.\d+\.\d+-.*\.exe$/i.test(file))
+  .filter((file) => /^Kinagent-\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?-portable\.exe$/i.test(file))
   .map((file) => {
     const fullPath = path.join(releaseDir, file);
     return {

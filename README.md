@@ -21,13 +21,12 @@ Working in this first milestone:
 - Optional Firestore chat text decryption in `probe-chat` using the saved Firebase UID as the Kindroid AES passphrase.
 - Live plaintext monitor for new incoming Firestore chat messages.
 - Kindroid outbound `POST https://api.kindroid.ai/v1/send-message` client.
-- In-memory outbound dedupe scaffolding.
+- SQLite-backed outbound dedupe for recent bridge-originated messages.
 - Hermes chat adapter for the local Cadence Hermes gateway, including a narrow `current_scene` action executor.
 
 Not complete yet:
 
 - Installer/signing/start-with-Windows packaging.
-- Persistent SQLite-backed dedupe storage.
 - Broader Hermes tool/action coverage beyond the current-scene proof of concept.
 
 The listener command uses Firestore's gRPC Listen API, not timer polling. It emits lightweight `kindroid.chat.changed` notifications; `probe-chat --decrypt` can verify readable message recovery separately, and `monitor-live` can print new decrypted messages as they arrive.
@@ -290,6 +289,29 @@ npm run dist:win
 ```
 
 The portable artifact is written under `release/`, which is ignored by Git.
+
+## Versioning and Releases
+
+Kinagent follows the same simple versioning model as Cadence: `package.json`
+is the source of truth, and the Windows portable filename is derived from that
+version.
+
+Prepare a release version:
+
+```powershell
+npm version patch
+git push origin main
+git push origin v0.1.1
+```
+
+Use `minor` or `major` instead of `patch` when appropriate. The GitHub release
+workflow runs for `vX.Y.Z` tags, verifies that the tag matches
+`package.json`, runs the Windows portable build and smoke check, then attaches
+`Kinagent-X.Y.Z-portable.exe` to the GitHub Release for that tag.
+
+The release workflow can also be run manually from GitHub Actions. With no tag
+input, it produces a downloadable workflow artifact only. With an existing tag
+input, it verifies the version and uploads the portable exe to that release.
 
 ## Configuration
 
