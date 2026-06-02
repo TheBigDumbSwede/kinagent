@@ -265,7 +265,7 @@ h2 {
 
 .activity {
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto auto minmax(0, 1fr);
   min-width: 0;
   background: #fff;
 }
@@ -285,7 +285,6 @@ h2 {
   min-width: 0;
   padding: 10px 20px 0;
   border-bottom: 1px solid #d7e0e8;
-  overflow-x: auto;
 }
 
 .detail-tab {
@@ -301,6 +300,33 @@ h2 {
 
 .detail-tab.active {
   border-bottom-color: #2d5a7b;
+  color: #182635;
+  font-weight: 700;
+}
+
+.setting-tabs {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+  padding: 8px 20px;
+  border-bottom: 1px solid #d7e0e8;
+  background: #f8fafc;
+  overflow-x: auto;
+}
+
+.setting-tab {
+  min-height: 28px;
+  border-color: #c4ced8;
+  background: #fff;
+  color: #4d6174;
+  padding: 0 10px;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.setting-tab.active {
+  border-color: #2d5a7b;
+  background: #e7f0f7;
   color: #182635;
   font-weight: 700;
 }
@@ -486,10 +512,6 @@ h2 {
 .timeline-entry.active {
   border-color: #2d5a7b;
   box-shadow: inset 3px 0 0 #2d5a7b;
-}
-
-.timeline-entry.timeline-current {
-  background: #f2f7fb;
 }
 
 .timeline-entry p {

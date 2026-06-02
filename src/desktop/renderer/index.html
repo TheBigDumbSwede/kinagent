@@ -77,27 +77,38 @@
           </div>
           <button id="clearButton" class="secondary" type="button">Clear</button>
         </div>
-        <div id="detailTabs" class="detail-tabs" role="tablist" aria-label="Kin detail tabs">
-          <button class="detail-tab active" type="button" data-tab="monitor" role="tab" aria-selected="true">
+        <div id="detailTabs" class="detail-tabs" role="tablist" aria-label="Main detail tabs">
+          <button class="detail-tab active" type="button" data-mode="monitor" role="tab" aria-selected="true">
             Monitor
           </button>
-          <button class="detail-tab" type="button" data-tab="backstory" role="tab" aria-selected="false">
+          <button class="detail-tab" type="button" data-mode="settings" role="tab" aria-selected="false">
+            Settings
+          </button>
+          <button class="detail-tab" type="button" data-mode="journal" role="tab" aria-selected="false">Journal</button>
+          <button class="detail-tab" type="button" data-mode="voice" role="tab" aria-selected="false">Voice</button>
+        </div>
+        <div id="settingTabs" class="setting-tabs" role="tablist" aria-label="Captured setting tabs" hidden>
+          <button class="setting-tab active" type="button" data-setting="backstory" role="tab" aria-selected="true">
             Backstory
           </button>
-          <button class="detail-tab" type="button" data-tab="directive" role="tab" aria-selected="false">
+          <button class="setting-tab" type="button" data-setting="directive" role="tab" aria-selected="false">
             Directive
           </button>
-          <button class="detail-tab" type="button" data-tab="memory" role="tab" aria-selected="false">Memory</button>
-          <button class="detail-tab" type="button" data-tab="example" role="tab" aria-selected="false">Example</button>
-          <button class="detail-tab" type="button" data-tab="scene" role="tab" aria-selected="false">
+          <button class="setting-tab" type="button" data-setting="memory" role="tab" aria-selected="false">
+            Memory
+          </button>
+          <button class="setting-tab" type="button" data-setting="example" role="tab" aria-selected="false">
+            Example
+          </button>
+          <button class="setting-tab" type="button" data-setting="scene" role="tab" aria-selected="false">
             Current Scene
           </button>
-          <button class="detail-tab" type="button" data-tab="background" role="tab" aria-selected="false">
+          <button class="setting-tab" type="button" data-setting="background" role="tab" aria-selected="false">
             Background
           </button>
-          <button class="detail-tab" type="button" data-tab="journal" role="tab" aria-selected="false">Journal</button>
-          <button class="detail-tab" type="button" data-tab="profile" role="tab" aria-selected="false">Profile</button>
-          <button class="detail-tab" type="button" data-tab="voice" role="tab" aria-selected="false">Voice</button>
+          <button class="setting-tab" type="button" data-setting="profile" role="tab" aria-selected="false">
+            Profile
+          </button>
         </div>
         <div class="activity-body">
           <div id="monitorPane" class="activity-pane">

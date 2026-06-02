@@ -24,6 +24,7 @@ const state = {
 
 const captureRequestTimeoutMs = 12_000;
 const maxMonitorMessages = 500;
+const settingTabKeys = new Set(["backstory", "directive", "memory", "example", "scene", "background", "profile"]);
 
 const elements = {
   sessionLine: document.querySelector("#sessionLine"),
@@ -36,6 +37,7 @@ const elements = {
   groupSubscriptionList: document.querySelector("#groupSubscriptionList"),
   activityTitle: document.querySelector("#activityTitle"),
   detailTabs: document.querySelector("#detailTabs"),
+  settingTabs: document.querySelector("#settingTabs"),
   monitorPane: document.querySelector("#monitorPane"),
   detailPane: document.querySelector("#detailPane"),
   kinDetailEmpty: document.querySelector("#kinDetailEmpty"),
@@ -108,12 +110,12 @@ elements.detailTabs.addEventListener("click", (event) => {
     return;
   }
 
-  const button = event.target.closest("[data-tab]");
+  const button = event.target.closest("[data-mode]");
   if (!button) {
     return;
   }
 
-  const nextTab = button.dataset.tab;
+  const nextTab = tabForMode(button.dataset.mode);
   if (state.activeTab !== nextTab) {
     state.selectedHistoryHash = null;
   }
@@ -121,6 +123,27 @@ elements.detailTabs.addEventListener("click", (event) => {
   if (state.activeTab === "voice" && state.selectedKinId && !state.selectedKinVoice && !state.voiceLoading) {
     void loadKinVoice(state.selectedKinId);
   }
+  renderActivity();
+});
+elements.settingTabs.addEventListener("click", (event) => {
+  if (!(event.target instanceof Element)) {
+    return;
+  }
+
+  const button = event.target.closest("[data-setting]");
+  if (!button) {
+    return;
+  }
+
+  const nextTab = button.dataset.setting;
+  if (!settingTabKeys.has(nextTab)) {
+    return;
+  }
+
+  if (state.activeTab !== nextTab) {
+    state.selectedHistoryHash = null;
+  }
+  state.activeTab = nextTab;
   renderActivity();
 });
 elements.voiceProviderInput.addEventListener("change", renderVoiceProviderFields);
@@ -427,6 +450,10 @@ function renderGroupSubscriptions() {
 }
 
 function renderMonitorState() {
+  if ((state.activeTab || "monitor") !== "monitor") {
+    return;
+  }
+
   const selectedGroup = currentSelectedGroup();
   if (selectedGroup) {
     const subscription = state.groupSubscriptions.find((item) => item.group?.groupId === selectedGroup.groupId);
@@ -530,12 +557,20 @@ async function loadKinVoice(kinId) {
 
 function renderActivity() {
   const activeTab = state.activeTab || "monitor";
-  const isMonitor = activeTab === "monitor";
-  const isVoice = activeTab === "voice";
+  const activeMode = modeForTab(activeTab);
+  const isMonitor = activeMode === "monitor";
+  const isVoice = activeMode === "voice";
 
-  for (const button of elements.detailTabs.querySelectorAll("[data-tab]")) {
-    button.hidden = Boolean(state.selectedGroupId && button.dataset.tab !== "monitor");
-    const selected = button.dataset.tab === activeTab;
+  for (const button of elements.detailTabs.querySelectorAll("[data-mode]")) {
+    button.hidden = Boolean(state.selectedGroupId && button.dataset.mode !== "monitor");
+    const selected = button.dataset.mode === activeMode;
+    button.classList.toggle("active", selected);
+    button.setAttribute("aria-selected", String(selected));
+  }
+
+  elements.settingTabs.hidden = Boolean(state.selectedGroupId || activeMode !== "settings");
+  for (const button of elements.settingTabs.querySelectorAll("[data-setting]")) {
+    const selected = button.dataset.setting === currentSettingTab();
     button.classList.toggle("active", selected);
     button.setAttribute("aria-selected", String(selected));
   }
@@ -561,6 +596,7 @@ function renderActivity() {
   const field = currentCapturedField();
   const tabLabel = field?.label || tabLabelFor(activeTab);
   elements.activityTitle.textContent = selectedKin ? `${selectedKin.name || "Kin"} · ${tabLabel}` : tabLabel;
+  elements.monitorLine.textContent = subtitleForDetailMode(activeMode);
 
   if (!state.selectedKinId) {
     renderDetailEmpty("Select Manage on a Kin to inspect captured settings.");
@@ -615,8 +651,10 @@ function renderDetailContent({ content, history, stats }) {
   elements.fieldContent.hidden = false;
   elements.voiceForm.hidden = true;
   elements.timeline.hidden = false;
-  const selectedEntry = history.find((entry) => entry.hash === state.selectedHistoryHash);
-  renderFieldContent(content, selectedEntry);
+  const selectedEntryIndex = history.findIndex((entry) => entry.hash === state.selectedHistoryHash);
+  const selectedEntry = selectedEntryIndex >= 0 ? history[selectedEntryIndex] : null;
+  const previousEntry = selectedEntryIndex >= 0 ? history[selectedEntryIndex + 1] : null;
+  renderFieldContent(content, selectedEntry, previousEntry);
 
   elements.detailStats.replaceChildren();
   const visibleStats = selectedEntry
@@ -641,34 +679,13 @@ function renderDetailContent({ content, history, stats }) {
     return;
   }
 
-  const currentItem = document.createElement("button");
-  currentItem.type = "button";
-  currentItem.className = `timeline-entry timeline-current${selectedEntry ? "" : " active"}`;
-  currentItem.addEventListener("click", () => {
-    state.selectedHistoryHash = null;
-    renderActivity();
-  });
-
-  const currentLabel = document.createElement("div");
-  currentLabel.className = "timeline-date";
-  currentLabel.textContent = "Current value";
-
-  const currentSummary = document.createElement("p");
-  currentSummary.textContent = summarizeTimelineContent(content);
-
-  const currentMeta = document.createElement("span");
-  currentMeta.textContent = "Latest captured file";
-
-  currentItem.append(currentLabel, currentSummary, currentMeta);
-  elements.timelineList.append(currentItem);
-
   for (const entry of history) {
     const item = document.createElement("button");
     item.type = "button";
     item.className = `timeline-entry${entry.hash === state.selectedHistoryHash ? " active" : ""}`;
     item.title = entry.subject || "";
     item.addEventListener("click", () => {
-      state.selectedHistoryHash = entry.hash;
+      state.selectedHistoryHash = state.selectedHistoryHash === entry.hash ? null : entry.hash;
       renderActivity();
     });
 
@@ -838,7 +855,7 @@ function detailStats(selectedKin, field, capture) {
   ];
 }
 
-function renderFieldContent(content, selectedEntry) {
+function renderFieldContent(content, selectedEntry, previousEntry) {
   elements.fieldContent.replaceChildren();
 
   if (!selectedEntry) {
@@ -846,13 +863,13 @@ function renderFieldContent(content, selectedEntry) {
     return;
   }
 
-  for (const line of formatSelectedHistoryDiff(selectedEntry, content)) {
+  for (const line of formatSelectedHistoryDiff(selectedEntry, previousEntry)) {
     elements.fieldContent.append(createDiffLine(line));
   }
 }
 
-function formatSelectedHistoryDiff(entry, currentContent) {
-  const lines = buildLineDiff(entry.content || "", currentContent || "");
+function formatSelectedHistoryDiff(entry, previousEntry) {
+  const lines = buildLineDiff(previousEntry?.content || "", entry.content || "");
   return lines.length > 0 ? lines : [{ prefix: " ", text: "No text differences." }];
 }
 
@@ -868,25 +885,25 @@ function createDiffLine(line) {
   return element;
 }
 
-function buildLineDiff(selectedContent, currentContent) {
+function buildLineDiff(previousContent, selectedContent) {
+  const previousLines = splitDiffLines(previousContent);
   const selectedLines = splitDiffLines(selectedContent);
-  const currentLines = splitDiffLines(currentContent);
-  if (selectedContent === currentContent) {
+  if (previousContent === selectedContent) {
     return [];
   }
 
-  if (selectedLines.length * currentLines.length > 250_000) {
+  if (previousLines.length * selectedLines.length > 250_000) {
     return [
-      { prefix: "-", text: `${selectedLines.length} selected snapshot lines` },
-      { prefix: "+", text: `${currentLines.length} current lines` }
+      { prefix: "-", text: `${previousLines.length} previous snapshot lines` },
+      { prefix: "+", text: `${selectedLines.length} selected snapshot lines` }
     ];
   }
 
-  const table = Array.from({ length: selectedLines.length + 1 }, () => new Array(currentLines.length + 1).fill(0));
-  for (let leftIndex = selectedLines.length - 1; leftIndex >= 0; leftIndex -= 1) {
-    for (let rightIndex = currentLines.length - 1; rightIndex >= 0; rightIndex -= 1) {
+  const table = Array.from({ length: previousLines.length + 1 }, () => new Array(selectedLines.length + 1).fill(0));
+  for (let leftIndex = previousLines.length - 1; leftIndex >= 0; leftIndex -= 1) {
+    for (let rightIndex = selectedLines.length - 1; rightIndex >= 0; rightIndex -= 1) {
       table[leftIndex][rightIndex] =
-        selectedLines[leftIndex] === currentLines[rightIndex]
+        previousLines[leftIndex] === selectedLines[rightIndex]
           ? table[leftIndex + 1][rightIndex + 1] + 1
           : Math.max(table[leftIndex + 1][rightIndex], table[leftIndex][rightIndex + 1]);
     }
@@ -895,27 +912,27 @@ function buildLineDiff(selectedContent, currentContent) {
   const diff = [];
   let leftIndex = 0;
   let rightIndex = 0;
-  while (leftIndex < selectedLines.length && rightIndex < currentLines.length) {
-    if (selectedLines[leftIndex] === currentLines[rightIndex]) {
-      diff.push({ prefix: " ", text: selectedLines[leftIndex] });
+  while (leftIndex < previousLines.length && rightIndex < selectedLines.length) {
+    if (previousLines[leftIndex] === selectedLines[rightIndex]) {
+      diff.push({ prefix: " ", text: previousLines[leftIndex] });
       leftIndex += 1;
       rightIndex += 1;
     } else if (table[leftIndex + 1][rightIndex] >= table[leftIndex][rightIndex + 1]) {
-      diff.push({ prefix: "-", text: selectedLines[leftIndex] });
+      diff.push({ prefix: "-", text: previousLines[leftIndex] });
       leftIndex += 1;
     } else {
-      diff.push({ prefix: "+", text: currentLines[rightIndex] });
+      diff.push({ prefix: "+", text: selectedLines[rightIndex] });
       rightIndex += 1;
     }
   }
 
-  while (leftIndex < selectedLines.length) {
-    diff.push({ prefix: "-", text: selectedLines[leftIndex] });
+  while (leftIndex < previousLines.length) {
+    diff.push({ prefix: "-", text: previousLines[leftIndex] });
     leftIndex += 1;
   }
 
-  while (rightIndex < currentLines.length) {
-    diff.push({ prefix: "+", text: currentLines[rightIndex] });
+  while (rightIndex < selectedLines.length) {
+    diff.push({ prefix: "+", text: selectedLines[rightIndex] });
     rightIndex += 1;
   }
 
@@ -942,18 +959,6 @@ function formatTimelineChange(entry) {
   }
 
   return `Compared with ${entry.previousShortHash} · +${added} / -${removed} lines · ${characterLabel}`;
-}
-
-function summarizeTimelineContent(content) {
-  const firstLine = String(content || "")
-    .split(/\r?\n/)
-    .map((line) => line.trim().replace(/^#+\s*/, ""))
-    .find(Boolean);
-  return truncate(firstLine || "No captured text", 100);
-}
-
-function truncate(value, maxLength) {
-  return value.length <= maxLength ? value : `${value.slice(0, maxLength - 1)}...`;
 }
 
 function currentCapturedField() {
@@ -997,8 +1002,45 @@ function clearMissingSelectedGroup() {
 }
 
 function tabLabelFor(tab) {
-  const button = elements.detailTabs.querySelector(`[data-tab="${tab}"]`);
-  return button?.textContent?.trim() || "Detail";
+  const settingButton = elements.settingTabs.querySelector(`[data-setting="${tab}"]`);
+  if (settingButton) {
+    return settingButton.textContent?.trim() || "Detail";
+  }
+
+  const modeButton = elements.detailTabs.querySelector(`[data-mode="${modeForTab(tab)}"]`);
+  return modeButton?.textContent?.trim() || "Detail";
+}
+
+function tabForMode(mode) {
+  if (mode === "settings") {
+    return currentSettingTab();
+  }
+
+  return mode === "journal" || mode === "voice" ? mode : "monitor";
+}
+
+function modeForTab(tab) {
+  if (settingTabKeys.has(tab)) {
+    return "settings";
+  }
+
+  return tab === "journal" || tab === "voice" ? tab : "monitor";
+}
+
+function currentSettingTab() {
+  return settingTabKeys.has(state.activeTab) ? state.activeTab : "backstory";
+}
+
+function subtitleForDetailMode(mode) {
+  if (mode === "voice") {
+    return "Voice configuration";
+  }
+
+  if (mode === "journal") {
+    return "Captured journal history";
+  }
+
+  return "Captured settings history";
 }
 
 function providerLabel(provider) {
