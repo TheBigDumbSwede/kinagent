@@ -9,7 +9,12 @@ import { ensureSessionDir, storageStatePath } from "../auth/tokenStore.js";
 import { loadConfig, saveConfig } from "../config/loadConfig.js";
 import type { AppConfig, LogLevel, VoiceProvider } from "../config/types.js";
 import { readCapturedKin } from "../capture/captureReader.js";
-import { exportKinChatTranscript, type KinChatExportProgress } from "../chatExport/chatExport.js";
+import {
+  exportGroupChatTranscript,
+  exportKinChatTranscript,
+  type KinChatExportProgress,
+  type KinChatExportResult
+} from "../chatExport/chatExport.js";
 import { analyzeKinDesign, type KinAnalysisProgress } from "../kinAnalysis/kinAnalysis.js";
 import { BridgeRuntime, type BridgeRuntimeEvent } from "../runtime/bridgeRuntime.js";
 import type { JournalSuggestion } from "../journal/journalSuggestionStore.js";
@@ -262,6 +267,17 @@ function registerIpcHandlers(): void {
         toDate?: string;
       } = {}
     ) => exportKinChat(input)
+  );
+  ipcMain.handle(
+    "chat-export:group",
+    async (
+      _event,
+      input: {
+        groupId?: string;
+        fromDate?: string;
+        toDate?: string;
+      } = {}
+    ) => exportGroupChat(input)
   );
   ipcMain.handle("kin-analyze:run", async (_event, input: { kinId?: string } = {}) => analyzeKin(input.kinId ?? ""));
 }
@@ -547,10 +563,8 @@ async function exportKinChat(input: { kinId?: string; fromDate?: string; toDate?
     throw new Error("Select a Kin before exporting chat.");
   }
 
-  const kinName =
-    requireRuntime()
-      .status()
-      .subscriptions.find((subscription) => subscription.kin.aiId === kinId)?.kin.name || kinId;
+  const status = requireRuntime().status();
+  const kinName = status.subscriptions.find((subscription) => subscription.kin.aiId === kinId)?.kin.name || kinId;
   const jobId = randomUUID();
   const progress = (payload: KinChatExportProgress) => {
     sendRendererEvent("chat-export-progress", { jobId, ...payload });
@@ -569,6 +583,44 @@ async function exportKinChat(input: { kinId?: string; fromDate?: string; toDate?
     progress
   );
 
+  return saveChatExportResult(result, jobId);
+}
+
+async function exportGroupChat(input: { groupId?: string; fromDate?: string; toDate?: string }) {
+  const groupId = input.groupId ?? "";
+  if (!groupId) {
+    throw new Error("Select a Group before exporting chat.");
+  }
+
+  const status = requireRuntime().status();
+  const groupName =
+    status.groupSubscriptions.find((subscription) => subscription.group.groupId === groupId)?.group.name || groupId;
+  const speakerNames = Object.fromEntries(
+    status.kins.filter((kin) => kin.aiId && kin.name).map((kin) => [kin.aiId, kin.name])
+  );
+  const jobId = randomUUID();
+  const progress = (payload: KinChatExportProgress) => {
+    sendRendererEvent("chat-export-progress", { jobId, ...payload });
+  };
+
+  const result = await exportGroupChatTranscript(
+    config,
+    logger,
+    {
+      groupId,
+      groupName,
+      speakerNames,
+      fromDate: input.fromDate,
+      toDate: input.toDate,
+      tempDir: chatExportTempDir()
+    },
+    progress
+  );
+
+  return saveChatExportResult(result, jobId);
+}
+
+async function saveChatExportResult(result: KinChatExportResult, jobId: string) {
   const saveOptions = {
     title: "Save chat export",
     defaultPath: result.fileName,

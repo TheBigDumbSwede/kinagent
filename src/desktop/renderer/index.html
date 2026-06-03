@@ -85,6 +85,9 @@
           <button class="detail-tab" type="button" data-mode="app-settings" role="tab" aria-selected="false">
             Settings
           </button>
+          <button class="detail-tab" type="button" data-mode="export" role="tab" aria-selected="false" hidden>
+            Export
+          </button>
         </div>
         <div id="kinDetailTabs" class="detail-tabs kin-detail-tabs" role="tablist" aria-label="Kin detail tabs" hidden>
           <button class="detail-tab active" type="button" data-mode="settings" role="tab" aria-selected="true">
@@ -371,7 +374,8 @@
                 </div>
                 <div id="chatExportPanel" class="kin-action-panel" hidden>
                   <section class="settings-section">
-                    <h2>Export</h2>
+                    <h2 id="chatExportTitle">Export</h2>
+                    <p id="chatExportDescription" class="panel-note"></p>
                     <div class="settings-grid two">
                       <label>
                         From

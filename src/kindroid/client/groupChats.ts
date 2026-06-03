@@ -8,6 +8,12 @@ export interface ListKindroidGroupChatMessagesOptions {
   limit: number;
 }
 
+export interface ListAllKindroidGroupChatMessagesOptions {
+  groupId: string;
+  pageSize?: number;
+  maxMessages?: number;
+}
+
 export interface ListenKindroidGroupChatMessagesOptions {
   groupId: string;
   pageSize?: number;
@@ -36,6 +42,17 @@ export class KindroidGroupChatsClient {
       maxDocuments: options.limit,
       orderBy: "timestamp desc",
       logLabel: "kindroid.groupChatMessages"
+    });
+  }
+
+  async listMessages(options: ListAllKindroidGroupChatMessagesOptions): Promise<FirestoreDocumentLike[]> {
+    const uid = await this.firestoreRest.resolveUid();
+    return this.firestoreRest.listDocuments({
+      collectionPath: groupChatMessagesPath(uid, options.groupId),
+      pageSize: options.pageSize ?? 100,
+      maxDocuments: options.maxMessages,
+      orderBy: "timestamp desc, __name__ desc",
+      logLabel: "kindroid.groupChatMessages.export"
     });
   }
 

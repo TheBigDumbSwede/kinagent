@@ -15,6 +15,15 @@ export interface KinChatExportOptions {
   tempDir: string;
 }
 
+export interface GroupChatExportOptions {
+  groupId: string;
+  groupName?: string;
+  speakerNames?: Record<string, string>;
+  fromDate?: string;
+  toDate?: string;
+  tempDir: string;
+}
+
 export interface KinChatExportProgress {
   phase: "loading" | "decrypting" | "writing" | "complete";
   processed: number;
@@ -39,12 +48,75 @@ export async function exportKinChatTranscript(
     throw new Error("Select a Kin before exporting chat.");
   }
 
+  return exportChatTranscript(
+    config,
+    logger,
+    {
+      scope: "kin",
+      id: options.kinId,
+      displayName: options.kinName || options.kinId,
+      fromDate: options.fromDate,
+      toDate: options.toDate,
+      tempDir: options.tempDir,
+      speakerNames: {}
+    },
+    onProgress
+  );
+}
+
+export async function exportGroupChatTranscript(
+  config: AppConfig,
+  logger: Logger,
+  options: GroupChatExportOptions,
+  onProgress: (progress: KinChatExportProgress) => void
+): Promise<KinChatExportResult> {
+  if (!options.groupId) {
+    throw new Error("Select a Group before exporting chat.");
+  }
+
+  return exportChatTranscript(
+    config,
+    logger,
+    {
+      scope: "group",
+      id: options.groupId,
+      displayName: options.groupName || options.groupId,
+      fromDate: options.fromDate,
+      toDate: options.toDate,
+      tempDir: options.tempDir,
+      speakerNames: options.speakerNames ?? {}
+    },
+    onProgress
+  );
+}
+
+async function exportChatTranscript(
+  config: AppConfig,
+  logger: Logger,
+  options: {
+    scope: "kin" | "group";
+    id: string;
+    displayName: string;
+    fromDate?: string;
+    toDate?: string;
+    tempDir: string;
+    speakerNames: Record<string, string>;
+  },
+  onProgress: (progress: KinChatExportProgress) => void
+): Promise<KinChatExportResult> {
   onProgress({ phase: "loading", processed: 0, message: "Loading chat entries." });
   const client = new KindroidApiClient(config, logger);
-  const documents = await client.chats.listMessages({ kinId: options.kinId, pageSize: 100 });
+  const documents =
+    options.scope === "group"
+      ? await client.groupChats.listMessages({ groupId: options.id, pageSize: 100 })
+      : await client.chats.listMessages({ kinId: options.id, pageSize: 100 });
   const range = normalizeDateRange(options.fromDate, options.toDate);
   const candidates = documents
-    .map((document) => ({ document, message: mapKindroidMessage(document, options.kinId) }))
+    .map((document) => ({
+      document,
+      message:
+        options.scope === "group" ? mapGroupMessage(document, options.id) : mapKindroidMessage(document, options.id)
+    }))
     .filter((entry) => isMessageInRange(entry.message, range))
     .sort((left, right) => compareMessagesAscending(left.message, right.message));
 
@@ -58,7 +130,11 @@ export async function exportKinChatTranscript(
   const decryptionKey = resolveDecryptionKey(config);
   const messages: NormalizedKindroidMessage[] = [];
   for (let index = 0; index < candidates.length; index += 1) {
-    messages.push(mapKindroidMessage(candidates[index].document, options.kinId, { decryptionKey }));
+    messages.push(
+      options.scope === "group"
+        ? mapGroupMessage(candidates[index].document, options.id, decryptionKey)
+        : mapKindroidMessage(candidates[index].document, options.id, { decryptionKey })
+    );
     onProgress({
       phase: "decrypting",
       processed: index + 1,
@@ -75,12 +151,13 @@ export async function exportKinChatTranscript(
   });
 
   fs.mkdirSync(options.tempDir, { recursive: true });
-  const fileName = defaultChatExportFileName(options.kinName || options.kinId, range);
+  const fileName = defaultChatExportFileName(options.displayName, range);
   const tempPath = path.join(options.tempDir, `${Date.now()}-${fileName}`);
   fs.writeFileSync(
     tempPath,
     renderChatTranscript(messages, {
-      kinName: options.kinName || "Kin"
+      kinName: options.displayName || "Kin",
+      speakerNames: options.speakerNames
     })
   );
 
@@ -99,7 +176,10 @@ export async function exportKinChatTranscript(
   };
 }
 
-export function renderChatTranscript(messages: NormalizedKindroidMessage[], options: { kinName: string }): string {
+export function renderChatTranscript(
+  messages: NormalizedKindroidMessage[],
+  options: { kinName: string; speakerNames?: Record<string, string> }
+): string {
   const lines: string[] = [];
   let currentDate = "";
 
@@ -113,7 +193,9 @@ export function renderChatTranscript(messages: NormalizedKindroidMessage[], opti
       currentDate = date;
     }
 
-    lines.push(`[${timeLabel(message.timestamp)}] ${speakerLabel(message, options.kinName)}: ${message.text || ""}`);
+    lines.push(
+      `[${timeLabel(message.timestamp)}] ${speakerLabel(message, options.kinName, options.speakerNames ?? {})}: ${message.text || ""}`
+    );
   }
 
   if (lines.length === 0) {
@@ -188,10 +270,31 @@ function timeLabel(timestamp: string | null): string {
   return timestamp ? timestamp.slice(11, 16) || "Unknown" : "Unknown";
 }
 
-function speakerLabel(message: Pick<NormalizedKindroidMessage, "sender" | "role">, kinName: string): string {
+function mapGroupMessage(
+  document: Parameters<typeof mapKindroidMessage>[0],
+  groupId: string,
+  decryptionKey?: string
+): NormalizedKindroidMessage {
+  const data = document.data();
+  const record = typeof data === "object" && data !== null ? (data as Record<string, unknown>) : {};
+  const aiId = stringValue(record.ai_id) ?? stringValue(record.aiId);
+  return {
+    ...mapKindroidMessage(document, aiId ?? groupId, decryptionKey ? { decryptionKey } : {}),
+    groupId
+  };
+}
+
+function speakerLabel(
+  message: Pick<NormalizedKindroidMessage, "kinId" | "sender" | "role">,
+  kinName: string,
+  speakerNames: Record<string, string>
+): string {
   const sender = (message.sender || message.role || "").toLowerCase();
   if (sender === "user" || sender === "human") {
     return "User";
+  }
+  if (speakerNames[message.kinId]) {
+    return speakerNames[message.kinId];
   }
   if (sender === "ai" || sender === "assistant" || sender === "kin") {
     return kinName;
@@ -256,4 +359,8 @@ function safeFilePart(value: string): string {
     .replace(/^-+|-+$/g, "")
     .slice(0, 80)
     .toLowerCase();
+}
+
+function stringValue(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
 }

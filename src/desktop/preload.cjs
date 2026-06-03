@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld("kinagent", {
   getKinAmbientPreference: (input) => ipcRenderer.invoke("ambient:get-kin-preference", input),
   setKinAmbientPreference: (input) => ipcRenderer.invoke("ambient:set-kin-preference", input),
   exportKinChat: (input) => ipcRenderer.invoke("chat-export:kin", input),
+  exportGroupChat: (input) => ipcRenderer.invoke("chat-export:group", input),
   analyzeKin: (input) => ipcRenderer.invoke("kin-analyze:run", input),
   onEvent: (callback) => {
     const listener = (_event, message) => callback(message);

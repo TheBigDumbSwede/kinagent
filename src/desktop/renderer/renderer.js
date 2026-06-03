@@ -115,6 +115,8 @@ const elements = {
   kinAnalyzeStatusLine: document.querySelector("#kinAnalyzeStatusLine"),
   kinAnalyzeReport: document.querySelector("#kinAnalyzeReport"),
   chatExportPanel: document.querySelector("#chatExportPanel"),
+  chatExportTitle: document.querySelector("#chatExportTitle"),
+  chatExportDescription: document.querySelector("#chatExportDescription"),
   chatExportFromInput: document.querySelector("#chatExportFromInput"),
   chatExportToInput: document.querySelector("#chatExportToInput"),
   chatExportRangeButton: document.querySelector("#chatExportRangeButton"),
@@ -278,10 +280,10 @@ elements.kinAnalyzeButton.addEventListener("click", () => {
   void analyzeSelectedKin();
 });
 elements.chatExportRangeButton.addEventListener("click", () => {
-  void exportSelectedKinChat(false);
+  void exportSelectedChat(false);
 });
 elements.chatExportAllButton.addEventListener("click", () => {
-  void exportSelectedKinChat(true);
+  void exportSelectedChat(true);
 });
 
 window.kinagent.onEvent((message) => {
@@ -722,6 +724,7 @@ function selectGroup(groupId) {
   state.ambientError = null;
   state.voiceLoading = false;
   state.ambientLoading = false;
+  resetKinActionPlaceholders();
   renderKinSubscriptions();
   renderGroupSubscriptions();
   renderMonitorState();
@@ -786,7 +789,13 @@ function renderActivity() {
 
   renderJournalTabBadge();
   for (const button of elements.detailTabs.querySelectorAll("[data-mode]")) {
-    button.hidden = Boolean(state.selectedGroupId && button.dataset.mode === "settings");
+    if (button.dataset.mode === "settings") {
+      button.hidden = Boolean(state.selectedGroupId);
+    } else if (button.dataset.mode === "export") {
+      button.hidden = !state.selectedGroupId;
+    } else {
+      button.hidden = false;
+    }
     const selected =
       button.dataset.mode === activeMode || (button.dataset.mode === "settings" && kinModes.includes(activeMode));
     button.classList.toggle("active", selected);
@@ -830,6 +839,14 @@ function renderActivity() {
     elements.activityTitle.textContent = "Settings";
     elements.monitorLine.textContent = "Application configuration";
     renderAppSettingsTab();
+    return;
+  }
+
+  const selectedGroup = currentSelectedGroup();
+  if (selectedGroup && isExport) {
+    elements.activityTitle.textContent = `${selectedGroup.name || "Group"} · Export`;
+    elements.monitorLine.textContent = subtitleForDetailMode(activeMode);
+    renderGroupExportTab(selectedGroup);
     return;
   }
 
@@ -1185,9 +1202,32 @@ function renderKinExportTab(selectedKin) {
   elements.kinAnalyzePanel.hidden = true;
   elements.chatExportPanel.hidden = false;
   elements.timeline.hidden = true;
+  elements.chatExportTitle.textContent = "Export";
+  elements.chatExportDescription.textContent = "Export decrypted direct chat history for this Kin.";
   elements.chatExportRangeButton.disabled = state.chatExportSaving;
   elements.chatExportAllButton.disabled = state.chatExportSaving;
   renderKinActionStats(selectedKin, "Export", "Pending");
+}
+
+function renderGroupExportTab(selectedGroup) {
+  elements.kinDetailEmpty.hidden = true;
+  elements.kinDetailContent.hidden = false;
+  elements.kinDetailContent.classList.remove("app-settings-content");
+  elements.kinDetailContent.classList.add("form-detail-content");
+  elements.fieldContent.hidden = true;
+  elements.journalSuggestionPanel.hidden = true;
+  elements.appSettingsForm.hidden = true;
+  elements.voiceForm.hidden = true;
+  elements.kinHermesForm.hidden = true;
+  elements.kinAnalyzePanel.hidden = true;
+  elements.chatExportPanel.hidden = false;
+  elements.timeline.hidden = true;
+  elements.chatExportTitle.textContent = "Export Group";
+  elements.chatExportDescription.textContent =
+    "Export decrypted group chat history with Kin names resolved from message AI IDs.";
+  elements.chatExportRangeButton.disabled = state.chatExportSaving;
+  elements.chatExportAllButton.disabled = state.chatExportSaving;
+  renderGroupActionStats(selectedGroup, "Export", "Pending");
 }
 
 function renderKinHermesStats(selectedKin, preference) {
@@ -1215,6 +1255,26 @@ function renderKinHermesStats(selectedKin, preference) {
 function renderKinActionStats(selectedKin, action, status) {
   const stats = [
     { label: "Kin", value: selectedKin?.name || state.selectedKinId || "Unknown" },
+    { label: "Action", value: action },
+    { label: "Status", value: status },
+    { label: "Mode", value: "Manual" }
+  ];
+
+  elements.detailStats.replaceChildren();
+  for (const stat of stats) {
+    const item = document.createElement("div");
+    const label = document.createElement("span");
+    label.textContent = stat.label;
+    const value = document.createElement("strong");
+    value.textContent = stat.value;
+    item.append(label, value);
+    elements.detailStats.append(item);
+  }
+}
+
+function renderGroupActionStats(selectedGroup, action, status) {
+  const stats = [
+    { label: "Group", value: selectedGroup?.name || state.selectedGroupId || "Unknown" },
     { label: "Action", value: action },
     { label: "Status", value: status },
     { label: "Mode", value: "Manual" }
@@ -1577,8 +1637,8 @@ function renderMarkdownReport(container, markdown) {
   }
 }
 
-async function exportSelectedKinChat(exportAll) {
-  if (!state.selectedKinId || state.chatExportSaving) {
+async function exportSelectedChat(exportAll) {
+  if ((!state.selectedKinId && !state.selectedGroupId) || state.chatExportSaving) {
     return;
   }
 
@@ -1590,11 +1650,13 @@ async function exportSelectedKinChat(exportAll) {
   renderActivity();
 
   try {
-    const result = await window.kinagent.exportKinChat({
-      kinId: state.selectedKinId,
+    const request = {
       fromDate: exportAll ? "" : elements.chatExportFromInput.value,
       toDate: exportAll ? "" : elements.chatExportToInput.value
-    });
+    };
+    const result = state.selectedGroupId
+      ? await window.kinagent.exportGroupChat({ ...request, groupId: state.selectedGroupId })
+      : await window.kinagent.exportKinChat({ ...request, kinId: state.selectedKinId });
     state.chatExportJobId = result.jobId || state.chatExportJobId;
     if (result.ok) {
       elements.chatExportStatusLine.textContent = `Exported ${result.exportedCount} chat entries to ${result.filePath}.`;
@@ -1615,13 +1677,20 @@ async function exportSelectedKinChat(exportAll) {
 }
 
 function renderChatExportProgress(progress) {
-  if (!progress) {
+  if (!progress || !state.chatExportSaving) {
     return;
   }
 
   if (progress.jobId) {
     state.chatExportJobId = progress.jobId;
   }
+  if (progress.phase === "complete") {
+    elements.chatExportProgress.hidden = true;
+    elements.chatExportProgress.value = 0;
+    elements.chatExportStatusLine.textContent = progress.message || "Transcript ready.";
+    return;
+  }
+
   elements.chatExportProgress.hidden = false;
   if (typeof progress.total === "number" && progress.total > 0) {
     elements.chatExportProgress.max = progress.total;
