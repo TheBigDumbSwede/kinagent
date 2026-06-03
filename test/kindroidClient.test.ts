@@ -15,6 +15,7 @@ import {
   buildGetGroupTurnPayload,
   buildSendGroupMessagePayload,
   buildSendMessagePayload,
+  buildUpdateChatDynamismPayload,
   buildUpdateIdentityPayload
 } from "../src/kindroid/payloads.js";
 import type { Logger } from "../src/util/logger.js";
@@ -40,7 +41,14 @@ describe("Kindroid client normalizers", () => {
         documentId: "doc-1",
         aiId: "kin-1",
         name: "Brielle",
-        current: false
+        current: false,
+        chatDynamism: {
+          raw: undefined,
+          numeric: null,
+          display: "(not set)"
+        },
+        llmFlair: undefined,
+        reasoningEffort: undefined
       }
     ]);
   });
@@ -55,9 +63,39 @@ describe("Kindroid client normalizers", () => {
         documentId: "doc-2",
         aiId: "doc-2",
         name: "Unnamed",
-        current: false
+        current: false,
+        chatDynamism: {
+          raw: undefined,
+          numeric: null,
+          display: "(not set)"
+        },
+        llmFlair: undefined,
+        reasoningEffort: undefined
       }
     ]);
+  });
+
+  it("normalizes Kin Chat Dynamism from Firestore profile fields", () => {
+    const document = documentLike("doc-3", {
+      ai_id: "kin-3",
+      ai_name: "Mara",
+      user_set_temperature: 0.85,
+      reasoning_effort: "medium",
+      llm_flair: "balanced"
+    });
+
+    expect(normalizeKinDocument(document)[0]).toEqual(
+      expect.objectContaining({
+        aiId: "kin-3",
+        chatDynamism: {
+          raw: 0.85,
+          numeric: 0.85,
+          display: "0.85"
+        },
+        reasoningEffort: "medium",
+        llmFlair: "balanced"
+      })
+    );
   });
 
   it("normalizes group metadata without exposing raw group context", () => {
@@ -324,6 +362,41 @@ describe("Kindroid client normalizers", () => {
     });
   });
 
+  it("builds a narrow Kindroid Chat Dynamism update-info payload", () => {
+    expect(
+      buildUpdateChatDynamismPayload({
+        aiId: "kin-1",
+        value: 0.85
+      })
+    ).toEqual({
+      ai_id: "kin-1",
+      user_set_temperature: 0.85
+    });
+  });
+
+  it("updates Chat Dynamism through a separate update-info path", async () => {
+    const sessionDir = createTestSessionDir(tempDirs);
+    const fetchMock = vi.fn(async () => new Response("OK", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new KindroidClient(testConfig({ sessionDir }), testLogger);
+
+    await expect(client.updateChatDynamism({ aiId: "kin-1", value: 0.85 })).resolves.toEqual({
+      ok: true,
+      status: 200,
+      responseText: undefined
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.kindroid.ai/v1/update-info",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          ai_id: "kin-1",
+          user_set_temperature: 0.85
+        })
+      })
+    );
+  });
+
   it("rejects empty backstory identity updates before calling the endpoint", async () => {
     const client = new KindroidClient(testConfig(), testLogger);
 
@@ -414,6 +487,18 @@ function testConfig(overrides: { sessionDir?: string } = {}): AppConfig {
         enabled: true,
         throttleMessages: 20,
         strongEventBypass: true
+      },
+      chatDynamism: {
+        suggestions: {
+          enabled: false
+        },
+        autoAdjust: {
+          enabled: false,
+          minTurnsBetweenAdjustments: 12,
+          min: 0.8,
+          max: 1.4,
+          maxDelta: 0.2
+        }
       }
     },
     voice: {

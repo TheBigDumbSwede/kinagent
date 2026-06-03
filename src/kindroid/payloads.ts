@@ -6,9 +6,11 @@ import type {
   SendKindroidGroupMessageInput,
   SendKindroidMessageInput,
   UpdateKindroidCurrentSceneInput,
+  UpdateKindroidChatDynamismInput,
   UpdateKindroidGroupCurrentSceneInput,
   UpdateKindroidIdentityInput
 } from "./types.js";
+import { normalizeChatDynamismInput } from "./chatDynamism.js";
 
 export const currentSceneMaxLengthLimit = 160;
 
@@ -134,6 +136,17 @@ export function buildUpdateIdentityPayload(input: UpdateKindroidIdentityInput): 
     ai_example_message: input.exampleMessage,
     ai_directive: input.directive,
     ai_additional_context: input.additionalContext
+  };
+}
+
+export function buildUpdateChatDynamismPayload(input: UpdateKindroidChatDynamismInput): Record<string, unknown> {
+  if (!input.aiId) {
+    throw new Error("Missing Kindroid ai_id for Chat Dynamism update.");
+  }
+
+  return {
+    ai_id: input.aiId,
+    user_set_temperature: normalizeChatDynamismInput(input.value)
   };
 }
 

@@ -1,4 +1,5 @@
 import type { FirestoreDocumentLike } from "../../firestore/types.js";
+import { parseChatDynamismValue, type ChatDynamismValue } from "../chatDynamism.js";
 import type { FirestoreRestClient } from "../../firestore/firestoreRestClient.js";
 import { userKinsPath } from "./firestorePaths.js";
 
@@ -7,6 +8,9 @@ export interface KindroidKin {
   aiId: string;
   name: string;
   current: boolean;
+  chatDynamism: ChatDynamismValue;
+  reasoningEffort?: unknown;
+  llmFlair?: unknown;
 }
 
 export class KindroidKinsClient {
@@ -35,7 +39,10 @@ export function normalizeKinDocument(document: FirestoreDocumentLike): KindroidK
       documentId: document.id,
       aiId,
       name: stringValue(data.ai_name) ?? "(unnamed)",
-      current: booleanValue(data.current) ?? false
+      current: booleanValue(data.current) ?? false,
+      chatDynamism: parseChatDynamismValue(data.user_set_temperature),
+      reasoningEffort: data.reasoning_effort,
+      llmFlair: data.llm_flair
     }
   ];
 }

@@ -270,6 +270,18 @@ function testConfig(options: {
         enabled: true,
         throttleMessages: 20,
         strongEventBypass: true
+      },
+      chatDynamism: {
+        suggestions: {
+          enabled: false
+        },
+        autoAdjust: {
+          enabled: false,
+          minTurnsBetweenAdjustments: 12,
+          min: 0.8,
+          max: 1.4,
+          maxDelta: 0.2
+        }
       }
     },
     voice: {

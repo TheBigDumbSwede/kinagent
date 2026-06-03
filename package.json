@@ -23,6 +23,8 @@
     "listen": "tsx src/index.ts listen",
     "send": "tsx src/index.ts send",
     "ambient-context": "tsx src/index.ts ambient-context",
+    "chat-dynamism": "tsx src/index.ts chat-dynamism",
+    "experiment:chat-dynamism": "tsx src/index.ts experiment-chat-dynamism",
     "experiment:internet-response": "tsx src/index.ts experiment-internet-response",
     "daemon": "tsx src/index.ts daemon",
     "test": "vitest run",

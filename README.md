@@ -343,12 +343,28 @@ hermes:
     enabled: true
     throttleMessages: 20
     strongEventBypass: true
+  chatDynamism:
+    suggestions:
+      enabled: true
+    autoAdjust:
+      enabled: false
+      minTurnsBetweenAdjustments: 12
+      min: 0.8
+      max: 1.4
+      maxDelta: 0.2
 ```
 
 Environment variables can override the main scalar settings; see `.env.example`.
 
 Hermes journal suggestions are review-only until accepted in the desktop app. The throttle counts Kin-authored
 messages per Kin; strong events can bypass that spacing when `strongEventBypass` is enabled.
+
+Chat Dynamism support is experimental. Kinagent loads the observed `user_set_temperature` field during Kin discovery,
+can run a manual write/read/restore diagnostic, and exposes per-Kin desktop controls for reviewed Hermes drift
+suggestions and their allowed range. Hermes-originated Chat Dynamism adjustments are stored as reviewed suggestions
+only. The current guidance treats `0.05` as a noticeable base adjustment and `0.95` as Kindroid's recommended starting
+value for new Kins. Per-Kin drift switches and selected ranges persist in `kin-subscriptions.json` beside the bridge
+SQLite database. See [docs/chat-dynamism.md](docs/chat-dynamism.md).
 
 ## Next Milestones
 

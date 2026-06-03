@@ -16,11 +16,12 @@ disabled features are ignored.
 
 The active registry is built by `createHermesActionRegistry(...)`.
 
-| Action types                                         | Handler                          | Execution | Scope                                                                                           |
-| ---------------------------------------------------- | -------------------------------- | --------- | ----------------------------------------------------------------------------------------------- |
-| `update_current_scene`, `update_group_current_scene` | `CurrentSceneActionHandler`      | Immediate | Updates Kindroid `current_scene` for the same direct Kin or group chat.                         |
-| `send_ambient_context_turn`                          | `AmbientContextActionHandler`    | Immediate | Sends a direct Kin ambient visible message with hidden `internet_response` context.             |
-| `propose_journal_entry`, `delete_journal_entry`      | `JournalSuggestionActionHandler` | Reviewed  | Creates pending desktop review items. Kindroid journals are changed only after user acceptance. |
+| Action types                                         | Handler                          | Execution | Scope                                                                                                  |
+| ---------------------------------------------------- | -------------------------------- | --------- | ------------------------------------------------------------------------------------------------------ |
+| `update_current_scene`, `update_group_current_scene` | `CurrentSceneActionHandler`      | Immediate | Updates Kindroid `current_scene` for the same direct Kin or group chat.                                |
+| `send_ambient_context_turn`                          | `AmbientContextActionHandler`    | Immediate | Sends a direct Kin ambient visible message with hidden `internet_response` context.                    |
+| `propose_journal_entry`, `delete_journal_entry`      | `JournalSuggestionActionHandler` | Reviewed  | Creates pending desktop review items. Kindroid journals are changed only after user acceptance.        |
+| `propose_chat_dynamism_adjustment`                   | `ChatDynamismActionHandler`      | Reviewed  | Creates pending direct-Kin Chat Dynamism suggestions. No Kindroid mutation is performed automatically. |
 
 ## Current Scene Updates
 
@@ -101,6 +102,43 @@ Guardrails:
 - Delete requests must use an id present in `journalContext.existingEntries`.
 - Suggestions are compared against existing journal entries and field excerpts when context is available.
 - Journals are triggerable capsules, not generic lore storage, duplicated backstory, transient mood capture, or always-on rules.
+
+## Chat Dynamism Suggestions
+
+Chat Dynamism is the Kindroid UI name for the observed profile field `user_set_temperature`. Hermes may propose a
+reviewed adjustment, but Kinagent only stores the pending suggestion in this first pass.
+
+Direct Kin request:
+
+```json
+{
+  "type": "propose_chat_dynamism_adjustment",
+  "ai_id": "<same direct chat ai_id>",
+  "direction": "increase",
+  "suggested_delta": 0.05,
+  "suggested_target": 0.82,
+  "reason": "<specific multi-message pattern>",
+  "confidence": "high"
+}
+```
+
+Guardrails:
+
+- Suggestions require `confidence: "high"`.
+- The handler rejects group chat suggestions.
+- The handler rejects mismatched `ai_id` values.
+- The handler rejects suggestions unless the selected Kin has enabled reviewed Chat Dynamism drift suggestions.
+- The handler rejects suggestions outside the selected Kin's configured range.
+- The handler stores a pending suggestion only. It does not call Kindroid.
+- Treat `0.05` in either direction as the rough base adjustment a user should notice.
+- Use larger deltas only for stronger repeated evidence.
+- Treat `0.95` as Kindroid's recommended starting value for new Kins.
+- Do not propose changes based on one message.
+- Do not propose changes while the user is actively steering tone manually.
+- Lowering may be useful for repeated drift, over-improvisation, emotional inflation, rambling, tone instability,
+  ignored corrections, or excessive metaphor.
+- Raising may be useful for repeated flatness, repetitive replies, under-reaction, generic support tone, or failure to
+  advance roleplay when clearly invited.
 
 ## Ambient Context Turns
 

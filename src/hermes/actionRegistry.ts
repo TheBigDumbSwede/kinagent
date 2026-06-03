@@ -1,9 +1,14 @@
 import type { KindroidChatNotification } from "../firestore/types.js";
+import {
+  type ChatDynamismSuggestion,
+  type ChatDynamismSuggestionStore
+} from "../chatDynamism/chatDynamismSuggestionStore.js";
 import { createCapturedJournalContextProvider, type JournalSuggestionContext } from "../journal/journalContext.js";
 import { type JournalSuggestion, type JournalSuggestionStore } from "../journal/journalSuggestionStore.js";
 import type { DedupeStore } from "../state/dedupeStore.js";
 import type { AppConfig } from "../config/types.js";
 import type { Logger } from "../util/logger.js";
+import { ChatDynamismActionHandler } from "./chatDynamismActionHandler.js";
 import {
   AmbientContextActionHandler,
   isAmbientContextSender,
@@ -20,6 +25,10 @@ import { JournalSuggestionActionHandler } from "./journalSuggestionActionHandler
 export interface HermesActionRegistryOptions {
   journalSuggestions?: JournalSuggestionStore;
   onJournalSuggestionCreated?: (suggestion: JournalSuggestion) => void;
+  chatDynamismSuggestions?: ChatDynamismSuggestionStore;
+  onChatDynamismSuggestionCreated?: (suggestion: ChatDynamismSuggestion) => void;
+  isChatDynamismEnabled?: (aiId: string) => boolean;
+  chatDynamismRange?: (aiId: string) => { min: number; max: number };
   journalContextProvider?: (notification: KindroidChatNotification) => Promise<JournalSuggestionContext>;
   dedupeStore?: DedupeStore;
   onAmbientContextSent?: (event: AmbientContextSentEvent) => void;
@@ -61,6 +70,14 @@ export const hermesActionRegistryEntries: HermesActionRegistryEntry[] = [
     execution: "reviewed",
     scope:
       "Creates pending desktop review items for journal creation or deletion; Kindroid is mutated only after acceptance."
+  },
+  {
+    actionTypes: ["propose_chat_dynamism_adjustment"],
+    handler: "ChatDynamismActionHandler",
+    enabledWhen:
+      "bridge runtime provides a ChatDynamismSuggestionStore and hermes.chatDynamism.suggestions.enabled is true",
+    execution: "reviewed",
+    scope: "Creates pending direct-Kin Chat Dynamism review items; no Kindroid mutation is performed automatically."
   }
 ];
 
@@ -96,6 +113,21 @@ export function createHermesActionRegistry(input: {
       new JournalSuggestionActionHandler(input.logger, options.journalSuggestions, options.onJournalSuggestionCreated, {
         contextProvider: journalContextProvider
       })
+    );
+  }
+
+  if (options.chatDynamismSuggestions) {
+    handlers.push(
+      new ChatDynamismActionHandler(
+        input.config,
+        input.logger,
+        options.chatDynamismSuggestions,
+        options.onChatDynamismSuggestionCreated,
+        {
+          isEnabled: options.isChatDynamismEnabled,
+          range: options.chatDynamismRange
+        }
+      )
     );
   }
 

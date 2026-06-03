@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AppConfig } from "../src/config/types.js";
+import { ChatDynamismSuggestionStore } from "../src/chatDynamism/chatDynamismSuggestionStore.js";
 import { createHermesActionRegistry, hermesActionRegistryEntries } from "../src/hermes/actionRegistry.js";
 import type { KindroidSceneUpdater } from "../src/hermes/hermesAdapter.js";
 import { JournalSuggestionStore } from "../src/journal/journalSuggestionStore.js";
@@ -13,7 +14,8 @@ describe("Hermes action registry", () => {
       "update_group_current_scene",
       "send_ambient_context_turn",
       "propose_journal_entry",
-      "delete_journal_entry"
+      "delete_journal_entry",
+      "propose_chat_dynamism_adjustment"
     ]);
   });
 
@@ -62,6 +64,22 @@ describe("Hermes action registry", () => {
     expect(registry.journalContextProvider).toBeDefined();
     expect(prompt).toContain("propose_journal_entry");
     expect(prompt).toContain("delete_journal_entry");
+  });
+
+  it("registers Chat Dynamism suggestion actions when storage is available", () => {
+    const registry = createHermesActionRegistry({
+      config: testConfig(),
+      logger: testLogger,
+      kindroidClient: testSceneUpdater,
+      options: {
+        chatDynamismSuggestions: ChatDynamismSuggestionStore.fromConfig(testConfig())
+      }
+    });
+
+    const prompt = registry.handlers.flatMap((handler) => handler.promptLines()).join("\n");
+    expect(registry.handlers).toHaveLength(2);
+    expect(prompt).toContain("propose_chat_dynamism_adjustment");
+    expect(prompt).toContain("Never apply it automatically");
   });
 });
 
@@ -120,6 +138,18 @@ function testConfig(): AppConfig {
         enabled: true,
         throttleMessages: 20,
         strongEventBypass: true
+      },
+      chatDynamism: {
+        suggestions: {
+          enabled: true
+        },
+        autoAdjust: {
+          enabled: false,
+          minTurnsBetweenAdjustments: 12,
+          min: 0.8,
+          max: 1.4,
+          maxDelta: 0.2
+        }
       }
     },
     voice: {

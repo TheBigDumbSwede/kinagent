@@ -1,5 +1,9 @@
 import type { AppConfig } from "../config/types.js";
 import type { KindroidChatNotification } from "../firestore/types.js";
+import {
+  type ChatDynamismSuggestion,
+  type ChatDynamismSuggestionStore
+} from "../chatDynamism/chatDynamismSuggestionStore.js";
 import { type JournalSuggestion, type JournalSuggestionStore } from "../journal/journalSuggestionStore.js";
 import type { JournalSuggestionContext } from "../journal/journalContext.js";
 import { KindroidClient } from "../kindroid/kindroidClient.js";
@@ -27,6 +31,11 @@ export type { KindroidSceneUpdater } from "./currentSceneActionHandler.js";
 export interface HermesChatAdapterOptions {
   journalSuggestions?: JournalSuggestionStore;
   onJournalSuggestionCreated?: (suggestion: JournalSuggestion) => void;
+  chatDynamismSuggestions?: ChatDynamismSuggestionStore;
+  onChatDynamismSuggestionCreated?: (suggestion: ChatDynamismSuggestion) => void;
+  isChatDynamismEnabled?: (aiId: string) => boolean;
+  chatDynamismRange?: (aiId: string) => { min: number; max: number };
+  chatDynamismContextProvider?: (notification: KindroidChatNotification) => Promise<unknown>;
   journalContextProvider?: (notification: KindroidChatNotification) => Promise<JournalSuggestionContext>;
   dedupeStore?: DedupeStore;
   onAmbientContextSent?: (event: AmbientContextSentEvent) => void;
@@ -100,6 +109,7 @@ export class HermesChatAdapter implements HermesAdapter {
 
   private async requestDecision(notification: KindroidChatNotification): Promise<HermesActionDecision> {
     const journalContext = await this.journalContextProvider?.(notification);
+    const chatDynamismContext = await this.options.chatDynamismContextProvider?.(notification);
     const response = await fetch(`${normalizeBaseUrl(this.config.hermes.baseUrl)}/chat/completions`, {
       method: "POST",
       headers: {
@@ -115,7 +125,7 @@ export class HermesChatAdapter implements HermesAdapter {
           },
           {
             role: "user",
-            content: JSON.stringify(toHermesEvent(notification, journalContext))
+            content: JSON.stringify(toHermesEvent(notification, journalContext, chatDynamismContext))
           }
         ]
       })
@@ -201,7 +211,11 @@ function extractJsonObject(content: string): string | null {
   return start >= 0 && end > start ? content.slice(start, end + 1) : null;
 }
 
-function toHermesEvent(notification: KindroidChatNotification, journalContext?: JournalSuggestionContext) {
+function toHermesEvent(
+  notification: KindroidChatNotification,
+  journalContext?: JournalSuggestionContext,
+  chatDynamismContext?: unknown
+) {
   const context =
     journalContext && (journalContext.existingEntries.length > 0 || journalContext.fieldExcerpts.length > 0)
       ? {
@@ -211,6 +225,7 @@ function toHermesEvent(notification: KindroidChatNotification, journalContext?: 
           }
         }
       : {};
+  const chatDynamism = chatDynamismContext ? { chatDynamismContext } : {};
 
   if (notification.type === "kindroid.chat.changed") {
     return {
@@ -223,7 +238,8 @@ function toHermesEvent(notification: KindroidChatNotification, journalContext?: 
       sender: notification.sender,
       role: notification.role,
       text: notification.text,
-      ...context
+      ...context,
+      ...chatDynamism
     };
   }
 
@@ -238,7 +254,8 @@ function toHermesEvent(notification: KindroidChatNotification, journalContext?: 
     sender: notification.sender,
     role: notification.role,
     text: notification.text,
-    ...context
+    ...context,
+    ...chatDynamism
   };
 }
 

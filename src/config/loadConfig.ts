@@ -36,6 +36,18 @@ const defaultConfig: AppConfig = {
       enabled: true,
       throttleMessages: 20,
       strongEventBypass: true
+    },
+    chatDynamism: {
+      suggestions: {
+        enabled: true
+      },
+      autoAdjust: {
+        enabled: false,
+        minTurnsBetweenAdjustments: 12,
+        min: 0.8,
+        max: 1.4,
+        maxDelta: 0.2
+      }
     }
   },
   voice: {
@@ -100,6 +112,22 @@ const appConfigSchema = z.object({
         .int("hermes.journalSuggestions.throttleMessages must be an integer.")
         .positive("hermes.journalSuggestions.throttleMessages must be a positive number."),
       strongEventBypass: z.boolean()
+    }),
+    chatDynamism: z.object({
+      suggestions: z.object({
+        enabled: z.boolean()
+      }),
+      autoAdjust: z.object({
+        enabled: z.boolean(),
+        minTurnsBetweenAdjustments: z
+          .number()
+          .finite()
+          .int("hermes.chatDynamism.autoAdjust.minTurnsBetweenAdjustments must be an integer.")
+          .positive("hermes.chatDynamism.autoAdjust.minTurnsBetweenAdjustments must be a positive number."),
+        min: z.number().finite(),
+        max: z.number().finite(),
+        maxDelta: z.number().finite().positive("hermes.chatDynamism.autoAdjust.maxDelta must be a positive number.")
+      })
     })
   }),
   voice: z.object({
@@ -183,6 +211,18 @@ function mergeConfig(base: AppConfig, override: Partial<AppConfig>): AppConfig {
       journalSuggestions: {
         ...base.hermes.journalSuggestions,
         ...override.hermes?.journalSuggestions
+      },
+      chatDynamism: {
+        ...base.hermes.chatDynamism,
+        ...override.hermes?.chatDynamism,
+        suggestions: {
+          ...base.hermes.chatDynamism.suggestions,
+          ...override.hermes?.chatDynamism?.suggestions
+        },
+        autoAdjust: {
+          ...base.hermes.chatDynamism.autoAdjust,
+          ...override.hermes?.chatDynamism?.autoAdjust
+        }
       }
     },
     voice: {
@@ -233,6 +273,30 @@ function applyEnvOverrides(config: AppConfig): void {
   config.hermes.journalSuggestions.strongEventBypass = booleanFromEnv(
     "HERMES_JOURNAL_STRONG_EVENT_BYPASS",
     config.hermes.journalSuggestions.strongEventBypass
+  );
+  config.hermes.chatDynamism.suggestions.enabled = booleanFromEnv(
+    "HERMES_CHAT_DYNAMISM_SUGGESTIONS_ENABLED",
+    config.hermes.chatDynamism.suggestions.enabled
+  );
+  config.hermes.chatDynamism.autoAdjust.enabled = booleanFromEnv(
+    "HERMES_CHAT_DYNAMISM_AUTO_ADJUST_ENABLED",
+    config.hermes.chatDynamism.autoAdjust.enabled
+  );
+  config.hermes.chatDynamism.autoAdjust.minTurnsBetweenAdjustments = numberFromEnv(
+    "HERMES_CHAT_DYNAMISM_MIN_TURNS_BETWEEN_ADJUSTMENTS",
+    config.hermes.chatDynamism.autoAdjust.minTurnsBetweenAdjustments
+  );
+  config.hermes.chatDynamism.autoAdjust.min = numberFromEnv(
+    "HERMES_CHAT_DYNAMISM_MIN",
+    config.hermes.chatDynamism.autoAdjust.min
+  );
+  config.hermes.chatDynamism.autoAdjust.max = numberFromEnv(
+    "HERMES_CHAT_DYNAMISM_MAX",
+    config.hermes.chatDynamism.autoAdjust.max
+  );
+  config.hermes.chatDynamism.autoAdjust.maxDelta = numberFromEnv(
+    "HERMES_CHAT_DYNAMISM_MAX_DELTA",
+    config.hermes.chatDynamism.autoAdjust.maxDelta
   );
 
   config.voice.enabled = booleanFromEnv("KINAGENT_VOICE_ENABLED", config.voice.enabled);

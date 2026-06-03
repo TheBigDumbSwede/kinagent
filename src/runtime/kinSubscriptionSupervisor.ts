@@ -1,7 +1,13 @@
 import type { AppConfig } from "../config/types.js";
+import { parseChatDynamismValue } from "../kindroid/chatDynamism.js";
 import { KindroidApiClient, type KindroidKin } from "../kindroid/client/index.js";
 import type { Logger } from "../util/logger.js";
-import { loadKinSubscriptionPreferences, saveKinSubscriptionPreferences } from "./kinSubscriptionPreferences.js";
+import {
+  loadKinSubscriptionPreferences,
+  normalizeChatDynamismPreference,
+  saveKinSubscriptionPreferences,
+  type KinChatDynamismPreference
+} from "./kinSubscriptionPreferences.js";
 import { type MonitorStopReason, SubscriptionSupervisor, type SubscriptionStatus } from "./subscriptionSupervisor.js";
 
 export type KinMonitorStopReason = MonitorStopReason;
@@ -11,6 +17,7 @@ export interface KinSubscriptionStatus {
   enabled: boolean;
   running: boolean;
   ambientContextEnabled: boolean;
+  chatDynamism: KinChatDynamismPreference;
 }
 
 export type KinRefreshState =
@@ -36,6 +43,7 @@ export class KinSubscriptionSupervisor {
   private readonly inner: SubscriptionSupervisor<KindroidKin>;
   private readonly disabledKinIds: Set<string>;
   private readonly ambientDisabledKinIds: Set<string>;
+  private readonly chatDynamismPreferences: Map<string, KinChatDynamismPreference>;
   private readonly config: AppConfig;
 
   constructor(options: KinSubscriptionSupervisorOptions) {
@@ -43,6 +51,7 @@ export class KinSubscriptionSupervisor {
     const preferences = loadKinSubscriptionPreferences(options.config);
     this.disabledKinIds = preferences.disabledKinIds;
     this.ambientDisabledKinIds = preferences.ambientDisabledKinIds;
+    this.chatDynamismPreferences = preferences.chatDynamism;
     this.inner = new SubscriptionSupervisor({
       refreshMs: options.refreshMs,
       pageSize: options.pageSize,
@@ -57,12 +66,14 @@ export class KinSubscriptionSupervisor {
         aiId: kinId,
         documentId: kinId,
         name: kinId,
-        current: false
+        current: false,
+        chatDynamism: parseChatDynamismValue(undefined)
       }),
       saveDisabledIds: (disabledKinIds) => {
         saveKinSubscriptionPreferences(options.config, {
           disabledKinIds,
-          ambientDisabledKinIds: this.ambientDisabledKinIds
+          ambientDisabledKinIds: this.ambientDisabledKinIds,
+          chatDynamism: this.chatDynamismPreferences
         });
       },
       startResource: options.startKin,
@@ -108,12 +119,35 @@ export class KinSubscriptionSupervisor {
 
     saveKinSubscriptionPreferences(this.config, {
       disabledKinIds: this.disabledKinIds,
-      ambientDisabledKinIds: this.ambientDisabledKinIds
+      ambientDisabledKinIds: this.ambientDisabledKinIds,
+      chatDynamism: this.chatDynamismPreferences
     });
   }
 
   isKinAmbientContextEnabled(kinId: string): boolean {
     return !this.ambientDisabledKinIds.has(kinId);
+  }
+
+  setKinChatDynamismPreference(
+    kinId: string,
+    preference: Partial<KinChatDynamismPreference>
+  ): KinChatDynamismPreference {
+    if (!kinId) {
+      throw new Error("Missing Kin id.");
+    }
+
+    const saved = normalizeChatDynamismPreference(preference);
+    this.chatDynamismPreferences.set(kinId, saved);
+    saveKinSubscriptionPreferences(this.config, {
+      disabledKinIds: this.disabledKinIds,
+      ambientDisabledKinIds: this.ambientDisabledKinIds,
+      chatDynamism: this.chatDynamismPreferences
+    });
+    return saved;
+  }
+
+  kinChatDynamismPreference(kinId: string): KinChatDynamismPreference {
+    return normalizeChatDynamismPreference(this.chatDynamismPreferences.get(kinId));
   }
 
   stopAll(reason: KinMonitorStopReason = "manual"): void {
@@ -137,7 +171,8 @@ export class KinSubscriptionSupervisor {
       kin: status.resource,
       enabled: status.enabled,
       running: status.running,
-      ambientContextEnabled: this.isKinAmbientContextEnabled(status.resource.aiId)
+      ambientContextEnabled: this.isKinAmbientContextEnabled(status.resource.aiId),
+      chatDynamism: this.kinChatDynamismPreference(status.resource.aiId)
     }));
   }
 }

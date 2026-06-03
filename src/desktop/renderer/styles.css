@@ -193,6 +193,14 @@ h2 {
   font-size: 12px;
 }
 
+.compact-status {
+  gap: 4px;
+}
+
+.compact-status div {
+  grid-template-columns: 72px minmax(0, 1fr);
+}
+
 .kin-list {
   display: grid;
   gap: 8px;
@@ -389,8 +397,14 @@ h2 {
   min-height: 0;
 }
 
-.detail-content.app-settings-content {
+.detail-content.app-settings-content,
+.detail-content.form-detail-content {
   grid-template-columns: minmax(0, 1fr);
+}
+
+.detail-content.app-settings-content .detail-main,
+.detail-content.form-detail-content .detail-main {
+  border-right: 0;
 }
 
 .detail-main {
@@ -604,6 +618,122 @@ h2 {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
+}
+
+.dual-range-control {
+  --range-start: 0%;
+  --range-end: 100%;
+  --soft-low: 16.666%;
+  --soft-high: 66.666%;
+  display: grid;
+  gap: 10px;
+}
+
+.range-label-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  color: #4d6174;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.range-label-row strong {
+  color: #182635;
+  font-weight: 700;
+}
+
+.dual-range-track {
+  position: relative;
+  height: 28px;
+}
+
+.dual-range-track::before {
+  position: absolute;
+  z-index: 0;
+  top: 11px;
+  right: 0;
+  left: 0;
+  height: 6px;
+  border-radius: 999px;
+  background: #d7e0e8;
+  content: "";
+}
+
+.dual-range-track::after {
+  position: absolute;
+  z-index: 0;
+  top: 11px;
+  right: calc(100% - var(--range-end));
+  left: var(--range-start);
+  height: 6px;
+  border-radius: 999px;
+  background: #0f6fb5;
+  content: "";
+}
+
+.dual-range-soft-tick {
+  position: absolute;
+  top: 7px;
+  z-index: 1;
+  width: 2px;
+  height: 14px;
+  border-radius: 999px;
+  background: #8aa1b4;
+  transform: translateX(-1px);
+}
+
+.dual-range-soft-tick.low {
+  left: var(--soft-low);
+}
+
+.dual-range-soft-tick.high {
+  left: var(--soft-high);
+}
+
+.dual-range-input {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  width: 100%;
+  min-height: 28px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  pointer-events: none;
+  appearance: none;
+}
+
+.dual-range-input::-webkit-slider-runnable-track {
+  height: 6px;
+  background: transparent;
+}
+
+.dual-range-input::-webkit-slider-thumb {
+  width: 18px;
+  height: 18px;
+  margin-top: -6px;
+  border: 0;
+  border-radius: 50%;
+  background: #0f6fb5;
+  cursor: pointer;
+  pointer-events: auto;
+  appearance: none;
+}
+
+.dual-range-input::-moz-range-track {
+  height: 6px;
+  background: transparent;
+}
+
+.dual-range-input::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 50%;
+  background: #0f6fb5;
+  cursor: pointer;
+  pointer-events: auto;
 }
 
 .checkbox-label {

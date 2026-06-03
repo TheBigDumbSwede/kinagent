@@ -236,8 +236,16 @@ function registerIpcHandlers(): void {
   ipcMain.handle("ambient:get-kin-preference", async (_event, input: { kinId?: string } = {}) =>
     getKinAmbientPreference(input.kinId ?? "")
   );
-  ipcMain.handle("ambient:set-kin-preference", async (_event, input: { kinId?: string; enabled?: boolean } = {}) =>
-    setKinAmbientPreference(input.kinId ?? "", input.enabled)
+  ipcMain.handle(
+    "ambient:set-kin-preference",
+    async (
+      _event,
+      input: {
+        kinId?: string;
+        enabled?: boolean;
+        chatDynamism?: { enabled?: boolean; min?: number; max?: number };
+      } = {}
+    ) => setKinAmbientPreference(input.kinId ?? "", input.enabled, input.chatDynamism)
   );
 }
 
@@ -440,17 +448,49 @@ function setKinVoicePreference(kinId: string, preference: Partial<KinVoicePrefer
 }
 
 function getKinAmbientPreference(kinId: string) {
-  return requireRuntime().getKinAmbientContextPreference(kinId);
+  const ambient = requireRuntime().getKinAmbientContextPreference(kinId);
+  const status = requireRuntime()
+    .status()
+    .subscriptions.find((subscription) => subscription.kin.aiId === kinId);
+  return {
+    ...ambient,
+    chatDynamism: requireRuntime().getKinChatDynamismPreference(kinId),
+    currentChatDynamism: status?.kin.chatDynamism ?? null
+  };
 }
 
-function setKinAmbientPreference(kinId: string, enabled: unknown) {
+function setKinAmbientPreference(
+  kinId: string,
+  enabled: unknown,
+  chatDynamism?: { enabled?: boolean; min?: number; max?: number }
+) {
   if (typeof enabled !== "boolean") {
     throw new Error("Ambient context enabled must be true or false.");
   }
 
-  const saved = requireRuntime().setKinAmbientContextEnabled(kinId, enabled);
-  logger.info("Saved Kin ambient context preference.", { kinId, enabled: saved.enabled });
-  return saved;
+  const ambient = requireRuntime().setKinAmbientContextEnabled(kinId, enabled);
+  const savedChatDynamism = chatDynamism
+    ? requireRuntime().setKinChatDynamismPreference(kinId, {
+        enabled: chatDynamism.enabled,
+        min: chatDynamism.min,
+        max: chatDynamism.max
+      })
+    : requireRuntime().getKinChatDynamismPreference(kinId);
+  const status = requireRuntime()
+    .status()
+    .subscriptions.find((subscription) => subscription.kin.aiId === kinId);
+  logger.info("Saved Kin Hermes preference.", {
+    kinId,
+    ambientEnabled: ambient.enabled,
+    chatDynamismEnabled: savedChatDynamism.enabled,
+    chatDynamismMin: savedChatDynamism.min,
+    chatDynamismMax: savedChatDynamism.max
+  });
+  return {
+    ...ambient,
+    chatDynamism: savedChatDynamism,
+    currentChatDynamism: status?.kin.chatDynamism ?? null
+  };
 }
 
 async function acceptJournalSuggestion(id: string) {

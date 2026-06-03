@@ -43,6 +43,12 @@ const captureRequestTimeoutMs = 12_000;
 const maxMonitorMessages = 500;
 const loginOnboardingMessage = "Use Open Login, then Save Session to begin.";
 const settingTabKeys = new Set(["backstory", "directive", "memory", "example", "scene", "background", "profile"]);
+const chatDynamismSlider = {
+  hardMin: 0.6,
+  hardMax: 1.8,
+  practicalMin: 0.8,
+  practicalMax: 1.4
+};
 
 const elements = {
   sessionLine: document.querySelector("#sessionLine"),
@@ -91,6 +97,13 @@ const elements = {
   voiceForm: document.querySelector("#voiceForm"),
   kinHermesForm: document.querySelector("#kinHermesForm"),
   ambientContextEnabledInput: document.querySelector("#ambientContextEnabledInput"),
+  chatDynamismCurrentValue: document.querySelector("#chatDynamismCurrentValue"),
+  chatDynamismRangeControl: document.querySelector("#chatDynamismRangeControl"),
+  chatDynamismEnabledInput: document.querySelector("#chatDynamismEnabledInput"),
+  chatDynamismMinInput: document.querySelector("#chatDynamismMinInput"),
+  chatDynamismMaxInput: document.querySelector("#chatDynamismMaxInput"),
+  chatDynamismMinValue: document.querySelector("#chatDynamismMinValue"),
+  chatDynamismMaxValue: document.querySelector("#chatDynamismMaxValue"),
   kinHermesStatusLine: document.querySelector("#kinHermesStatusLine"),
   kinHermesSaveButton: document.querySelector("#kinHermesSaveButton"),
   voiceEnabledInput: document.querySelector("#voiceEnabledInput"),
@@ -242,6 +255,8 @@ elements.kinHermesForm.addEventListener("submit", (event) => {
   event.preventDefault();
   void saveSelectedKinAmbient();
 });
+elements.chatDynamismMinInput.addEventListener("input", syncChatDynamismRangeLabels);
+elements.chatDynamismMaxInput.addEventListener("input", syncChatDynamismRangeLabels);
 
 window.kinagent.onEvent((message) => {
   if (message.channel === "runtime-startup-error") {
@@ -835,7 +850,7 @@ function renderDetailEmpty(message) {
   elements.kinDetailEmpty.hidden = false;
   elements.kinDetailEmpty.textContent = message;
   elements.kinDetailContent.hidden = true;
-  elements.kinDetailContent.classList.remove("app-settings-content");
+  elements.kinDetailContent.classList.remove("app-settings-content", "form-detail-content");
   elements.appSettingsForm.hidden = true;
   elements.voiceForm.hidden = true;
   elements.kinHermesForm.hidden = true;
@@ -844,7 +859,7 @@ function renderDetailEmpty(message) {
 function renderDetailContent({ content, history, stats }) {
   elements.kinDetailEmpty.hidden = true;
   elements.kinDetailContent.hidden = false;
-  elements.kinDetailContent.classList.remove("app-settings-content");
+  elements.kinDetailContent.classList.remove("app-settings-content", "form-detail-content");
   elements.fieldContent.hidden = false;
   elements.journalSuggestionPanel.hidden = true;
   elements.appSettingsForm.hidden = true;
@@ -929,6 +944,7 @@ function renderAppSettingsTab() {
   const config = state.appSettings.config || {};
   elements.kinDetailEmpty.hidden = true;
   elements.kinDetailContent.hidden = false;
+  elements.kinDetailContent.classList.remove("form-detail-content");
   elements.kinDetailContent.classList.add("app-settings-content");
   elements.fieldContent.hidden = true;
   elements.journalSuggestionPanel.hidden = true;
@@ -1018,6 +1034,7 @@ function renderVoiceTab(selectedKin) {
   elements.kinDetailEmpty.hidden = true;
   elements.kinDetailContent.hidden = false;
   elements.kinDetailContent.classList.remove("app-settings-content");
+  elements.kinDetailContent.classList.add("form-detail-content");
   elements.fieldContent.hidden = true;
   elements.journalSuggestionPanel.hidden = true;
   elements.appSettingsForm.hidden = true;
@@ -1056,6 +1073,7 @@ function renderKinHermesTab(selectedKin) {
   elements.kinDetailEmpty.hidden = true;
   elements.kinDetailContent.hidden = false;
   elements.kinDetailContent.classList.remove("app-settings-content");
+  elements.kinDetailContent.classList.add("form-detail-content");
   elements.fieldContent.hidden = true;
   elements.journalSuggestionPanel.hidden = true;
   elements.appSettingsForm.hidden = true;
@@ -1063,19 +1081,27 @@ function renderKinHermesTab(selectedKin) {
   elements.kinHermesForm.hidden = false;
   elements.timeline.hidden = true;
   elements.ambientContextEnabledInput.checked = state.selectedKinAmbient.enabled !== false;
+  const chatDynamism = state.selectedKinAmbient.chatDynamism || {};
+  elements.chatDynamismCurrentValue.textContent = chatDynamismCurrentLabel(
+    state.selectedKinAmbient.currentChatDynamism
+  );
+  elements.chatDynamismEnabledInput.checked = Boolean(chatDynamism.enabled);
+  elements.chatDynamismMinInput.value = String(chatDynamism.min ?? chatDynamismSlider.practicalMin);
+  elements.chatDynamismMaxInput.value = String(chatDynamism.max ?? chatDynamismSlider.practicalMax);
+  syncChatDynamismRangeLabels();
   elements.kinHermesSaveButton.disabled = state.ambientSaving;
-  elements.kinHermesStatusLine.textContent = state.selectedKinAmbient.enabled
-    ? "Ambient Hermes context is allowed for this Kin."
-    : "Ambient Hermes context is disabled for this Kin.";
+  elements.kinHermesStatusLine.textContent = hermesStatusLine(state.selectedKinAmbient);
   renderKinHermesStats(selectedKin, state.selectedKinAmbient);
 }
 
 function renderKinHermesStats(selectedKin, preference) {
+  const current = preference.currentChatDynamism || {};
+  const chatDynamism = preference.chatDynamism || {};
   const stats = [
     { label: "Kin", value: selectedKin?.name || state.selectedKinId || "Unknown" },
     { label: "Ambient", value: preference.enabled ? "Enabled" : "Off" },
-    { label: "Preference", value: "Per Kin" },
-    { label: "Mode", value: "Hidden context" }
+    { label: "Dynamism", value: current.display || "Unknown" },
+    { label: "Drift", value: chatDynamism.enabled ? `${chatDynamism.min} - ${chatDynamism.max}` : "Off" }
   ];
 
   elements.detailStats.replaceChildren();
@@ -1244,16 +1270,24 @@ async function saveSelectedKinAmbient() {
     return;
   }
 
+  const enabled = elements.ambientContextEnabledInput.checked;
+  const chatDynamism = readChatDynamismPreferenceForm();
+
   state.ambientSaving = true;
   renderActivity();
   try {
     state.selectedKinAmbient = await window.kinagent.setKinAmbientPreference({
       kinId: state.selectedKinId,
-      enabled: elements.ambientContextEnabledInput.checked
+      enabled,
+      chatDynamism
     });
     state.subscriptions = state.subscriptions.map((subscription) =>
       subscription.kin?.aiId === state.selectedKinId
-        ? { ...subscription, ambientContextEnabled: state.selectedKinAmbient.enabled }
+        ? {
+            ...subscription,
+            ambientContextEnabled: state.selectedKinAmbient.enabled,
+            chatDynamism: state.selectedKinAmbient.chatDynamism
+          }
         : subscription
     );
     state.ambientError = null;
@@ -1264,6 +1298,54 @@ async function saveSelectedKinAmbient() {
     state.ambientSaving = false;
     renderActivity();
   }
+}
+
+function readChatDynamismPreferenceForm() {
+  const min = Number(elements.chatDynamismMinInput.value);
+  const max = Number(elements.chatDynamismMaxInput.value);
+  return {
+    enabled: elements.chatDynamismEnabledInput.checked,
+    min: Math.min(min, max),
+    max: Math.max(min, max)
+  };
+}
+
+function syncChatDynamismRangeLabels() {
+  const min = Number(elements.chatDynamismMinInput.value);
+  const max = Number(elements.chatDynamismMaxInput.value);
+  const lower = Math.min(min, max);
+  const upper = Math.max(min, max);
+  elements.chatDynamismMinValue.textContent = lower.toFixed(2);
+  elements.chatDynamismMaxValue.textContent = upper.toFixed(2);
+
+  const sliderMin = Number(elements.chatDynamismMinInput.min || chatDynamismSlider.hardMin);
+  const sliderMax = Number(elements.chatDynamismMinInput.max || chatDynamismSlider.hardMax);
+  const span = sliderMax - sliderMin || 1;
+  const start = ((lower - sliderMin) / span) * 100;
+  const end = ((upper - sliderMin) / span) * 100;
+  const softLow = ((chatDynamismSlider.practicalMin - sliderMin) / span) * 100;
+  const softHigh = ((chatDynamismSlider.practicalMax - sliderMin) / span) * 100;
+  elements.chatDynamismRangeControl.style.setProperty("--range-start", `${start}%`);
+  elements.chatDynamismRangeControl.style.setProperty("--range-end", `${end}%`);
+  elements.chatDynamismRangeControl.style.setProperty("--soft-low", `${softLow}%`);
+  elements.chatDynamismRangeControl.style.setProperty("--soft-high", `${softHigh}%`);
+}
+
+function chatDynamismCurrentLabel(value) {
+  if (!value) {
+    return "Unknown";
+  }
+
+  const base = value.display || (typeof value.numeric === "number" ? value.numeric.toFixed(2) : "Unknown");
+  return typeof value.numeric === "number" ? `${base} (${value.numeric.toFixed(2)})` : base;
+}
+
+function hermesStatusLine(preference) {
+  const ambient = preference.enabled ? "Ambient context is allowed" : "Ambient context is disabled";
+  const chatDynamism = preference.chatDynamism?.enabled
+    ? `Chat Dynamism drift suggestions are allowed from ${preference.chatDynamism.min} to ${preference.chatDynamism.max}.`
+    : "Chat Dynamism drift suggestions are disabled.";
+  return `${ambient}. ${chatDynamism}`;
 }
 
 function detailStats(selectedKin, field, capture) {

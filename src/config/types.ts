@@ -34,6 +34,18 @@ export interface HermesConfig {
     throttleMessages: number;
     strongEventBypass: boolean;
   };
+  chatDynamism: {
+    suggestions: {
+      enabled: boolean;
+    };
+    autoAdjust: {
+      enabled: boolean;
+      minTurnsBetweenAdjustments: number;
+      min: number;
+      max: number;
+      maxDelta: number;
+    };
+  };
 }
 
 export type VoiceProvider = "none" | "openai" | "elevenlabs";

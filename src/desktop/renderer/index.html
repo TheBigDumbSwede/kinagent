@@ -303,6 +303,51 @@
                       context feels intrusive.
                     </p>
                   </section>
+                  <section class="settings-section">
+                    <h2>Chat Dynamism</h2>
+                    <dl class="status-list compact-status">
+                      <div>
+                        <dt>Current</dt>
+                        <dd id="chatDynamismCurrentValue">Unknown</dd>
+                      </div>
+                    </dl>
+                    <label class="checkbox-label">
+                      <input id="chatDynamismEnabledInput" type="checkbox" />
+                      <span>Allow reviewed Hermes drift suggestions</span>
+                    </label>
+                    <div id="chatDynamismRangeControl" class="dual-range-control">
+                      <div class="range-label-row">
+                        <span>Minimum <strong id="chatDynamismMinValue">0.80</strong></span>
+                        <span>Maximum <strong id="chatDynamismMaxValue">1.40</strong></span>
+                      </div>
+                      <div class="dual-range-track">
+                        <span class="dual-range-soft-tick low" aria-hidden="true"></span>
+                        <span class="dual-range-soft-tick high" aria-hidden="true"></span>
+                        <input
+                          id="chatDynamismMinInput"
+                          class="dual-range-input"
+                          type="range"
+                          min="0.6"
+                          max="1.8"
+                          step="0.05"
+                          aria-label="Minimum Chat Dynamism"
+                        />
+                        <input
+                          id="chatDynamismMaxInput"
+                          class="dual-range-input"
+                          type="range"
+                          min="0.6"
+                          max="1.8"
+                          step="0.05"
+                          aria-label="Maximum Chat Dynamism"
+                        />
+                      </div>
+                    </div>
+                    <p class="panel-note">
+                      Hermes can only create reviewed suggestions inside this range. It does not change the setting
+                      automatically.
+                    </p>
+                  </section>
                   <p id="kinHermesStatusLine" class="panel-note"></p>
                   <div class="button-row narrow">
                     <button id="kinHermesSaveButton" type="submit">Save Hermes</button>

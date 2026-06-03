@@ -14,6 +14,8 @@ import type {
   SendKindroidMessageResult,
   UpdateKindroidCurrentSceneInput,
   UpdateKindroidCurrentSceneResult,
+  UpdateKindroidChatDynamismInput,
+  UpdateKindroidChatDynamismResult,
   UpdateKindroidGroupCurrentSceneInput,
   UpdateKindroidGroupCurrentSceneResult,
   UpdateKindroidIdentityInput,
@@ -27,6 +29,7 @@ import {
   buildSendGroupMessagePayload,
   buildSendMessagePayload,
   buildUpdateCurrentScenePayload,
+  buildUpdateChatDynamismPayload,
   buildUpdateGroupCurrentScenePayload,
   buildUpdateIdentityPayload
 } from "./payloads.js";
@@ -312,6 +315,30 @@ export class KindroidClient {
       exampleMessageLength: input.exampleMessage.length,
       directiveLength: input.directive.length,
       additionalContextLength: input.additionalContext.length,
+      responseText: response.ok ? undefined : responseText.slice(0, 500)
+    });
+
+    return {
+      status: response.status,
+      ok: response.ok,
+      responseText: response.ok ? undefined : responseText.slice(0, 1000)
+    };
+  }
+
+  async updateChatDynamism(input: UpdateKindroidChatDynamismInput): Promise<UpdateKindroidChatDynamismResult> {
+    const payload = buildUpdateChatDynamismPayload(input);
+    const response = await fetch(updateInfoUrl, {
+      method: "POST",
+      headers: await this.authHeaders(),
+      body: JSON.stringify(payload)
+    });
+
+    const responseText = await response.text();
+    this.logger.info("Kindroid update-info request completed.", {
+      status: response.status,
+      ok: response.ok,
+      aiId: input.aiId,
+      field: "user_set_temperature",
       responseText: response.ok ? undefined : responseText.slice(0, 500)
     });
 

@@ -8,11 +8,13 @@ import {
   loadKinSubscriptionPreferences,
   saveKinSubscriptionPreferences
 } from "../src/runtime/kinSubscriptionPreferences.js";
+import { KinSubscriptionSupervisor } from "../src/runtime/kinSubscriptionSupervisor.js";
 import {
   groupSubscriptionPreferencesPath,
   loadGroupSubscriptionPreferences,
   saveGroupSubscriptionPreferences
 } from "../src/runtime/groupSubscriptionPreferences.js";
+import type { Logger } from "../src/util/logger.js";
 
 describe("subscription preferences", () => {
   it("defaults Kin monitoring to enabled when no preferences file exists", () => {
@@ -22,6 +24,7 @@ describe("subscription preferences", () => {
 
     expect(preferences.disabledKinIds).toEqual(new Set());
     expect(preferences.ambientDisabledKinIds).toEqual(new Set());
+    expect(preferences.chatDynamism).toEqual(new Map());
     expect(fs.existsSync(kinSubscriptionPreferencesPath(config))).toBe(false);
   });
 
@@ -30,15 +33,45 @@ describe("subscription preferences", () => {
 
     saveKinSubscriptionPreferences(config, {
       disabledKinIds: new Set(["kin-b", "kin-a"]),
-      ambientDisabledKinIds: new Set(["kin-c"])
+      ambientDisabledKinIds: new Set(["kin-c"]),
+      chatDynamism: new Map([["kin-a", { enabled: true, min: 0.5, max: 1.1 }]])
     });
     const preferences = loadKinSubscriptionPreferences(config);
 
     expect(preferences.disabledKinIds).toEqual(new Set(["kin-a", "kin-b"]));
     expect(preferences.ambientDisabledKinIds).toEqual(new Set(["kin-c"]));
+    expect(preferences.chatDynamism).toEqual(new Map([["kin-a", { enabled: true, min: 0.6, max: 1.1 }]]));
     expect(JSON.parse(fs.readFileSync(kinSubscriptionPreferencesPath(config), "utf8"))).toEqual({
       disabledKinIds: ["kin-a", "kin-b"],
-      ambientDisabledKinIds: ["kin-c"]
+      ambientDisabledKinIds: ["kin-c"],
+      chatDynamism: {
+        "kin-a": {
+          enabled: true,
+          min: 0.6,
+          max: 1.1
+        }
+      }
+    });
+  });
+
+  it("reloads per-Kin Chat Dynamism range from the settings file", () => {
+    const config = testConfig();
+    const supervisor = testKinSupervisor(config);
+
+    supervisor.setKinChatDynamismPreference("kin-a", { enabled: true, min: 0.85, max: 1.35 });
+    const reloaded = testKinSupervisor(config);
+
+    expect(reloaded.kinChatDynamismPreference("kin-a")).toEqual({
+      enabled: true,
+      min: 0.85,
+      max: 1.35
+    });
+    expect(JSON.parse(fs.readFileSync(kinSubscriptionPreferencesPath(config), "utf8")).chatDynamism).toEqual({
+      "kin-a": {
+        enabled: true,
+        min: 0.85,
+        max: 1.35
+      }
     });
   });
 
@@ -55,6 +88,21 @@ describe("subscription preferences", () => {
     });
   });
 });
+
+function testKinSupervisor(config: AppConfig): KinSubscriptionSupervisor {
+  return new KinSubscriptionSupervisor({
+    config,
+    logger: testLogger,
+    startKin: async () => undefined
+  });
+}
+
+const testLogger: Logger = {
+  debug: () => undefined,
+  info: () => undefined,
+  warn: () => undefined,
+  error: () => undefined
+};
 
 function testConfig(): AppConfig {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "kinagent-subscriptions-"));
@@ -84,6 +132,18 @@ function testConfig(): AppConfig {
         enabled: true,
         throttleMessages: 20,
         strongEventBypass: true
+      },
+      chatDynamism: {
+        suggestions: {
+          enabled: false
+        },
+        autoAdjust: {
+          enabled: false,
+          minTurnsBetweenAdjustments: 12,
+          min: 0.8,
+          max: 1.4,
+          maxDelta: 0.2
+        }
       }
     },
     voice: {

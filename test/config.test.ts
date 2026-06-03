@@ -23,6 +23,18 @@ describe("loadConfig", () => {
       throttleMessages: 20,
       strongEventBypass: true
     });
+    expect(config.hermes.chatDynamism).toEqual({
+      suggestions: {
+        enabled: true
+      },
+      autoAdjust: {
+        enabled: false,
+        minTurnsBetweenAdjustments: 12,
+        min: 0.8,
+        max: 1.4,
+        maxDelta: 0.2
+      }
+    });
     expect(config.voice).toMatchObject({
       enabled: false,
       provider: "none",
@@ -93,6 +105,15 @@ describe("loadConfig", () => {
         "    enabled: false",
         "    throttleMessages: 12",
         "    strongEventBypass: false",
+        "  chatDynamism:",
+        "    suggestions:",
+        "      enabled: true",
+        "    autoAdjust:",
+        "      enabled: false",
+        "      minTurnsBetweenAdjustments: 10",
+        "      min: 0.5",
+        "      max: 1.1",
+        "      maxDelta: 0.04",
         "voice:",
         "  enabled: true",
         '  provider: "openai"',
@@ -113,6 +134,12 @@ describe("loadConfig", () => {
     vi.stubEnv("HERMES_JOURNAL_SUGGESTIONS_ENABLED", "true");
     vi.stubEnv("HERMES_JOURNAL_SUGGESTION_THROTTLE_MESSAGES", "15");
     vi.stubEnv("HERMES_JOURNAL_STRONG_EVENT_BYPASS", "true");
+    vi.stubEnv("HERMES_CHAT_DYNAMISM_SUGGESTIONS_ENABLED", "false");
+    vi.stubEnv("HERMES_CHAT_DYNAMISM_AUTO_ADJUST_ENABLED", "false");
+    vi.stubEnv("HERMES_CHAT_DYNAMISM_MIN_TURNS_BETWEEN_ADJUSTMENTS", "14");
+    vi.stubEnv("HERMES_CHAT_DYNAMISM_MIN", "0.85");
+    vi.stubEnv("HERMES_CHAT_DYNAMISM_MAX", "1.35");
+    vi.stubEnv("HERMES_CHAT_DYNAMISM_MAX_DELTA", "0.03");
     vi.stubEnv("KINAGENT_VOICE_PROVIDER", "elevenlabs");
     vi.stubEnv("KINAGENT_OPENAI_API_KEY", "env-openai");
     vi.stubEnv("KINAGENT_OPENAI_TTS_VOICE", "alloy");
@@ -135,6 +162,18 @@ describe("loadConfig", () => {
       enabled: true,
       throttleMessages: 15,
       strongEventBypass: true
+    });
+    expect(config.hermes.chatDynamism).toEqual({
+      suggestions: {
+        enabled: false
+      },
+      autoAdjust: {
+        enabled: false,
+        minTurnsBetweenAdjustments: 14,
+        min: 0.85,
+        max: 1.35,
+        maxDelta: 0.03
+      }
     });
     expect(config.voice.enabled).toBe(true);
     expect(config.voice.provider).toBe("elevenlabs");

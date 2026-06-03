@@ -611,6 +611,80 @@ describe("HermesChatAdapter", () => {
     });
   });
 
+  it("includes Chat Dynamism context in Hermes requests when available", async () => {
+    const fetchMock = vi.fn(async () =>
+      Response.json({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({ actions: [] })
+            }
+          }
+        ]
+      })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const adapter = new HermesChatAdapter(testConfig(), logger, testKindroidUpdater(), {
+      chatDynamismContextProvider: async () => ({
+        displayName: "Chat Dynamism",
+        fieldName: "user_set_temperature",
+        enabledForKin: true,
+        allowedRange: { min: 0.8, max: 1.4 },
+        hardLimits: { min: 0.6, max: 1.8, step: 0.05 },
+        practicalRange: { min: 0.8, max: 1.4 },
+        recommendedStartingValue: 0.95,
+        deltaGuidance: {
+          noticeableBase: 0.05,
+          slight: 0.05,
+          moderate: 0.1,
+          strong: 0.15,
+          severe: 0.2,
+          rule: "A 0.05 move either way is the recommended noticeable base adjustment. Choose the smallest delta that fits the repeated pattern; larger moves require stronger, repeated evidence."
+        },
+        currentValue: { raw: 0.75, numeric: 0.75, display: "0.75" },
+        mutation: "reviewed-suggestion-only"
+      })
+    });
+    await adapter.handleChatChanged({
+      type: "kindroid.chat.changed",
+      kinId: "kin-1",
+      documentId: "doc-1",
+      timestamp: "2026-06-01T12:00:00.000Z",
+      text: "That felt a little flat.",
+      sender: "ai",
+      role: null,
+      source: "firestore"
+    });
+
+    const fetchCall = fetchMock.mock.calls[0] as unknown as [string, { body?: string }];
+    const body = JSON.parse(String(fetchCall[1]?.body)) as {
+      messages: Array<{ role: string; content: string }>;
+    };
+    const event = JSON.parse(body.messages.find((message) => message.role === "user")?.content ?? "{}") as {
+      chatDynamismContext?: unknown;
+    };
+    expect(event.chatDynamismContext).toEqual({
+      displayName: "Chat Dynamism",
+      fieldName: "user_set_temperature",
+      enabledForKin: true,
+      allowedRange: { min: 0.8, max: 1.4 },
+      hardLimits: { min: 0.6, max: 1.8, step: 0.05 },
+      practicalRange: { min: 0.8, max: 1.4 },
+      recommendedStartingValue: 0.95,
+      deltaGuidance: {
+        noticeableBase: 0.05,
+        slight: 0.05,
+        moderate: 0.1,
+        strong: 0.15,
+        severe: 0.2,
+        rule: "A 0.05 move either way is the recommended noticeable base adjustment. Choose the smallest delta that fits the repeated pattern; larger moves require stronger, repeated evidence."
+      },
+      currentValue: { raw: 0.75, numeric: 0.75, display: "0.75" },
+      mutation: "reviewed-suggestion-only"
+    });
+  });
+
   it("stores high-confidence Hermes journal deletion suggestions for captured entries", async () => {
     const store = testJournalSuggestionStore();
     const onSuggestionCreated = vi.fn();
@@ -842,6 +916,18 @@ function testConfig(): AppConfig {
         enabled: true,
         throttleMessages: 20,
         strongEventBypass: true
+      },
+      chatDynamism: {
+        suggestions: {
+          enabled: true
+        },
+        autoAdjust: {
+          enabled: false,
+          minTurnsBetweenAdjustments: 12,
+          min: 0.8,
+          max: 1.4,
+          maxDelta: 0.2
+        }
       }
     },
     voice: {

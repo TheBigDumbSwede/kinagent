@@ -94,3 +94,10 @@ export interface UpdateKindroidIdentityInput {
 }
 
 export type UpdateKindroidIdentityResult = UpdateKindroidCurrentSceneResult;
+
+export interface UpdateKindroidChatDynamismInput {
+  aiId: string;
+  value: number;
+}
+
+export type UpdateKindroidChatDynamismResult = UpdateKindroidCurrentSceneResult;

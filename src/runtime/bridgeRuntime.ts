@@ -1,5 +1,9 @@
 import { extractFirebaseAppCheckState, loadBrowserSession, summarizeSessionAuth } from "../auth/firebaseSession.js";
 import { captureKindroidState, type CaptureKindroidStateResult } from "../capture/kinStateCapture.js";
+import {
+  ChatDynamismSuggestionStore,
+  type ChatDynamismSuggestion
+} from "../chatDynamism/chatDynamismSuggestionStore.js";
 import type { AppConfig } from "../config/types.js";
 import { KindroidLiveMonitor } from "../firestore/liveMonitor.js";
 import { isRecentOutboundEcho } from "../firestore/messageDedupe.js";
@@ -7,6 +11,12 @@ import { mapKindroidMessage } from "../firestore/messageMapper.js";
 import type { KindroidChatNotification } from "../firestore/types.js";
 import { createHermesAdapter } from "../hermes/hermesAdapter.js";
 import type { HermesAdapter } from "../hermes/types.js";
+import {
+  defaultChatDynamismBounds,
+  noticeableChatDynamismDelta,
+  practicalChatDynamismBounds,
+  recommendedChatDynamismStartingValue
+} from "../kindroid/chatDynamism.js";
 import { JournalSuggestionStore, type JournalSuggestion } from "../journal/journalSuggestionStore.js";
 import { KindroidApiClient, type KindroidGroup, type KindroidKin } from "../kindroid/client/index.js";
 import { KindroidClient } from "../kindroid/kindroidClient.js";
@@ -40,6 +50,7 @@ export type BridgeRuntimeEvent =
   | { channel: "monitor-line"; payload: Record<string, unknown> }
   | { channel: "journal-suggestion-created"; payload: JournalSuggestion }
   | { channel: "journal-suggestions-updated"; payload: JournalSuggestion[] }
+  | { channel: "chat-dynamism-suggestion-created"; payload: ChatDynamismSuggestion }
   | { channel: "identity-capture-completed"; payload: CaptureKindroidStateResult }
   | { channel: "identity-capture-failed"; payload: { error: string } };
 
@@ -55,6 +66,7 @@ export class BridgeRuntime {
   readonly hermes: HermesAdapter;
   readonly voice: VoiceRuntime;
   readonly journalSuggestions: JournalSuggestionStore;
+  readonly chatDynamismSuggestions: ChatDynamismSuggestionStore;
   private readonly sessionKeepAlive: KindroidSessionKeepAlive;
   private readonly kinSubscriptionSupervisor: KinSubscriptionSupervisor;
   private readonly groupSubscriptionSupervisor: GroupSubscriptionSupervisor;
@@ -66,6 +78,7 @@ export class BridgeRuntime {
     private readonly dedupeStore: DedupeStore
   ) {
     this.journalSuggestions = JournalSuggestionStore.fromConfig(options.config);
+    this.chatDynamismSuggestions = ChatDynamismSuggestionStore.fromConfig(options.config);
     this.hermes = createHermesAdapter(options.config, options.logger, {
       dedupeStore,
       isAmbientContextEnabled: (aiId) => this.kinSubscriptionSupervisor.isKinAmbientContextEnabled(aiId),
@@ -96,7 +109,19 @@ export class BridgeRuntime {
       onJournalSuggestionCreated: (suggestion) => {
         this.emit({ channel: "journal-suggestion-created", payload: suggestion });
         this.emit({ channel: "journal-suggestions-updated", payload: this.pendingJournalSuggestions() });
-      }
+      },
+      chatDynamismSuggestions: options.config.hermes.chatDynamism.suggestions.enabled
+        ? this.chatDynamismSuggestions
+        : undefined,
+      onChatDynamismSuggestionCreated: (suggestion) => {
+        this.emit({ channel: "chat-dynamism-suggestion-created", payload: suggestion });
+      },
+      isChatDynamismEnabled: (aiId) => this.kinSubscriptionSupervisor.kinChatDynamismPreference(aiId).enabled,
+      chatDynamismRange: (aiId) => {
+        const preference = this.kinSubscriptionSupervisor.kinChatDynamismPreference(aiId);
+        return { min: preference.min, max: preference.max };
+      },
+      chatDynamismContextProvider: async (notification) => this.chatDynamismContext(notification)
     });
     this.voice = new VoiceRuntime({
       config: options.config,
@@ -242,6 +267,21 @@ export class BridgeRuntime {
       ok: true,
       enabled: this.kinSubscriptionSupervisor.isKinAmbientContextEnabled(kinId)
     };
+  }
+
+  setKinChatDynamismPreference(
+    kinId: string,
+    preference: Partial<KinChatDynamismPreference>
+  ): KinChatDynamismPreference {
+    return this.kinSubscriptionSupervisor.setKinChatDynamismPreference(kinId, preference);
+  }
+
+  getKinChatDynamismPreference(kinId: string): KinChatDynamismPreference {
+    if (!kinId) {
+      throw new Error("Select a Kin before editing Chat Dynamism.");
+    }
+
+    return this.kinSubscriptionSupervisor.kinChatDynamismPreference(kinId);
   }
 
   async setGroupEnabled(groupId: string, enabled: boolean): Promise<void> {
@@ -465,6 +505,48 @@ export class BridgeRuntime {
     return this.kinSubscriptionSupervisor.statuses().find((status) => status.kin.aiId === aiId)?.kin.name || aiId;
   }
 
+  private async chatDynamismContext(notification: KindroidChatNotification): Promise<unknown> {
+    if (notification.type !== "kindroid.chat.changed") {
+      return undefined;
+    }
+
+    const status = this.kinSubscriptionSupervisor
+      .statuses()
+      .find((subscription) => subscription.kin.aiId === notification.kinId);
+    const preference = this.kinSubscriptionSupervisor.kinChatDynamismPreference(notification.kinId);
+    return {
+      displayName: "Chat Dynamism",
+      fieldName: "user_set_temperature",
+      enabledForKin: preference.enabled,
+      allowedRange: {
+        min: preference.min,
+        max: preference.max
+      },
+      hardLimits: {
+        min: defaultChatDynamismBounds.min,
+        max: defaultChatDynamismBounds.max,
+        step: defaultChatDynamismBounds.step
+      },
+      practicalRange: {
+        min: practicalChatDynamismBounds.min,
+        max: practicalChatDynamismBounds.max
+      },
+      recommendedStartingValue: recommendedChatDynamismStartingValue,
+      deltaGuidance: {
+        noticeableBase: noticeableChatDynamismDelta,
+        slight: noticeableChatDynamismDelta,
+        moderate: Number((noticeableChatDynamismDelta * 2).toFixed(2)),
+        strong: Number((noticeableChatDynamismDelta * 3).toFixed(2)),
+        severe: Number((noticeableChatDynamismDelta * 4).toFixed(2)),
+        rule: "A 0.05 move either way is the recommended noticeable base adjustment. Choose the smallest delta that fits the repeated pattern; larger moves require stronger, repeated evidence."
+      },
+      currentValue: status?.kin.chatDynamism,
+      reasoningEffort: status?.kin.reasoningEffort,
+      llmFlair: status?.kin.llmFlair,
+      mutation: "reviewed-suggestion-only"
+    };
+  }
+
   private resolveDecryptionKey(): string {
     if (this.options.config.kindroid.uid) {
       return this.options.config.kindroid.uid;
@@ -564,6 +646,12 @@ export interface BridgeRuntimeStatus {
 export interface KinAmbientContextPreference {
   ok: true;
   enabled: boolean;
+}
+
+export interface KinChatDynamismPreference {
+  enabled: boolean;
+  min: number;
+  max: number;
 }
 
 export type BridgeSessionSummary =

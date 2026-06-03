@@ -7,6 +7,7 @@ import { runKindroidLogin } from "./auth/playwrightLogin.js";
 import { KindroidClient } from "./kindroid/kindroidClient.js";
 import { KindroidApiClient } from "./kindroid/client/index.js";
 import { registerAmbientContextCommand } from "./cli/ambientContextCommand.js";
+import { registerChatDynamismCommand } from "./cli/chatDynamismCommand.js";
 import { registerInternetResponseExperimentCommand } from "./cli/internetResponseExperimentCommand.js";
 import { KindroidChatListener } from "./firestore/chatListener.js";
 import { KindroidLiveMonitor } from "./firestore/liveMonitor.js";
@@ -246,6 +247,7 @@ program
   });
 
 registerAmbientContextCommand(program, loadRuntime);
+registerChatDynamismCommand(program, loadRuntime);
 registerInternetResponseExperimentCommand(program, loadRuntime);
 
 program
