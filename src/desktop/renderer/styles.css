@@ -265,7 +265,7 @@ h2 {
 
 .activity {
   display: grid;
-  grid-template-rows: auto auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto auto auto minmax(0, 1fr);
   min-width: 0;
   background: #fff;
 }
@@ -305,6 +305,11 @@ h2 {
   border-bottom-color: #2d5a7b;
   color: #182635;
   font-weight: 700;
+}
+
+.kin-detail-tabs {
+  padding-top: 8px;
+  background: #f8fafc;
 }
 
 .tab-badge {
@@ -382,6 +387,10 @@ h2 {
   grid-template-columns: minmax(0, 1fr) 260px;
   height: 100%;
   min-height: 0;
+}
+
+.detail-content.app-settings-content {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .detail-main {
@@ -554,6 +563,40 @@ h2 {
   min-height: 0;
   padding: 18px 20px 28px;
   overflow: auto;
+}
+
+.app-settings-form {
+  display: grid;
+  align-content: start;
+  gap: 18px;
+  min-height: 0;
+  max-width: 980px;
+  padding: 18px 20px 28px;
+  overflow: auto;
+}
+
+.settings-section {
+  display: grid;
+  gap: 12px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #d7e0e8;
+}
+
+.settings-section:last-of-type {
+  border-bottom: 0;
+}
+
+.settings-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.settings-grid.two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.settings-grid.three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .voice-grid {

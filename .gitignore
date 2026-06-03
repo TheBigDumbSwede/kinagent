@@ -3,6 +3,7 @@ dist/
 release/
 data/
 .local/
+.claude/
 .env
 config.yaml
 *.har

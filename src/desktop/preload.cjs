@@ -2,6 +2,8 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("kinagent", {
   getStatus: () => ipcRenderer.invoke("app:get-status"),
+  getSettings: () => ipcRenderer.invoke("settings:get"),
+  saveSettings: (input) => ipcRenderer.invoke("settings:save", input),
   openKindroid: () => ipcRenderer.invoke("app:open-kindroid"),
   startLogin: () => ipcRenderer.invoke("login:start"),
   saveLogin: () => ipcRenderer.invoke("login:save"),

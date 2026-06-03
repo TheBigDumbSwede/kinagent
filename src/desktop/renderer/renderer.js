@@ -27,7 +27,11 @@ const state = {
   voiceSaving: false,
   activeTab: "monitor",
   selectedHistoryHash: null,
-  monitorMessages: []
+  monitorMessages: [],
+  appSettings: null,
+  appSettingsLoading: false,
+  appSettingsSaving: false,
+  appSettingsError: null
 };
 
 const captureRequestTimeoutMs = 12_000;
@@ -45,6 +49,7 @@ const elements = {
   groupSubscriptionList: document.querySelector("#groupSubscriptionList"),
   activityTitle: document.querySelector("#activityTitle"),
   detailTabs: document.querySelector("#detailTabs"),
+  kinDetailTabs: document.querySelector("#kinDetailTabs"),
   settingTabs: document.querySelector("#settingTabs"),
   monitorPane: document.querySelector("#monitorPane"),
   detailPane: document.querySelector("#detailPane"),
@@ -53,6 +58,30 @@ const elements = {
   detailStats: document.querySelector("#detailStats"),
   journalSuggestionPanel: document.querySelector("#journalSuggestionPanel"),
   fieldContent: document.querySelector("#fieldContent"),
+  appSettingsForm: document.querySelector("#appSettingsForm"),
+  appSettingsStatusLine: document.querySelector("#appSettingsStatusLine"),
+  appSettingsSaveButton: document.querySelector("#appSettingsSaveButton"),
+  settingsPathLine: document.querySelector("#settingsPathLine"),
+  settingsLogLevelInput: document.querySelector("#settingsLogLevelInput"),
+  settingsDedupeWindowInput: document.querySelector("#settingsDedupeWindowInput"),
+  settingsHermesEnabledInput: document.querySelector("#settingsHermesEnabledInput"),
+  settingsHermesBaseUrlInput: document.querySelector("#settingsHermesBaseUrlInput"),
+  settingsHermesAgentIdInput: document.querySelector("#settingsHermesAgentIdInput"),
+  settingsHermesApiKeyInput: document.querySelector("#settingsHermesApiKeyInput"),
+  settingsHermesCurrentSceneEnabledInput: document.querySelector("#settingsHermesCurrentSceneEnabledInput"),
+  settingsHermesCurrentSceneMaxLengthInput: document.querySelector("#settingsHermesCurrentSceneMaxLengthInput"),
+  settingsHermesJournalEnabledInput: document.querySelector("#settingsHermesJournalEnabledInput"),
+  settingsHermesJournalBypassInput: document.querySelector("#settingsHermesJournalBypassInput"),
+  settingsHermesJournalThrottleInput: document.querySelector("#settingsHermesJournalThrottleInput"),
+  settingsVoiceEnabledInput: document.querySelector("#settingsVoiceEnabledInput"),
+  settingsVoiceProviderInput: document.querySelector("#settingsVoiceProviderInput"),
+  settingsOpenAiApiKeyInput: document.querySelector("#settingsOpenAiApiKeyInput"),
+  settingsOpenAiModelInput: document.querySelector("#settingsOpenAiModelInput"),
+  settingsOpenAiVoiceInput: document.querySelector("#settingsOpenAiVoiceInput"),
+  settingsOpenAiInstructionsInput: document.querySelector("#settingsOpenAiInstructionsInput"),
+  settingsElevenLabsApiKeyInput: document.querySelector("#settingsElevenLabsApiKeyInput"),
+  settingsElevenLabsModelInput: document.querySelector("#settingsElevenLabsModelInput"),
+  settingsElevenLabsOutputFormatInput: document.querySelector("#settingsElevenLabsOutputFormatInput"),
   voiceForm: document.querySelector("#voiceForm"),
   voiceEnabledInput: document.querySelector("#voiceEnabledInput"),
   filterNarrationInput: document.querySelector("#filterNarrationInput"),
@@ -135,6 +164,29 @@ elements.detailTabs.addEventListener("click", (event) => {
     state.selectedHistoryHash = null;
   }
   state.activeTab = nextTab;
+  if (state.activeTab === "app-settings" && !state.appSettings && !state.appSettingsLoading) {
+    void loadAppSettings();
+  }
+  if (state.activeTab === "voice" && state.selectedKinId && !state.selectedKinVoice && !state.voiceLoading) {
+    void loadKinVoice(state.selectedKinId);
+  }
+  renderActivity();
+});
+elements.kinDetailTabs.addEventListener("click", (event) => {
+  if (!(event.target instanceof Element)) {
+    return;
+  }
+
+  const button = event.target.closest("[data-mode]");
+  if (!button) {
+    return;
+  }
+
+  const nextTab = tabForMode(button.dataset.mode);
+  if (state.activeTab !== nextTab) {
+    state.selectedHistoryHash = null;
+  }
+  state.activeTab = nextTab;
   if (state.activeTab === "voice" && state.selectedKinId && !state.selectedKinVoice && !state.voiceLoading) {
     void loadKinVoice(state.selectedKinId);
   }
@@ -162,6 +214,10 @@ elements.settingTabs.addEventListener("click", (event) => {
   renderActivity();
 });
 elements.voiceProviderInput.addEventListener("change", renderVoiceProviderFields);
+elements.appSettingsForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  void saveAppSettings();
+});
 elements.voiceForm.addEventListener("submit", (event) => {
   event.preventDefault();
   void saveSelectedKinVoice();
@@ -533,7 +589,7 @@ async function selectKin(kinId) {
 
   state.selectedKinId = kinId;
   state.selectedGroupId = null;
-  state.activeTab = state.activeTab === "monitor" ? "backstory" : state.activeTab;
+  state.activeTab = ["monitor", "app-settings"].includes(state.activeTab) ? "backstory" : state.activeTab;
   state.selectedHistoryHash = null;
   state.captureLoading = true;
   state.captureError = null;
@@ -596,15 +652,42 @@ async function loadKinVoice(kinId) {
   }
 }
 
+async function loadAppSettings() {
+  state.appSettingsLoading = true;
+  state.appSettingsError = null;
+  renderActivity();
+
+  try {
+    state.appSettings = await window.kinagent.getSettings();
+  } catch (error) {
+    state.appSettingsError = error.message || String(error);
+  } finally {
+    state.appSettingsLoading = false;
+    renderActivity();
+  }
+}
+
 function renderActivity() {
   const activeTab = state.activeTab || "monitor";
   const activeMode = modeForTab(activeTab);
   const isMonitor = activeMode === "monitor";
   const isVoice = activeMode === "voice";
+  const isAppSettings = activeMode === "app-settings";
 
   renderJournalTabBadge();
   for (const button of elements.detailTabs.querySelectorAll("[data-mode]")) {
-    button.hidden = Boolean(state.selectedGroupId && button.dataset.mode !== "monitor");
+    button.hidden = Boolean(state.selectedGroupId && button.dataset.mode === "settings");
+    const selected =
+      button.dataset.mode === activeMode ||
+      (button.dataset.mode === "settings" && ["settings", "journal", "voice"].includes(activeMode));
+    button.classList.toggle("active", selected);
+    button.setAttribute("aria-selected", String(selected));
+  }
+
+  elements.kinDetailTabs.hidden = Boolean(
+    state.selectedGroupId || !state.selectedKinId || !["settings", "journal", "voice"].includes(activeMode)
+  );
+  for (const button of elements.kinDetailTabs.querySelectorAll("[data-mode]")) {
     const selected = button.dataset.mode === activeMode;
     button.classList.toggle("active", selected);
     button.setAttribute("aria-selected", String(selected));
@@ -631,6 +714,13 @@ function renderActivity() {
         : "Incoming Messages";
     renderMessageList();
     renderMonitorState();
+    return;
+  }
+
+  if (isAppSettings) {
+    elements.activityTitle.textContent = "Settings";
+    elements.monitorLine.textContent = "Application configuration";
+    renderAppSettingsTab();
     return;
   }
 
@@ -685,13 +775,17 @@ function renderDetailEmpty(message) {
   elements.kinDetailEmpty.hidden = false;
   elements.kinDetailEmpty.textContent = message;
   elements.kinDetailContent.hidden = true;
+  elements.kinDetailContent.classList.remove("app-settings-content");
+  elements.appSettingsForm.hidden = true;
 }
 
 function renderDetailContent({ content, history, stats }) {
   elements.kinDetailEmpty.hidden = true;
   elements.kinDetailContent.hidden = false;
+  elements.kinDetailContent.classList.remove("app-settings-content");
   elements.fieldContent.hidden = false;
   elements.journalSuggestionPanel.hidden = true;
+  elements.appSettingsForm.hidden = true;
   elements.voiceForm.hidden = true;
   elements.timeline.hidden = false;
   const selectedEntryIndex = history.findIndex((entry) => entry.hash === state.selectedHistoryHash);
@@ -752,6 +846,94 @@ function renderDetailContent({ content, history, stats }) {
   }
 }
 
+function renderAppSettingsTab() {
+  if (state.appSettingsLoading) {
+    renderDetailEmpty("Loading settings.");
+    return;
+  }
+
+  if (state.appSettingsError) {
+    renderDetailEmpty(state.appSettingsError);
+    return;
+  }
+
+  if (!state.appSettings?.ok) {
+    void loadAppSettings();
+    renderDetailEmpty("Loading settings.");
+    return;
+  }
+
+  const config = state.appSettings.config || {};
+  elements.kinDetailEmpty.hidden = true;
+  elements.kinDetailContent.hidden = false;
+  elements.kinDetailContent.classList.add("app-settings-content");
+  elements.fieldContent.hidden = true;
+  elements.journalSuggestionPanel.hidden = true;
+  elements.voiceForm.hidden = true;
+  elements.appSettingsForm.hidden = false;
+  elements.timeline.hidden = true;
+  elements.detailStats.replaceChildren();
+
+  const stats = [
+    { label: "Config", value: state.appSettings.configPath || "Unavailable" },
+    { label: "Data", value: state.appSettings.userDataDir || "Unavailable" },
+    { label: "Hermes", value: config.hermes?.enabled ? "Enabled" : "Off" },
+    { label: "Voice", value: config.voice?.enabled ? providerLabel(config.voice?.provider) : "Off" }
+  ];
+  for (const stat of stats) {
+    const item = document.createElement("div");
+    const label = document.createElement("span");
+    label.textContent = stat.label;
+    const value = document.createElement("strong");
+    value.textContent = stat.value;
+    item.append(label, value);
+    elements.detailStats.append(item);
+  }
+
+  populateAppSettingsForm(config);
+}
+
+function populateAppSettingsForm(config) {
+  const bridge = config.bridge || {};
+  const hermes = config.hermes || {};
+  const currentScene = hermes.currentSceneUpdates || {};
+  const journal = hermes.journalSuggestions || {};
+  const voice = config.voice || {};
+  const openai = voice.openai || {};
+  const elevenlabs = voice.elevenlabs || {};
+
+  elements.settingsLogLevelInput.value = bridge.logLevel || "info";
+  elements.settingsDedupeWindowInput.value = String(bridge.dedupeWindowSeconds || 180);
+  elements.settingsPathLine.textContent = state.appSettings.configPath || "";
+
+  elements.settingsHermesEnabledInput.checked = Boolean(hermes.enabled);
+  elements.settingsHermesBaseUrlInput.value = hermes.baseUrl || "";
+  elements.settingsHermesAgentIdInput.value = hermes.agentId || "";
+  elements.settingsHermesApiKeyInput.value = hermes.apiKey || "";
+  elements.settingsHermesCurrentSceneEnabledInput.checked = Boolean(currentScene.enabled);
+  elements.settingsHermesCurrentSceneMaxLengthInput.value = String(currentScene.maxLength || 160);
+  elements.settingsHermesJournalEnabledInput.checked = Boolean(journal.enabled);
+  elements.settingsHermesJournalBypassInput.checked = Boolean(journal.strongEventBypass);
+  elements.settingsHermesJournalThrottleInput.value = String(journal.throttleMessages || 20);
+
+  elements.settingsVoiceEnabledInput.checked = Boolean(voice.enabled);
+  elements.settingsVoiceProviderInput.value = voice.provider || "none";
+  elements.settingsOpenAiApiKeyInput.value = openai.apiKey || "";
+  elements.settingsOpenAiModelInput.value = openai.model || "";
+  elements.settingsOpenAiVoiceInput.value = openai.voice || "";
+  elements.settingsOpenAiInstructionsInput.value = openai.instructions || "";
+  elements.settingsElevenLabsApiKeyInput.value = elevenlabs.apiKey || "";
+  elements.settingsElevenLabsModelInput.value = elevenlabs.model || "";
+  elements.settingsElevenLabsOutputFormatInput.value = elevenlabs.outputFormat || "";
+
+  elements.appSettingsSaveButton.disabled = state.appSettingsSaving;
+  if (state.appSettings.saved) {
+    elements.appSettingsStatusLine.textContent = "Saved. Restart Kinagent for running services to use these settings.";
+  } else {
+    elements.appSettingsStatusLine.textContent = "Changes are written to the desktop config file.";
+  }
+}
+
 function renderVoiceTab(selectedKin) {
   if (state.voiceLoading) {
     renderDetailEmpty("Loading voice settings.");
@@ -771,8 +953,10 @@ function renderVoiceTab(selectedKin) {
   const preference = state.selectedKinVoice.preference || {};
   elements.kinDetailEmpty.hidden = true;
   elements.kinDetailContent.hidden = false;
+  elements.kinDetailContent.classList.remove("app-settings-content");
   elements.fieldContent.hidden = true;
   elements.journalSuggestionPanel.hidden = true;
+  elements.appSettingsForm.hidden = true;
   elements.voiceForm.hidden = false;
   elements.timeline.hidden = true;
   elements.voiceEnabledInput.checked = Boolean(preference.enabled);
@@ -857,6 +1041,52 @@ function renderVoiceStatusLine() {
   }
 
   elements.voiceStatusLine.textContent = "Voice settings are ready for this Kin.";
+}
+
+async function saveAppSettings() {
+  state.appSettingsSaving = true;
+  state.appSettingsError = null;
+  elements.appSettingsStatusLine.textContent = "Saving settings.";
+  elements.appSettingsSaveButton.disabled = true;
+
+  try {
+    state.appSettings = await window.kinagent.saveSettings(readAppSettingsForm());
+    elements.monitorLine.textContent = "Settings saved.";
+  } catch (error) {
+    state.appSettingsError = error.message || String(error);
+  } finally {
+    state.appSettingsSaving = false;
+    renderActivity();
+  }
+}
+
+function readAppSettingsForm() {
+  return {
+    logLevel: elements.settingsLogLevelInput.value,
+    dedupeWindowSeconds: numberInputValue(elements.settingsDedupeWindowInput),
+    hermesEnabled: elements.settingsHermesEnabledInput.checked,
+    hermesBaseUrl: elements.settingsHermesBaseUrlInput.value,
+    hermesAgentId: elements.settingsHermesAgentIdInput.value,
+    hermesApiKey: elements.settingsHermesApiKeyInput.value,
+    hermesCurrentSceneEnabled: elements.settingsHermesCurrentSceneEnabledInput.checked,
+    hermesCurrentSceneMaxLength: numberInputValue(elements.settingsHermesCurrentSceneMaxLengthInput),
+    hermesJournalSuggestionsEnabled: elements.settingsHermesJournalEnabledInput.checked,
+    hermesJournalStrongEventBypass: elements.settingsHermesJournalBypassInput.checked,
+    hermesJournalThrottleMessages: numberInputValue(elements.settingsHermesJournalThrottleInput),
+    voiceEnabled: elements.settingsVoiceEnabledInput.checked,
+    voiceProvider: elements.settingsVoiceProviderInput.value,
+    openAiApiKey: elements.settingsOpenAiApiKeyInput.value,
+    openAiModel: elements.settingsOpenAiModelInput.value,
+    openAiVoice: elements.settingsOpenAiVoiceInput.value,
+    openAiInstructions: elements.settingsOpenAiInstructionsInput.value,
+    elevenLabsApiKey: elements.settingsElevenLabsApiKeyInput.value,
+    elevenLabsModel: elements.settingsElevenLabsModelInput.value,
+    elevenLabsOutputFormat: elements.settingsElevenLabsOutputFormatInput.value
+  };
+}
+
+function numberInputValue(input) {
+  return Number(input.value);
 }
 
 async function saveSelectedKinVoice() {
@@ -1073,7 +1303,7 @@ function categoryDetailLabel(detail) {
 }
 
 function renderJournalTabBadge() {
-  const button = elements.detailTabs.querySelector('[data-mode="journal"]');
+  const button = elements.kinDetailTabs.querySelector('[data-mode="journal"]');
   if (!button) {
     return;
   }
@@ -1220,6 +1450,10 @@ function tabLabelFor(tab) {
 }
 
 function tabForMode(mode) {
+  if (mode === "app-settings") {
+    return "app-settings";
+  }
+
   if (mode === "settings") {
     return currentSettingTab();
   }
@@ -1228,6 +1462,10 @@ function tabForMode(mode) {
 }
 
 function modeForTab(tab) {
+  if (tab === "app-settings") {
+    return "app-settings";
+  }
+
   if (settingTabKeys.has(tab)) {
     return "settings";
   }
@@ -1240,6 +1478,10 @@ function currentSettingTab() {
 }
 
 function subtitleForDetailMode(mode) {
+  if (mode === "app-settings") {
+    return "Application configuration";
+  }
+
   if (mode === "voice") {
     return "Voice configuration";
   }

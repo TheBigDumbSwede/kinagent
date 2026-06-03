@@ -81,8 +81,14 @@
           <button class="detail-tab active" type="button" data-mode="monitor" role="tab" aria-selected="true">
             Monitor
           </button>
-          <button class="detail-tab" type="button" data-mode="settings" role="tab" aria-selected="false">
+          <button class="detail-tab" type="button" data-mode="settings" role="tab" aria-selected="false">Kin</button>
+          <button class="detail-tab" type="button" data-mode="app-settings" role="tab" aria-selected="false">
             Settings
+          </button>
+        </div>
+        <div id="kinDetailTabs" class="detail-tabs kin-detail-tabs" role="tablist" aria-label="Kin detail tabs" hidden>
+          <button class="detail-tab active" type="button" data-mode="settings" role="tab" aria-selected="true">
+            Captured
           </button>
           <button class="detail-tab" type="button" data-mode="journal" role="tab" aria-selected="false">Journal</button>
           <button class="detail-tab" type="button" data-mode="voice" role="tab" aria-selected="false">Voice</button>
@@ -121,6 +127,130 @@
                 <div id="detailStats" class="detail-stats"></div>
                 <div id="journalSuggestionPanel" class="journal-suggestions" hidden></div>
                 <pre id="fieldContent" class="field-content"></pre>
+                <form id="appSettingsForm" class="app-settings-form" hidden>
+                  <section class="settings-section">
+                    <h2>General</h2>
+                    <div class="settings-grid two">
+                      <label>
+                        Log level
+                        <select id="settingsLogLevelInput">
+                          <option value="debug">Debug</option>
+                          <option value="info">Info</option>
+                          <option value="warn">Warn</option>
+                          <option value="error">Error</option>
+                        </select>
+                      </label>
+                      <label>
+                        Dedupe window seconds
+                        <input id="settingsDedupeWindowInput" type="number" min="1" step="1" />
+                      </label>
+                    </div>
+                    <p id="settingsPathLine" class="panel-note"></p>
+                  </section>
+
+                  <section class="settings-section">
+                    <h2>Hermes</h2>
+                    <label class="checkbox-label">
+                      <input id="settingsHermesEnabledInput" type="checkbox" />
+                      <span>Enable Hermes</span>
+                    </label>
+                    <div class="settings-grid two">
+                      <label>
+                        Base URL
+                        <input id="settingsHermesBaseUrlInput" type="url" autocomplete="off" />
+                      </label>
+                      <label>
+                        Agent ID
+                        <input id="settingsHermesAgentIdInput" type="text" autocomplete="off" />
+                      </label>
+                      <label>
+                        API key
+                        <input id="settingsHermesApiKeyInput" type="password" autocomplete="off" />
+                      </label>
+                    </div>
+                    <div class="settings-grid three">
+                      <label class="checkbox-label">
+                        <input id="settingsHermesCurrentSceneEnabledInput" type="checkbox" />
+                        <span>Current scene updates</span>
+                      </label>
+                      <label>
+                        Current scene max length
+                        <input id="settingsHermesCurrentSceneMaxLengthInput" type="number" min="1" max="160" step="1" />
+                      </label>
+                    </div>
+                  </section>
+
+                  <section class="settings-section">
+                    <h2>Journal Review</h2>
+                    <div class="settings-grid three">
+                      <label class="checkbox-label">
+                        <input id="settingsHermesJournalEnabledInput" type="checkbox" />
+                        <span>Enable suggestions</span>
+                      </label>
+                      <label class="checkbox-label">
+                        <input id="settingsHermesJournalBypassInput" type="checkbox" />
+                        <span>Strong event bypass</span>
+                      </label>
+                      <label>
+                        Throttle messages
+                        <input id="settingsHermesJournalThrottleInput" type="number" min="1" step="1" />
+                      </label>
+                    </div>
+                  </section>
+
+                  <section class="settings-section">
+                    <h2>Voice</h2>
+                    <div class="settings-grid three">
+                      <label class="checkbox-label">
+                        <input id="settingsVoiceEnabledInput" type="checkbox" />
+                        <span>Enable voice globally</span>
+                      </label>
+                      <label>
+                        Provider
+                        <select id="settingsVoiceProviderInput">
+                          <option value="none">None</option>
+                          <option value="openai">OpenAI</option>
+                          <option value="elevenlabs">ElevenLabs</option>
+                        </select>
+                      </label>
+                    </div>
+                    <div class="settings-grid two">
+                      <label>
+                        OpenAI API key
+                        <input id="settingsOpenAiApiKeyInput" type="password" autocomplete="off" />
+                      </label>
+                      <label>
+                        OpenAI model
+                        <input id="settingsOpenAiModelInput" type="text" autocomplete="off" />
+                      </label>
+                      <label>
+                        OpenAI voice
+                        <input id="settingsOpenAiVoiceInput" type="text" autocomplete="off" />
+                      </label>
+                      <label>
+                        ElevenLabs API key
+                        <input id="settingsElevenLabsApiKeyInput" type="password" autocomplete="off" />
+                      </label>
+                      <label>
+                        ElevenLabs model
+                        <input id="settingsElevenLabsModelInput" type="text" autocomplete="off" />
+                      </label>
+                      <label>
+                        ElevenLabs output format
+                        <input id="settingsElevenLabsOutputFormatInput" type="text" autocomplete="off" />
+                      </label>
+                    </div>
+                    <label>
+                      OpenAI voice instructions
+                      <textarea id="settingsOpenAiInstructionsInput" rows="4"></textarea>
+                    </label>
+                  </section>
+
+                  <p id="appSettingsStatusLine" class="panel-note"></p>
+                  <div class="button-row narrow">
+                    <button id="appSettingsSaveButton" type="submit">Save Settings</button>
+                  </div>
+                </form>
                 <form id="voiceForm" class="voice-form" hidden>
                   <label class="checkbox-label">
                     <input id="voiceEnabledInput" type="checkbox" />

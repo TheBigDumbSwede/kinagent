@@ -1,14 +1,16 @@
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, Menu, nativeImage, Notification, shell, Tray, ipcMain } from "electron";
 import type { Event as ElectronEvent } from "electron";
 import { chromium, type Browser, type BrowserContext } from "playwright";
 import { ensureSessionDir, storageStatePath } from "../auth/tokenStore.js";
-import { loadConfig } from "../config/loadConfig.js";
+import { loadConfig, saveConfig } from "../config/loadConfig.js";
+import type { AppConfig, LogLevel, VoiceProvider } from "../config/types.js";
 import { readCapturedKin } from "../capture/captureReader.js";
 import { BridgeRuntime, type BridgeRuntimeEvent } from "../runtime/bridgeRuntime.js";
 import type { JournalSuggestion } from "../journal/journalSuggestionStore.js";
-import { createLogger } from "../util/logger.js";
+import { createLogger, type Logger } from "../util/logger.js";
 import {
   loadKinVoicePreference,
   openAiVoiceOptions,
@@ -19,9 +21,11 @@ import {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const config = loadConfig();
-const logger = createLogger(config.bridge.logLevel, { logPath: config.bridge.logPath });
 
+let config: AppConfig;
+let logger: Logger;
+let desktopConfigPath = "";
+let desktopUserDataDir = "";
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let isQuitting = false;
@@ -33,6 +37,7 @@ let smokeRuntimeReady = false;
 app.setName("Kinagent");
 
 void app.whenReady().then(() => {
+  initializeDesktopConfig();
   createMainWindow();
   createTray();
   registerIpcHandlers();
@@ -42,6 +47,18 @@ void app.whenReady().then(() => {
     showMainWindow();
   });
 });
+
+function initializeDesktopConfig(): void {
+  desktopUserDataDir = app.getPath("userData");
+  desktopConfigPath = path.join(desktopUserDataDir, "config.yaml");
+  fs.mkdirSync(desktopUserDataDir, { recursive: true });
+  process.chdir(desktopUserDataDir);
+  config = loadConfig({
+    configPath: desktopConfigPath,
+    createDefaultConfig: true
+  });
+  logger = createLogger(config.bridge.logLevel, { logPath: config.bridge.logPath });
+}
 
 app.on("before-quit", () => {
   isQuitting = true;
@@ -152,6 +169,8 @@ function createTray(): void {
 
 function registerIpcHandlers(): void {
   ipcMain.handle("app:get-status", async () => getDesktopStatus());
+  ipcMain.handle("settings:get", async () => getDesktopSettings());
+  ipcMain.handle("settings:save", async (_event, input: unknown) => saveDesktopSettings(input));
   ipcMain.handle("app:open-kindroid", async () => {
     await shell.openExternal("https://kindroid.ai/");
     return { ok: true };
@@ -221,6 +240,101 @@ async function getDesktopStatus() {
     ...requireRuntime().status(),
     loginOpen: Boolean(loginSession)
   };
+}
+
+function getDesktopSettings(input: { saved?: boolean } = {}) {
+  return {
+    ok: true,
+    saved: Boolean(input.saved),
+    requiresRestart: Boolean(input.saved),
+    configPath: desktopConfigPath,
+    userDataDir: desktopUserDataDir,
+    config
+  };
+}
+
+function saveDesktopSettings(input: unknown) {
+  const fields = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
+  const next = cloneConfig(config);
+
+  next.bridge.logLevel = logLevelSetting(fields.logLevel, next.bridge.logLevel);
+  next.bridge.dedupeWindowSeconds = positiveIntegerSetting(
+    fields.dedupeWindowSeconds,
+    next.bridge.dedupeWindowSeconds,
+    "Dedupe window"
+  );
+
+  next.hermes.enabled = booleanSetting(fields.hermesEnabled, next.hermes.enabled);
+  next.hermes.baseUrl = stringSetting(fields.hermesBaseUrl, next.hermes.baseUrl);
+  next.hermes.apiKey = stringSetting(fields.hermesApiKey, next.hermes.apiKey);
+  next.hermes.agentId = stringSetting(fields.hermesAgentId, next.hermes.agentId);
+  next.hermes.currentSceneUpdates.enabled = booleanSetting(
+    fields.hermesCurrentSceneEnabled,
+    next.hermes.currentSceneUpdates.enabled
+  );
+  next.hermes.currentSceneUpdates.maxLength = positiveIntegerSetting(
+    fields.hermesCurrentSceneMaxLength,
+    next.hermes.currentSceneUpdates.maxLength,
+    "Current scene max length"
+  );
+  next.hermes.journalSuggestions.enabled = booleanSetting(
+    fields.hermesJournalSuggestionsEnabled,
+    next.hermes.journalSuggestions.enabled
+  );
+  next.hermes.journalSuggestions.throttleMessages = positiveIntegerSetting(
+    fields.hermesJournalThrottleMessages,
+    next.hermes.journalSuggestions.throttleMessages,
+    "Journal suggestion throttle"
+  );
+  next.hermes.journalSuggestions.strongEventBypass = booleanSetting(
+    fields.hermesJournalStrongEventBypass,
+    next.hermes.journalSuggestions.strongEventBypass
+  );
+
+  next.voice.enabled = booleanSetting(fields.voiceEnabled, next.voice.enabled);
+  next.voice.provider = voiceProviderSetting(fields.voiceProvider, next.voice.provider);
+  next.voice.openai.apiKey = stringSetting(fields.openAiApiKey, next.voice.openai.apiKey);
+  next.voice.openai.model = stringSetting(fields.openAiModel, next.voice.openai.model);
+  next.voice.openai.voice = stringSetting(fields.openAiVoice, next.voice.openai.voice);
+  next.voice.openai.instructions = stringSetting(fields.openAiInstructions, next.voice.openai.instructions);
+  next.voice.elevenlabs.apiKey = stringSetting(fields.elevenLabsApiKey, next.voice.elevenlabs.apiKey);
+  next.voice.elevenlabs.model = stringSetting(fields.elevenLabsModel, next.voice.elevenlabs.model);
+  next.voice.elevenlabs.outputFormat = stringSetting(fields.elevenLabsOutputFormat, next.voice.elevenlabs.outputFormat);
+
+  saveConfig(next, desktopConfigPath);
+  config = loadConfig({ configPath: desktopConfigPath, createDefaultConfig: true });
+  logger = createLogger(config.bridge.logLevel, { logPath: config.bridge.logPath });
+  logger.info("Saved desktop settings.", { configPath: desktopConfigPath });
+
+  return getDesktopSettings({ saved: true });
+}
+
+function cloneConfig(value: AppConfig): AppConfig {
+  return JSON.parse(JSON.stringify(value)) as AppConfig;
+}
+
+function stringSetting(value: unknown, fallback: string): string {
+  return typeof value === "string" ? value.trim() : fallback;
+}
+
+function booleanSetting(value: unknown, fallback: boolean): boolean {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function positiveIntegerSetting(value: unknown, fallback: number, label: string): number {
+  const parsed = typeof value === "number" ? value : typeof value === "string" ? Number(value) : fallback;
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error(`${label} must be a positive whole number.`);
+  }
+  return parsed;
+}
+
+function logLevelSetting(value: unknown, fallback: LogLevel): LogLevel {
+  return value === "debug" || value === "info" || value === "warn" || value === "error" ? value : fallback;
+}
+
+function voiceProviderSetting(value: unknown, fallback: VoiceProvider): VoiceProvider {
+  return value === "none" || value === "openai" || value === "elevenlabs" ? value : fallback;
 }
 
 async function startLoginSession() {

@@ -121,10 +121,14 @@ const appConfigSchema = z.object({
 
 export interface LoadConfigOptions {
   configPath?: string;
+  createDefaultConfig?: boolean;
 }
 
 export function loadConfig(options: LoadConfigOptions = {}): AppConfig {
   const configPath = options.configPath ?? process.env.KINAGENT_CONFIG ?? path.resolve(process.cwd(), "config.yaml");
+  if (options.createDefaultConfig) {
+    ensureDefaultConfig(configPath);
+  }
 
   const fileConfig = readYamlConfig(configPath);
   const merged = mergeConfig(defaultConfig, fileConfig);
@@ -133,6 +137,19 @@ export function loadConfig(options: LoadConfigOptions = {}): AppConfig {
   normalizePaths(merged);
 
   return parseConfig(merged);
+}
+
+export function saveConfig(config: AppConfig, configPath: string): void {
+  fs.mkdirSync(path.dirname(configPath), { recursive: true });
+  fs.writeFileSync(configPath, YAML.stringify(config), "utf8");
+}
+
+function ensureDefaultConfig(configPath: string): void {
+  if (fs.existsSync(configPath)) {
+    return;
+  }
+
+  saveConfig(defaultConfig, configPath);
 }
 
 function readYamlConfig(configPath: string): Partial<AppConfig> {

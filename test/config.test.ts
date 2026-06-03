@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { loadConfig } from "../src/config/loadConfig.js";
+import { loadConfig, saveConfig } from "../src/config/loadConfig.js";
 
 describe("loadConfig", () => {
   afterEach(() => {
@@ -35,6 +35,32 @@ describe("loadConfig", () => {
         outputFormat: "mp3_44100_128"
       }
     });
+  });
+
+  it("creates a default config file when requested", () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "kinagent-config-"));
+    const configPath = path.join(tempDir, "config.yaml");
+
+    const config = loadConfig({ configPath, createDefaultConfig: true });
+
+    expect(fs.existsSync(configPath)).toBe(true);
+    expect(fs.readFileSync(configPath, "utf8")).toContain("kindroid:");
+    expect(config.bridge.sqlitePath).toBe(path.resolve(process.cwd(), "./data/bridge.sqlite"));
+  });
+
+  it("saves config files that can be loaded again", () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "kinagent-config-"));
+    const configPath = path.join(tempDir, "config.yaml");
+    const config = loadConfig({ configPath, createDefaultConfig: true });
+
+    config.hermes.enabled = true;
+    config.hermes.baseUrl = "http://127.0.0.1:9000/v1";
+    saveConfig(config, configPath);
+
+    const reloaded = loadConfig({ configPath });
+
+    expect(reloaded.hermes.enabled).toBe(true);
+    expect(reloaded.hermes.baseUrl).toBe("http://127.0.0.1:9000/v1");
   });
 
   it("merges file config and environment overrides", () => {
