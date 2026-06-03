@@ -19,10 +19,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6.0.3
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6.4.0
         with:
           node-version: "24"
           cache: "npm"
@@ -49,7 +49,7 @@ jobs:
           "PORTABLE_NAME=$($artifact.Name)" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Upload workflow artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: ${{ env.PORTABLE_NAME }}
           path: ${{ env.PORTABLE_EXE }}
