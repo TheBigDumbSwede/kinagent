@@ -8,6 +8,12 @@ export interface ListKindroidChatMessagesOptions {
   limit: number;
 }
 
+export interface ListAllKindroidChatMessagesOptions {
+  kinId: string;
+  pageSize?: number;
+  maxMessages?: number;
+}
+
 export interface ListenKindroidChatMessagesOptions {
   kinId: string;
   pageSize?: number;
@@ -29,6 +35,17 @@ export class KindroidChatsClient {
       maxDocuments: options.limit,
       orderBy: "timestamp desc",
       logLabel: "kindroid.chatMessages"
+    });
+  }
+
+  async listMessages(options: ListAllKindroidChatMessagesOptions): Promise<FirestoreDocumentLike[]> {
+    const uid = await this.firestoreRest.resolveUid();
+    return this.firestoreRest.listDocuments({
+      collectionPath: kinChatMessagesPath(uid, options.kinId),
+      pageSize: options.pageSize ?? 100,
+      maxDocuments: options.maxMessages,
+      orderBy: "timestamp desc",
+      logLabel: "kindroid.chatMessages.export"
     });
   }
 

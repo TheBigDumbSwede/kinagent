@@ -169,6 +169,10 @@ h2 {
   max-width: 220px;
 }
 
+.button-row.action-button-row {
+  max-width: 360px;
+}
+
 .status-list {
   display: grid;
   gap: 8px;
@@ -571,7 +575,8 @@ h2 {
 }
 
 .voice-form,
-.kin-hermes-form {
+.kin-hermes-form,
+.kin-action-panel {
   display: grid;
   align-content: start;
   gap: 16px;
@@ -618,6 +623,14 @@ h2 {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
+}
+
+.kin-action-panel {
+  width: min(620px, 100%);
+}
+
+.export-progress {
+  width: 100%;
 }
 
 .dual-range-control {

@@ -1,13 +1,15 @@
 import fs from "node:fs";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, Menu, nativeImage, Notification, shell, Tray, ipcMain } from "electron";
+import { app, BrowserWindow, Menu, nativeImage, Notification, shell, Tray, ipcMain, dialog } from "electron";
 import type { Event as ElectronEvent } from "electron";
 import { chromium, type Browser, type BrowserContext } from "playwright";
 import { ensureSessionDir, storageStatePath } from "../auth/tokenStore.js";
 import { loadConfig, saveConfig } from "../config/loadConfig.js";
 import type { AppConfig, LogLevel, VoiceProvider } from "../config/types.js";
 import { readCapturedKin } from "../capture/captureReader.js";
+import { exportKinChatTranscript, type KinChatExportProgress } from "../chatExport/chatExport.js";
 import { BridgeRuntime, type BridgeRuntimeEvent } from "../runtime/bridgeRuntime.js";
 import type { JournalSuggestion } from "../journal/journalSuggestionStore.js";
 import { createLogger, type Logger } from "../util/logger.js";
@@ -52,6 +54,7 @@ function initializeDesktopConfig(): void {
   desktopUserDataDir = app.getPath("userData");
   desktopConfigPath = path.join(desktopUserDataDir, "config.yaml");
   fs.mkdirSync(desktopUserDataDir, { recursive: true });
+  cleanupChatExportTempFiles();
   process.chdir(desktopUserDataDir);
   config = loadConfig({
     configPath: desktopConfigPath,
@@ -63,6 +66,7 @@ function initializeDesktopConfig(): void {
 app.on("before-quit", () => {
   isQuitting = true;
   runtime?.stop();
+  cleanupChatExportTempFiles();
   void closeLoginSession();
 });
 
@@ -246,6 +250,17 @@ function registerIpcHandlers(): void {
         chatDynamism?: { enabled?: boolean; min?: number; max?: number };
       } = {}
     ) => setKinAmbientPreference(input.kinId ?? "", input.enabled, input.chatDynamism)
+  );
+  ipcMain.handle(
+    "chat-export:kin",
+    async (
+      _event,
+      input: {
+        kinId?: string;
+        fromDate?: string;
+        toDate?: string;
+      } = {}
+    ) => exportKinChat(input)
   );
 }
 
@@ -493,6 +508,64 @@ function setKinAmbientPreference(
   };
 }
 
+async function exportKinChat(input: { kinId?: string; fromDate?: string; toDate?: string }) {
+  const kinId = input.kinId ?? "";
+  if (!kinId) {
+    throw new Error("Select a Kin before exporting chat.");
+  }
+
+  const kinName =
+    requireRuntime()
+      .status()
+      .subscriptions.find((subscription) => subscription.kin.aiId === kinId)?.kin.name || kinId;
+  const jobId = randomUUID();
+  const progress = (payload: KinChatExportProgress) => {
+    sendRendererEvent("chat-export-progress", { jobId, ...payload });
+  };
+
+  const result = await exportKinChatTranscript(
+    config,
+    logger,
+    {
+      kinId,
+      kinName,
+      fromDate: input.fromDate,
+      toDate: input.toDate,
+      tempDir: chatExportTempDir()
+    },
+    progress
+  );
+
+  const saveOptions = {
+    title: "Save chat export",
+    defaultPath: result.fileName,
+    filters: [{ name: "Markdown", extensions: ["md"] }]
+  };
+  const saveResult = mainWindow
+    ? await dialog.showSaveDialog(mainWindow, saveOptions)
+    : await dialog.showSaveDialog(saveOptions);
+  if (saveResult.canceled || !saveResult.filePath) {
+    fs.rmSync(result.tempPath, { force: true });
+    return {
+      ok: false,
+      canceled: true,
+      exportedCount: result.exportedCount,
+      totalCount: result.totalCount,
+      jobId
+    };
+  }
+
+  fs.copyFileSync(result.tempPath, saveResult.filePath);
+  fs.rmSync(result.tempPath, { force: true });
+  return {
+    ok: true,
+    filePath: saveResult.filePath,
+    exportedCount: result.exportedCount,
+    totalCount: result.totalCount,
+    jobId
+  };
+}
+
 async function acceptJournalSuggestion(id: string) {
   if (!id) {
     throw new Error("Journal suggestion id is required.");
@@ -531,6 +604,20 @@ function sendRuntimeEvent(event: BridgeRuntimeEvent): void {
     showJournalSuggestionNotification(event.payload);
   }
   sendRendererEvent(event.channel, event.payload);
+}
+
+function chatExportTempDir(): string {
+  return path.join(app.getPath("temp"), "kinagent-chat-exports");
+}
+
+function cleanupChatExportTempFiles(): void {
+  try {
+    fs.rmSync(chatExportTempDir(), { recursive: true, force: true });
+  } catch (error) {
+    logger?.warn("Failed to clean chat export temporary files.", {
+      error: error instanceof Error ? error.message : String(error)
+    });
+  }
 }
 
 function sendVoicePlayback(chunk: unknown): void {

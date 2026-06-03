@@ -36,7 +36,9 @@ const state = {
   appSettings: null,
   appSettingsLoading: false,
   appSettingsSaving: false,
-  appSettingsError: null
+  appSettingsError: null,
+  chatExportSaving: false,
+  chatExportJobId: null
 };
 
 const captureRequestTimeoutMs = 12_000;
@@ -104,6 +106,16 @@ const elements = {
   chatDynamismMaxInput: document.querySelector("#chatDynamismMaxInput"),
   chatDynamismMinValue: document.querySelector("#chatDynamismMinValue"),
   chatDynamismMaxValue: document.querySelector("#chatDynamismMaxValue"),
+  kinAnalyzePanel: document.querySelector("#kinAnalyzePanel"),
+  kinAnalyzeButton: document.querySelector("#kinAnalyzeButton"),
+  kinAnalyzeStatusLine: document.querySelector("#kinAnalyzeStatusLine"),
+  chatExportPanel: document.querySelector("#chatExportPanel"),
+  chatExportFromInput: document.querySelector("#chatExportFromInput"),
+  chatExportToInput: document.querySelector("#chatExportToInput"),
+  chatExportRangeButton: document.querySelector("#chatExportRangeButton"),
+  chatExportAllButton: document.querySelector("#chatExportAllButton"),
+  chatExportProgress: document.querySelector("#chatExportProgress"),
+  chatExportStatusLine: document.querySelector("#chatExportStatusLine"),
   kinHermesStatusLine: document.querySelector("#kinHermesStatusLine"),
   kinHermesSaveButton: document.querySelector("#kinHermesSaveButton"),
   voiceEnabledInput: document.querySelector("#voiceEnabledInput"),
@@ -257,6 +269,13 @@ elements.kinHermesForm.addEventListener("submit", (event) => {
 });
 elements.chatDynamismMinInput.addEventListener("input", syncChatDynamismRangeLabels);
 elements.chatDynamismMaxInput.addEventListener("input", syncChatDynamismRangeLabels);
+elements.kinAnalyzeButton.addEventListener("click", showKinAnalyzePlaceholder);
+elements.chatExportRangeButton.addEventListener("click", () => {
+  void exportSelectedKinChat(false);
+});
+elements.chatExportAllButton.addEventListener("click", () => {
+  void exportSelectedKinChat(true);
+});
 
 window.kinagent.onEvent((message) => {
   if (message.channel === "runtime-startup-error") {
@@ -290,6 +309,11 @@ window.kinagent.onEvent((message) => {
 
   if (message.channel === "journal-suggestion-focus") {
     void focusJournalSuggestion(message.payload);
+    return;
+  }
+
+  if (message.channel === "chat-export-progress") {
+    renderChatExportProgress(message.payload);
     return;
   }
 
@@ -647,6 +671,7 @@ async function selectKin(kinId) {
   state.journalError = null;
   state.voiceError = null;
   state.ambientError = null;
+  resetKinActionPlaceholders();
   renderKinSubscriptions();
   renderGroupSubscriptions();
   renderActivity();
@@ -742,20 +767,22 @@ function renderActivity() {
   const isMonitor = activeMode === "monitor";
   const isVoice = activeMode === "voice";
   const isHermes = activeMode === "hermes";
+  const isAnalyze = activeMode === "analyze";
+  const isExport = activeMode === "export";
   const isAppSettings = activeMode === "app-settings";
+  const kinModes = ["settings", "journal", "hermes", "voice", "analyze", "export"];
 
   renderJournalTabBadge();
   for (const button of elements.detailTabs.querySelectorAll("[data-mode]")) {
     button.hidden = Boolean(state.selectedGroupId && button.dataset.mode === "settings");
     const selected =
-      button.dataset.mode === activeMode ||
-      (button.dataset.mode === "settings" && ["settings", "journal", "hermes", "voice"].includes(activeMode));
+      button.dataset.mode === activeMode || (button.dataset.mode === "settings" && kinModes.includes(activeMode));
     button.classList.toggle("active", selected);
     button.setAttribute("aria-selected", String(selected));
   }
 
   elements.kinDetailTabs.hidden = Boolean(
-    state.selectedGroupId || !state.selectedKinId || !["settings", "journal", "hermes", "voice"].includes(activeMode)
+    state.selectedGroupId || !state.selectedKinId || !kinModes.includes(activeMode)
   );
   for (const button of elements.kinDetailTabs.querySelectorAll("[data-mode]")) {
     const selected = button.dataset.mode === activeMode;
@@ -815,6 +842,16 @@ function renderActivity() {
     return;
   }
 
+  if (isAnalyze) {
+    renderKinAnalyzeTab(selectedKin);
+    return;
+  }
+
+  if (isExport) {
+    renderKinExportTab(selectedKin);
+    return;
+  }
+
   if (state.captureLoading) {
     renderDetailEmpty("Loading captured settings.");
     return;
@@ -854,6 +891,8 @@ function renderDetailEmpty(message) {
   elements.appSettingsForm.hidden = true;
   elements.voiceForm.hidden = true;
   elements.kinHermesForm.hidden = true;
+  elements.kinAnalyzePanel.hidden = true;
+  elements.chatExportPanel.hidden = true;
 }
 
 function renderDetailContent({ content, history, stats }) {
@@ -865,6 +904,8 @@ function renderDetailContent({ content, history, stats }) {
   elements.appSettingsForm.hidden = true;
   elements.voiceForm.hidden = true;
   elements.kinHermesForm.hidden = true;
+  elements.kinAnalyzePanel.hidden = true;
+  elements.chatExportPanel.hidden = true;
   elements.timeline.hidden = false;
   const selectedEntryIndex = history.findIndex((entry) => entry.hash === state.selectedHistoryHash);
   const selectedEntry = selectedEntryIndex >= 0 ? history[selectedEntryIndex] : null;
@@ -950,6 +991,8 @@ function renderAppSettingsTab() {
   elements.journalSuggestionPanel.hidden = true;
   elements.voiceForm.hidden = true;
   elements.kinHermesForm.hidden = true;
+  elements.kinAnalyzePanel.hidden = true;
+  elements.chatExportPanel.hidden = true;
   elements.appSettingsForm.hidden = false;
   elements.timeline.hidden = true;
   elements.detailStats.replaceChildren();
@@ -1040,6 +1083,8 @@ function renderVoiceTab(selectedKin) {
   elements.appSettingsForm.hidden = true;
   elements.voiceForm.hidden = false;
   elements.kinHermesForm.hidden = true;
+  elements.kinAnalyzePanel.hidden = true;
+  elements.chatExportPanel.hidden = true;
   elements.timeline.hidden = true;
   elements.voiceEnabledInput.checked = Boolean(preference.enabled);
   elements.voiceProviderInput.value = preference.provider || "openai";
@@ -1079,6 +1124,8 @@ function renderKinHermesTab(selectedKin) {
   elements.appSettingsForm.hidden = true;
   elements.voiceForm.hidden = true;
   elements.kinHermesForm.hidden = false;
+  elements.kinAnalyzePanel.hidden = true;
+  elements.chatExportPanel.hidden = true;
   elements.timeline.hidden = true;
   elements.ambientContextEnabledInput.checked = state.selectedKinAmbient.enabled !== false;
   const chatDynamism = state.selectedKinAmbient.chatDynamism || {};
@@ -1094,6 +1141,40 @@ function renderKinHermesTab(selectedKin) {
   renderKinHermesStats(selectedKin, state.selectedKinAmbient);
 }
 
+function renderKinAnalyzeTab(selectedKin) {
+  elements.kinDetailEmpty.hidden = true;
+  elements.kinDetailContent.hidden = false;
+  elements.kinDetailContent.classList.remove("app-settings-content");
+  elements.kinDetailContent.classList.add("form-detail-content");
+  elements.fieldContent.hidden = true;
+  elements.journalSuggestionPanel.hidden = true;
+  elements.appSettingsForm.hidden = true;
+  elements.voiceForm.hidden = true;
+  elements.kinHermesForm.hidden = true;
+  elements.kinAnalyzePanel.hidden = false;
+  elements.chatExportPanel.hidden = true;
+  elements.timeline.hidden = true;
+  renderKinActionStats(selectedKin, "Analysis", "Pending");
+}
+
+function renderKinExportTab(selectedKin) {
+  elements.kinDetailEmpty.hidden = true;
+  elements.kinDetailContent.hidden = false;
+  elements.kinDetailContent.classList.remove("app-settings-content");
+  elements.kinDetailContent.classList.add("form-detail-content");
+  elements.fieldContent.hidden = true;
+  elements.journalSuggestionPanel.hidden = true;
+  elements.appSettingsForm.hidden = true;
+  elements.voiceForm.hidden = true;
+  elements.kinHermesForm.hidden = true;
+  elements.kinAnalyzePanel.hidden = true;
+  elements.chatExportPanel.hidden = false;
+  elements.timeline.hidden = true;
+  elements.chatExportRangeButton.disabled = state.chatExportSaving;
+  elements.chatExportAllButton.disabled = state.chatExportSaving;
+  renderKinActionStats(selectedKin, "Export", "Pending");
+}
+
 function renderKinHermesStats(selectedKin, preference) {
   const current = preference.currentChatDynamism || {};
   const chatDynamism = preference.chatDynamism || {};
@@ -1102,6 +1183,26 @@ function renderKinHermesStats(selectedKin, preference) {
     { label: "Ambient", value: preference.enabled ? "Enabled" : "Off" },
     { label: "Dynamism", value: current.display || "Unknown" },
     { label: "Drift", value: chatDynamism.enabled ? `${chatDynamism.min} - ${chatDynamism.max}` : "Off" }
+  ];
+
+  elements.detailStats.replaceChildren();
+  for (const stat of stats) {
+    const item = document.createElement("div");
+    const label = document.createElement("span");
+    label.textContent = stat.label;
+    const value = document.createElement("strong");
+    value.textContent = stat.value;
+    item.append(label, value);
+    elements.detailStats.append(item);
+  }
+}
+
+function renderKinActionStats(selectedKin, action, status) {
+  const stats = [
+    { label: "Kin", value: selectedKin?.name || state.selectedKinId || "Unknown" },
+    { label: "Action", value: action },
+    { label: "Status", value: status },
+    { label: "Mode", value: "Manual" }
   ];
 
   elements.detailStats.replaceChildren();
@@ -1346,6 +1447,75 @@ function hermesStatusLine(preference) {
     ? `Chat Dynamism drift suggestions are allowed from ${preference.chatDynamism.min} to ${preference.chatDynamism.max}.`
     : "Chat Dynamism drift suggestions are disabled.";
   return `${ambient}. ${chatDynamism}`;
+}
+
+function showKinAnalyzePlaceholder() {
+  elements.kinAnalyzeStatusLine.textContent =
+    "Analyze is queued as a future reviewed report over captured Kin fields and design-reference guidance.";
+}
+
+function resetKinActionPlaceholders() {
+  elements.chatExportFromInput.value = "";
+  elements.chatExportToInput.value = "";
+  elements.chatExportProgress.hidden = true;
+  elements.chatExportProgress.value = 0;
+  elements.kinAnalyzeStatusLine.textContent = "";
+  elements.chatExportStatusLine.textContent = "";
+}
+
+async function exportSelectedKinChat(exportAll) {
+  if (!state.selectedKinId || state.chatExportSaving) {
+    return;
+  }
+
+  state.chatExportSaving = true;
+  state.chatExportJobId = null;
+  elements.chatExportProgress.hidden = false;
+  elements.chatExportProgress.removeAttribute("value");
+  elements.chatExportStatusLine.textContent = exportAll ? "Preparing full chat export." : "Preparing chat export.";
+  renderActivity();
+
+  try {
+    const result = await window.kinagent.exportKinChat({
+      kinId: state.selectedKinId,
+      fromDate: exportAll ? "" : elements.chatExportFromInput.value,
+      toDate: exportAll ? "" : elements.chatExportToInput.value
+    });
+    state.chatExportJobId = result.jobId || state.chatExportJobId;
+    if (result.ok) {
+      elements.chatExportStatusLine.textContent = `Exported ${result.exportedCount} chat entries to ${result.filePath}.`;
+    } else if (result.canceled) {
+      elements.chatExportStatusLine.textContent = `Export prepared ${result.exportedCount} chat entries; save was canceled.`;
+    } else {
+      elements.chatExportStatusLine.textContent = "Export did not complete.";
+    }
+  } catch (error) {
+    elements.chatExportStatusLine.textContent = error.message || String(error);
+  } finally {
+    state.chatExportSaving = false;
+    state.chatExportJobId = null;
+    elements.chatExportProgress.hidden = true;
+    elements.chatExportProgress.value = 0;
+    renderActivity();
+  }
+}
+
+function renderChatExportProgress(progress) {
+  if (!progress) {
+    return;
+  }
+
+  if (progress.jobId) {
+    state.chatExportJobId = progress.jobId;
+  }
+  elements.chatExportProgress.hidden = false;
+  if (typeof progress.total === "number" && progress.total > 0) {
+    elements.chatExportProgress.max = progress.total;
+    elements.chatExportProgress.value = progress.processed || 0;
+  } else {
+    elements.chatExportProgress.removeAttribute("value");
+  }
+  elements.chatExportStatusLine.textContent = progress.message || "Exporting chat.";
 }
 
 function detailStats(selectedKin, field, capture) {
@@ -1650,6 +1820,7 @@ function clearMissingSelectedKin() {
     state.captureLoading = false;
     state.voiceLoading = false;
     state.ambientLoading = false;
+    resetKinActionPlaceholders();
     state.activeTab = "monitor";
     state.selectedHistoryHash = null;
   }
@@ -1674,6 +1845,18 @@ function tabLabelFor(tab) {
     return "Hermes";
   }
 
+  if (tab === "voice") {
+    return "Voice";
+  }
+
+  if (tab === "analyze") {
+    return "Analyze";
+  }
+
+  if (tab === "export") {
+    return "Export";
+  }
+
   const settingButton = elements.settingTabs.querySelector(`[data-setting="${tab}"]`);
   if (settingButton) {
     return settingButton.textContent?.trim() || "Detail";
@@ -1692,7 +1875,7 @@ function tabForMode(mode) {
     return currentSettingTab();
   }
 
-  return mode === "journal" || mode === "hermes" || mode === "voice" ? mode : "monitor";
+  return ["journal", "hermes", "voice", "analyze", "export"].includes(mode) ? mode : "monitor";
 }
 
 function modeForTab(tab) {
@@ -1704,7 +1887,7 @@ function modeForTab(tab) {
     return "settings";
   }
 
-  return tab === "journal" || tab === "hermes" || tab === "voice" ? tab : "monitor";
+  return ["journal", "hermes", "voice", "analyze", "export"].includes(tab) ? tab : "monitor";
 }
 
 function currentSettingTab() {
@@ -1722,6 +1905,14 @@ function subtitleForDetailMode(mode) {
 
   if (mode === "hermes") {
     return "Hermes configuration";
+  }
+
+  if (mode === "analyze") {
+    return "Kin analysis";
+  }
+
+  if (mode === "export") {
+    return "Chat export";
   }
 
   if (mode === "journal") {

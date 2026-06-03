@@ -93,6 +93,8 @@
           <button class="detail-tab" type="button" data-mode="journal" role="tab" aria-selected="false">Journal</button>
           <button class="detail-tab" type="button" data-mode="hermes" role="tab" aria-selected="false">Hermes</button>
           <button class="detail-tab" type="button" data-mode="voice" role="tab" aria-selected="false">Voice</button>
+          <button class="detail-tab" type="button" data-mode="analyze" role="tab" aria-selected="false">Analyze</button>
+          <button class="detail-tab" type="button" data-mode="export" role="tab" aria-selected="false">Export</button>
         </div>
         <div id="settingTabs" class="setting-tabs" role="tablist" aria-label="Captured setting tabs" hidden>
           <button class="setting-tab active" type="button" data-setting="backstory" role="tab" aria-selected="true">
@@ -353,6 +355,39 @@
                     <button id="kinHermesSaveButton" type="submit">Save Hermes</button>
                   </div>
                 </form>
+                <div id="kinAnalyzePanel" class="kin-action-panel" hidden>
+                  <section class="settings-section">
+                    <h2>Analyze</h2>
+                    <p class="panel-note">
+                      Placeholder for a reviewed Hermes report over captured Kin fields and design-reference guidance.
+                    </p>
+                    <div class="button-row action-button-row">
+                      <button id="kinAnalyzeButton" type="button" class="secondary">Analyze</button>
+                    </div>
+                    <p id="kinAnalyzeStatusLine" class="panel-note"></p>
+                  </section>
+                </div>
+                <div id="chatExportPanel" class="kin-action-panel" hidden>
+                  <section class="settings-section">
+                    <h2>Export</h2>
+                    <div class="settings-grid two">
+                      <label>
+                        From
+                        <input id="chatExportFromInput" type="date" />
+                      </label>
+                      <label>
+                        To
+                        <input id="chatExportToInput" type="date" />
+                      </label>
+                    </div>
+                    <div class="button-row action-button-row">
+                      <button id="chatExportRangeButton" type="button" class="secondary">Export Range</button>
+                      <button id="chatExportAllButton" type="button" class="secondary">Export All</button>
+                    </div>
+                    <progress id="chatExportProgress" class="export-progress" max="100" value="0" hidden></progress>
+                    <p id="chatExportStatusLine" class="panel-note"></p>
+                  </section>
+                </div>
               </div>
               <aside class="timeline">
                 <h2>Timeline</h2>

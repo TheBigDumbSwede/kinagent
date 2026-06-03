@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld("kinagent", {
   setKinVoicePreference: (input) => ipcRenderer.invoke("voice:set-kin-preference", input),
   getKinAmbientPreference: (input) => ipcRenderer.invoke("ambient:get-kin-preference", input),
   setKinAmbientPreference: (input) => ipcRenderer.invoke("ambient:set-kin-preference", input),
+  exportKinChat: (input) => ipcRenderer.invoke("chat-export:kin", input),
   onEvent: (callback) => {
     const listener = (_event, message) => callback(message);
     ipcRenderer.on("app:event", listener);
