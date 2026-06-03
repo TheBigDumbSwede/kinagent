@@ -1,8 +1,11 @@
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 import initSqlJs, { type Database, type SqlJsStatic } from "sql.js";
 import { InMemoryDedupeStore, type DedupeMatch, type DedupeStore, type OutboundMessageRecord } from "./dedupeStore.js";
 import { hashText } from "../util/ids.js";
+
+const require = createRequire(import.meta.url);
 
 export class SQLiteDedupeStore implements DedupeStore {
   private constructor(
@@ -139,9 +142,13 @@ let sqlJsPromise: Promise<SqlJsStatic> | null = null;
 
 function loadSqlJs(): Promise<SqlJsStatic> {
   sqlJsPromise ??= initSqlJs({
-    locateFile: (file) => path.join(process.cwd(), "node_modules", "sql.js", "dist", file)
+    locateFile: resolveSqlJsFile
   });
   return sqlJsPromise;
+}
+
+export function resolveSqlJsFile(file: string): string {
+  return path.join(path.dirname(require.resolve("sql.js/dist/sql-wasm.wasm")), file);
 }
 
 function isOutboundRow(value: unknown): value is OutboundRow {

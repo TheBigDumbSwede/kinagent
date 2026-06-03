@@ -27,21 +27,16 @@ let tray: Tray | null = null;
 let isQuitting = false;
 let loginSession: { browser: Browser; context: BrowserContext } | null = null;
 let runtime: BridgeRuntime | null = null;
+let smokeWindowReady = false;
+let smokeRuntimeReady = false;
 
 app.setName("Kinagent");
 
-void app.whenReady().then(async () => {
-  runtime = await BridgeRuntime.create({
-    config,
-    logger,
-    shouldSkipSessionWarm: () => Boolean(loginSession),
-    onVoicePlayback: (chunk) => sendVoicePlayback(chunk),
-    onEvent: (event) => sendRuntimeEvent(event)
-  });
+void app.whenReady().then(() => {
   createMainWindow();
   createTray();
   registerIpcHandlers();
-  runtime.start();
+  void startRuntime();
 
   app.on("activate", () => {
     showMainWindow();
@@ -77,10 +72,8 @@ function createMainWindow(): void {
   mainWindow.once("ready-to-show", () => {
     mainWindow?.show();
     if (process.env.KINAGENT_DESKTOP_SMOKE === "1") {
-      setTimeout(() => {
-        isQuitting = true;
-        app.quit();
-      }, 1_000);
+      smokeWindowReady = true;
+      maybeCompleteDesktopSmoke();
     }
   });
 
@@ -97,6 +90,41 @@ function createMainWindow(): void {
     event.preventDefault();
     mainWindow?.hide();
   });
+}
+
+async function startRuntime(): Promise<void> {
+  try {
+    runtime = await BridgeRuntime.create({
+      config,
+      logger,
+      shouldSkipSessionWarm: () => Boolean(loginSession),
+      onVoicePlayback: (chunk) => sendVoicePlayback(chunk),
+      onEvent: (event) => sendRuntimeEvent(event)
+    });
+    runtime.start();
+    logger.info("Bridge runtime started.");
+    smokeRuntimeReady = true;
+    maybeCompleteDesktopSmoke();
+    sendRendererEvent("session-updated", await getDesktopStatus());
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.error("Failed to start bridge runtime.", { error: message });
+    sendRendererEvent("runtime-startup-error", { error: message });
+    if (process.env.KINAGENT_DESKTOP_SMOKE === "1") {
+      app.exit(1);
+    }
+  }
+}
+
+function maybeCompleteDesktopSmoke(): void {
+  if (process.env.KINAGENT_DESKTOP_SMOKE !== "1" || !smokeWindowReady || !smokeRuntimeReady) {
+    return;
+  }
+
+  setTimeout(() => {
+    isQuitting = true;
+    app.quit();
+  }, 1_000);
 }
 
 function createTray(): void {

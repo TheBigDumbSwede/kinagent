@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { InMemoryDedupeStore } from "../src/state/dedupeStore.js";
-import { SQLiteDedupeStore } from "../src/state/sqliteStore.js";
+import { resolveSqlJsFile, SQLiteDedupeStore } from "../src/state/sqliteStore.js";
 
 describe("InMemoryDedupeStore", () => {
   it("matches recent outbound messages by Kin and normalized text hash", async () => {
@@ -60,6 +60,21 @@ describe("InMemoryDedupeStore", () => {
 });
 
 describe("SQLiteDedupeStore", () => {
+  it("resolves sql.js assets independently of the launch directory", () => {
+    const originalCwd = process.cwd();
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "kinagent-sqljs-cwd-"));
+
+    try {
+      process.chdir(tempDir);
+      const wasmPath = resolveSqlJsFile("sql-wasm.wasm");
+
+      expect(fs.existsSync(wasmPath)).toBe(true);
+      expect(wasmPath).not.toContain(path.join(tempDir, "node_modules"));
+    } finally {
+      process.chdir(originalCwd);
+    }
+  });
+
   it("persists outbound dedupe records across store instances", async () => {
     vi.setSystemTime(new Date("2026-06-01T12:00:00.000Z"));
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "kinagent-dedupe-"));

@@ -168,6 +168,12 @@ elements.voiceForm.addEventListener("submit", (event) => {
 });
 
 window.kinagent.onEvent((message) => {
+  if (message.channel === "runtime-startup-error") {
+    elements.sessionLine.textContent = message.payload?.error || "Runtime startup failed";
+    elements.monitorLine.textContent = "Runtime startup failed";
+    return;
+  }
+
   if (message.channel === "monitor-line") {
     handleMonitorLine(message.payload);
     return;
