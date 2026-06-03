@@ -359,12 +359,14 @@
                   <section class="settings-section">
                     <h2>Analyze</h2>
                     <p class="panel-note">
-                      Placeholder for a reviewed Hermes report over captured Kin fields and design-reference guidance.
+                      Ask Hermes for a reviewed design report over captured Kin fields and Kindroid design guidance.
                     </p>
                     <div class="button-row action-button-row">
                       <button id="kinAnalyzeButton" type="button" class="secondary">Analyze</button>
                     </div>
+                    <progress id="kinAnalyzeProgress" class="export-progress" max="100" value="0" hidden></progress>
                     <p id="kinAnalyzeStatusLine" class="panel-note"></p>
+                    <div id="kinAnalyzeReport" class="analysis-report" hidden></div>
                   </section>
                 </div>
                 <div id="chatExportPanel" class="kin-action-panel" hidden>

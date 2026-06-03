@@ -10,6 +10,7 @@ import { loadConfig, saveConfig } from "../config/loadConfig.js";
 import type { AppConfig, LogLevel, VoiceProvider } from "../config/types.js";
 import { readCapturedKin } from "../capture/captureReader.js";
 import { exportKinChatTranscript, type KinChatExportProgress } from "../chatExport/chatExport.js";
+import { analyzeKinDesign, type KinAnalysisProgress } from "../kinAnalysis/kinAnalysis.js";
 import { BridgeRuntime, type BridgeRuntimeEvent } from "../runtime/bridgeRuntime.js";
 import type { JournalSuggestion } from "../journal/journalSuggestionStore.js";
 import { createLogger, type Logger } from "../util/logger.js";
@@ -262,6 +263,7 @@ function registerIpcHandlers(): void {
       } = {}
     ) => exportKinChat(input)
   );
+  ipcMain.handle("kin-analyze:run", async (_event, input: { kinId?: string } = {}) => analyzeKin(input.kinId ?? ""));
 }
 
 async function getDesktopStatus() {
@@ -505,6 +507,37 @@ function setKinAmbientPreference(
     ...ambient,
     chatDynamism: savedChatDynamism,
     currentChatDynamism: status?.kin.chatDynamism ?? null
+  };
+}
+
+async function analyzeKin(kinId: string) {
+  if (!kinId) {
+    throw new Error("Select a Kin before running analysis.");
+  }
+
+  const status = requireRuntime()
+    .status()
+    .subscriptions.find((subscription) => subscription.kin.aiId === kinId);
+  const kinName = status?.kin.name || kinId;
+  const jobId = randomUUID();
+  const progress = (payload: KinAnalysisProgress) => {
+    sendRendererEvent("kin-analysis-progress", { jobId, ...payload });
+  };
+  const result = await analyzeKinDesign(
+    config,
+    logger,
+    {
+      kinId,
+      kinName,
+      chatDynamism: status?.kin.chatDynamism,
+      chatDynamismPreference: requireRuntime().getKinChatDynamismPreference(kinId)
+    },
+    progress
+  );
+
+  return {
+    ...result,
+    jobId
   };
 }
 

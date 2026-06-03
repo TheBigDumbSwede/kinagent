@@ -633,6 +633,51 @@ h2 {
   width: 100%;
 }
 
+.analysis-report {
+  display: grid;
+  gap: 10px;
+  max-width: 920px;
+  border: 1px solid #d7e0e8;
+  border-radius: 6px;
+  background: #fbfcfd;
+  padding: 14px 16px;
+  color: #182635;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.analysis-report h2,
+.analysis-report h3,
+.analysis-report h4 {
+  margin: 0;
+  line-height: 1.25;
+}
+
+.analysis-report h2 {
+  font-size: 18px;
+}
+
+.analysis-report h3 {
+  padding-top: 8px;
+  border-top: 1px solid #d7e0e8;
+  font-size: 15px;
+}
+
+.analysis-report h4 {
+  font-size: 14px;
+}
+
+.analysis-report p {
+  overflow-wrap: anywhere;
+}
+
+.analysis-report ul {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding-left: 18px;
+}
+
 .dual-range-control {
   --range-start: 0%;
   --range-end: 100%;

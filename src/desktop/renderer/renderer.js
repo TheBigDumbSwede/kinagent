@@ -37,6 +37,9 @@ const state = {
   appSettingsLoading: false,
   appSettingsSaving: false,
   appSettingsError: null,
+  kinAnalysisRunning: false,
+  kinAnalysisJobId: null,
+  kinAnalysisReport: "",
   chatExportSaving: false,
   chatExportJobId: null
 };
@@ -108,7 +111,9 @@ const elements = {
   chatDynamismMaxValue: document.querySelector("#chatDynamismMaxValue"),
   kinAnalyzePanel: document.querySelector("#kinAnalyzePanel"),
   kinAnalyzeButton: document.querySelector("#kinAnalyzeButton"),
+  kinAnalyzeProgress: document.querySelector("#kinAnalyzeProgress"),
   kinAnalyzeStatusLine: document.querySelector("#kinAnalyzeStatusLine"),
+  kinAnalyzeReport: document.querySelector("#kinAnalyzeReport"),
   chatExportPanel: document.querySelector("#chatExportPanel"),
   chatExportFromInput: document.querySelector("#chatExportFromInput"),
   chatExportToInput: document.querySelector("#chatExportToInput"),
@@ -269,7 +274,9 @@ elements.kinHermesForm.addEventListener("submit", (event) => {
 });
 elements.chatDynamismMinInput.addEventListener("input", syncChatDynamismRangeLabels);
 elements.chatDynamismMaxInput.addEventListener("input", syncChatDynamismRangeLabels);
-elements.kinAnalyzeButton.addEventListener("click", showKinAnalyzePlaceholder);
+elements.kinAnalyzeButton.addEventListener("click", () => {
+  void analyzeSelectedKin();
+});
 elements.chatExportRangeButton.addEventListener("click", () => {
   void exportSelectedKinChat(false);
 });
@@ -314,6 +321,11 @@ window.kinagent.onEvent((message) => {
 
   if (message.channel === "chat-export-progress") {
     renderChatExportProgress(message.payload);
+    return;
+  }
+
+  if (message.channel === "kin-analysis-progress") {
+    renderKinAnalysisProgress(message.payload);
     return;
   }
 
@@ -1154,7 +1166,10 @@ function renderKinAnalyzeTab(selectedKin) {
   elements.kinAnalyzePanel.hidden = false;
   elements.chatExportPanel.hidden = true;
   elements.timeline.hidden = true;
-  renderKinActionStats(selectedKin, "Analysis", "Pending");
+  elements.kinAnalyzeButton.disabled = state.kinAnalysisRunning;
+  elements.kinAnalyzeReport.hidden = !state.kinAnalysisReport;
+  renderMarkdownReport(elements.kinAnalyzeReport, state.kinAnalysisReport);
+  renderKinActionStats(selectedKin, "Analysis", state.kinAnalysisRunning ? "Running" : "Manual");
 }
 
 function renderKinExportTab(selectedKin) {
@@ -1449,18 +1464,117 @@ function hermesStatusLine(preference) {
   return `${ambient}. ${chatDynamism}`;
 }
 
-function showKinAnalyzePlaceholder() {
-  elements.kinAnalyzeStatusLine.textContent =
-    "Analyze is queued as a future reviewed report over captured Kin fields and design-reference guidance.";
-}
-
 function resetKinActionPlaceholders() {
   elements.chatExportFromInput.value = "";
   elements.chatExportToInput.value = "";
+  elements.kinAnalyzeProgress.hidden = true;
+  elements.kinAnalyzeProgress.value = 0;
+  state.kinAnalysisReport = "";
   elements.chatExportProgress.hidden = true;
   elements.chatExportProgress.value = 0;
   elements.kinAnalyzeStatusLine.textContent = "";
+  elements.kinAnalyzeReport.hidden = true;
+  elements.kinAnalyzeReport.replaceChildren();
   elements.chatExportStatusLine.textContent = "";
+}
+
+async function analyzeSelectedKin() {
+  if (!state.selectedKinId || state.kinAnalysisRunning) {
+    return;
+  }
+
+  state.kinAnalysisRunning = true;
+  state.kinAnalysisJobId = null;
+  state.kinAnalysisReport = "";
+  elements.kinAnalyzeProgress.hidden = false;
+  elements.kinAnalyzeProgress.removeAttribute("value");
+  elements.kinAnalyzeStatusLine.textContent = "Preparing Kin analysis.";
+  elements.kinAnalyzeReport.hidden = true;
+  elements.kinAnalyzeReport.replaceChildren();
+  renderActivity();
+
+  try {
+    const result = await window.kinagent.analyzeKin({ kinId: state.selectedKinId });
+    state.kinAnalysisJobId = result.jobId || state.kinAnalysisJobId;
+    state.kinAnalysisReport = result.reportMarkdown || "";
+    renderMarkdownReport(elements.kinAnalyzeReport, state.kinAnalysisReport);
+    elements.kinAnalyzeReport.hidden = !state.kinAnalysisReport;
+    elements.kinAnalyzeStatusLine.textContent = `Analysis complete with ${result.findingCount} finding${
+      result.findingCount === 1 ? "" : "s"
+    }.`;
+  } catch (error) {
+    elements.kinAnalyzeStatusLine.textContent = error.message || String(error);
+  } finally {
+    state.kinAnalysisRunning = false;
+    state.kinAnalysisJobId = null;
+    elements.kinAnalyzeProgress.hidden = true;
+    elements.kinAnalyzeProgress.value = 0;
+    renderActivity();
+  }
+}
+
+function renderKinAnalysisProgress(progress) {
+  if (!progress || !state.kinAnalysisRunning) {
+    return;
+  }
+
+  if (progress.jobId) {
+    state.kinAnalysisJobId = progress.jobId;
+  }
+  if (progress.phase === "complete") {
+    elements.kinAnalyzeProgress.hidden = true;
+    elements.kinAnalyzeProgress.value = 0;
+    elements.kinAnalyzeStatusLine.textContent = progress.message || "Analysis report ready.";
+    return;
+  }
+
+  elements.kinAnalyzeProgress.hidden = false;
+  elements.kinAnalyzeProgress.removeAttribute("value");
+  elements.kinAnalyzeStatusLine.textContent = progress.message || "Running Kin analysis.";
+}
+
+function renderMarkdownReport(container, markdown) {
+  container.replaceChildren();
+  const lines = String(markdown || "").split(/\r?\n/);
+  let list = null;
+
+  const closeList = () => {
+    list = null;
+  };
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) {
+      closeList();
+      continue;
+    }
+
+    const heading = line.match(/^(#{1,3})\s+(.+)$/);
+    if (heading) {
+      closeList();
+      const level = heading[1].length;
+      const element = document.createElement(level === 1 ? "h2" : level === 2 ? "h3" : "h4");
+      element.textContent = heading[2];
+      container.append(element);
+      continue;
+    }
+
+    if (line.startsWith("- ")) {
+      if (!list) {
+        list = document.createElement("ul");
+        container.append(list);
+      }
+      const item = document.createElement("li");
+      item.textContent = line.slice(2);
+      list.append(item);
+      continue;
+    }
+
+    closeList();
+    const paragraph = document.createElement("p");
+    paragraph.textContent = line;
+    container.append(paragraph);
+  }
 }
 
 async function exportSelectedKinChat(exportAll) {
