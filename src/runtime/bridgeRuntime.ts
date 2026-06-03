@@ -68,6 +68,29 @@ export class BridgeRuntime {
     this.journalSuggestions = JournalSuggestionStore.fromConfig(options.config);
     this.hermes = createHermesAdapter(options.config, options.logger, {
       dedupeStore,
+      onAmbientContextSent: (event) => {
+        this.emit({
+          channel: "monitor-line",
+          payload: {
+            type: "kindroid.hermes_context",
+            id: `hermes-${event.requestId}`,
+            kinId: event.aiId,
+            kinName: this.resolveKinName(event.aiId),
+            timestamp: event.timestamp,
+            sender: "hermes",
+            senderLabel: "Hermes",
+            role: null,
+            text: event.internetResponse,
+            textDecrypted: true,
+            textEncrypted: false,
+            visibleMessage: event.visibleMessage,
+            source: event.source || "hermes",
+            reason: event.reason,
+            requestId: event.requestId,
+            idempotencyKey: event.idempotencyKey
+          }
+        });
+      },
       journalSuggestions: options.config.hermes.journalSuggestions.enabled ? this.journalSuggestions : undefined,
       onJournalSuggestionCreated: (suggestion) => {
         this.emit({ channel: "journal-suggestion-created", payload: suggestion });

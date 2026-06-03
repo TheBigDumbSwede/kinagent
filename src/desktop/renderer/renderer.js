@@ -9,6 +9,7 @@ const state = {
   groups: [],
   groupSubscriptions: [],
   monitorRunning: false,
+  sessionAvailable: false,
   kinRefresh: null,
   groupRefresh: null,
   kinsExpanded: false,
@@ -36,6 +37,7 @@ const state = {
 
 const captureRequestTimeoutMs = 12_000;
 const maxMonitorMessages = 500;
+const loginOnboardingMessage = "Use Open Login, then Save Session to begin.";
 const settingTabKeys = new Set(["backstory", "directive", "memory", "example", "scene", "background", "profile"]);
 
 const elements = {
@@ -336,12 +338,12 @@ window.kinagent.onEvent((message) => {
   }
 
   if (message.channel === "kins-refresh-error") {
-    elements.kinRefreshLine.textContent = message.payload || "Kin refresh failed";
+    elements.kinRefreshLine.textContent = refreshErrorLine(message.payload, "Kin refresh failed");
     return;
   }
 
   if (message.channel === "groups-refresh-error") {
-    elements.groupRefreshLine.textContent = message.payload || "Group refresh failed";
+    elements.groupRefreshLine.textContent = refreshErrorLine(message.payload, "Group refresh failed");
   }
 });
 
@@ -361,6 +363,7 @@ function renderStatus(status) {
   state.groupSubscriptions = status.groupSubscriptions || [];
   state.journalSuggestions = status.journalSuggestions || [];
   state.monitorRunning = Boolean(status.monitorRunning);
+  state.sessionAvailable = Boolean(status.session?.available);
   state.kinRefresh = status.kinRefresh || null;
   state.groupRefresh = status.groupRefresh || null;
 
@@ -389,7 +392,7 @@ function renderKinSubscriptions() {
   const disabledCount = totalCount - enabledCount;
 
   if (state.kinRefresh && !state.kinRefresh.ok) {
-    elements.kinRefreshLine.textContent = state.kinRefresh.error || "Kin refresh failed";
+    elements.kinRefreshLine.textContent = refreshErrorLine(state.kinRefresh.error, "Kin refresh failed");
   } else if (totalCount > 0) {
     elements.kinRefreshLine.textContent = [
       `${totalCount} Kins`,
@@ -399,7 +402,7 @@ function renderKinSubscriptions() {
       .filter(Boolean)
       .join(" · ");
   } else {
-    elements.kinRefreshLine.textContent = "Waiting for Kin list";
+    elements.kinRefreshLine.textContent = state.sessionAvailable ? "Waiting for Kin list" : loginOnboardingMessage;
   }
 
   elements.toggleKinsButton.disabled = state.subscriptions.length === 0;
@@ -473,7 +476,7 @@ function renderGroupSubscriptions() {
   const disabledCount = totalCount - enabledCount;
 
   if (state.groupRefresh && !state.groupRefresh.ok) {
-    elements.groupRefreshLine.textContent = state.groupRefresh.error || "Group refresh failed";
+    elements.groupRefreshLine.textContent = refreshErrorLine(state.groupRefresh.error, "Group refresh failed");
   } else if (totalCount > 0) {
     elements.groupRefreshLine.textContent = [
       `${totalCount} groups`,
@@ -483,7 +486,7 @@ function renderGroupSubscriptions() {
       .filter(Boolean)
       .join(" · ");
   } else {
-    elements.groupRefreshLine.textContent = "Waiting for group list";
+    elements.groupRefreshLine.textContent = state.sessionAvailable ? "Waiting for group list" : loginOnboardingMessage;
   }
 
   elements.toggleGroupsButton.disabled = state.groupSubscriptions.length === 0;
@@ -543,6 +546,18 @@ function renderGroupSubscriptions() {
     row.append(checkbox, text, status);
     elements.groupSubscriptionList.append(row);
   }
+}
+
+function refreshErrorLine(error, fallback) {
+  if (!state.sessionAvailable || isMissingSessionError(error)) {
+    return loginOnboardingMessage;
+  }
+
+  return error || fallback;
+}
+
+function isMissingSessionError(error) {
+  return typeof error === "string" && error.includes("No Kindroid browser session found");
 }
 
 function renderMonitorState() {
@@ -1505,7 +1520,7 @@ function withTimeout(promise, timeoutMs, message) {
 }
 
 function handleMonitorLine(payload) {
-  if (payload.type === "kindroid.chat.message") {
+  if (payload.type === "kindroid.chat.message" || payload.type === "kindroid.hermes_context") {
     addMonitorMessage(payload);
     return;
   }

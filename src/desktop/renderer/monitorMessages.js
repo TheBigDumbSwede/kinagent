@@ -15,15 +15,19 @@ export function visibleMonitorMessages(messages, { selectedGroupId, selectedKinI
 export function createMessageElement(message) {
   const item = document.createElement("article");
   item.className = `message ${message.sender || ""}`;
+  if (message.type === "kindroid.hermes_context") {
+    item.classList.add("hermes-context");
+  }
 
   const meta = document.createElement("div");
   meta.className = "message-meta";
   meta.textContent = [
     message.kinName,
     message.groupName,
-    message.sender || "unknown",
+    message.senderLabel || message.sender || "unknown",
+    message.type === "kindroid.hermes_context" && message.source ? `source: ${message.source}` : null,
     formatTime(message.timestamp),
-    message.textDecrypted ? "decrypted" : "not decrypted"
+    message.type === "kindroid.hermes_context" ? null : message.textDecrypted ? "decrypted" : "not decrypted"
   ]
     .filter(Boolean)
     .join(" · ");
@@ -31,6 +35,13 @@ export function createMessageElement(message) {
   const text = document.createElement("p");
   text.textContent = message.text || "";
 
-  item.append(meta, text);
+  item.append(meta);
+  if (message.type === "kindroid.hermes_context" && message.visibleMessage) {
+    const visible = document.createElement("p");
+    visible.className = "message-secondary";
+    visible.textContent = `Visible turn: ${message.visibleMessage}`;
+    item.append(visible);
+  }
+  item.append(text);
   return item;
 }

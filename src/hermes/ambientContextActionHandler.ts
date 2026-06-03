@@ -34,21 +34,35 @@ export interface KindroidAmbientContextSender {
   }): Promise<SendKindroidMessageResult>;
 }
 
+export interface AmbientContextSentEvent {
+  aiId: string;
+  documentId: string;
+  timestamp: string;
+  visibleMessage: string;
+  internetResponse: string;
+  source?: string;
+  reason?: string;
+  requestId: string;
+  idempotencyKey: string;
+}
+
 export class AmbientContextActionHandler implements HermesActionHandler<SendAmbientContextTurnAction> {
   constructor(
     private readonly logger: Logger,
     private readonly kindroidClient: KindroidAmbientContextSender,
-    private readonly dedupeStore: DedupeStore
+    private readonly dedupeStore: DedupeStore,
+    private readonly onAmbientContextSent?: (event: AmbientContextSentEvent) => void
   ) {}
 
   promptLines(): string[] {
     return [
-      'For active, immediate hidden context injection in direct Kin chats, you may request: {"type":"send_ambient_context_turn","ai_id":"<same direct chat ai_id>","ambient_message":"<small diegetic ambient beat fitted to the current conversation and current setting>","context":"<concise hidden operational context>","source":"<source or tool name>","confidence":"high","suggested_use":"<how the Kin should use this context if relevant>"}.',
+      'For direct Kin chats, you may request an immediate hidden context injection: {"type":"send_ambient_context_turn","ai_id":"<same direct chat ai_id>","ambient_message":"<small diegetic ambient beat fitted to the current conversation and current setting>","context":"<concise hidden operational context>","source":"<source or tool name>","confidence":"high","suggested_use":"<how the Kin should use this context if relevant>"}.',
       "Do not use send_ambient_context_turn for group chats. The group endpoint accepts internet_response but live diagnostics show group AI responses do not consume it.",
-      "Use send_ambient_context_turn only when a direct Kin needs immediate per-turn context that should not be dumped visibly into chat.",
+      "Use send_ambient_context_turn only when a direct Kin needs immediate per-turn operational context that should not be dumped visibly into chat.",
+      "Do not use send_ambient_context_turn as a substitute for other registered actions: use update_current_scene or update_group_current_scene for current setting changes, and journal suggestions for reviewed durable memory.",
       "The ambient_message is visible in the Kindroid transcript; the context is attached through internet_response.",
       ...ambientHermesMessageGuardrails.map((line) => `Ambient message guardrail: ${line}`),
-      "Do not use send_ambient_context_turn for durable memory. Use journal suggestions for reviewed durable recall and current_scene for tiny scene state."
+      "If the only useful action is a current setting update or journal proposal, do not add an ambient context turn."
     ];
   }
 
@@ -156,6 +170,18 @@ export class AmbientContextActionHandler implements HermesActionHandler<SendAmbi
     await this.dedupeStore.recordOutbound({
       kinId: notification.kinId,
       text: turn.visibleMessage,
+      requestId,
+      idempotencyKey
+    });
+
+    this.onAmbientContextSent?.({
+      aiId: notification.kinId,
+      documentId: notification.documentId,
+      timestamp: new Date().toISOString(),
+      visibleMessage: turn.visibleMessage,
+      internetResponse: turn.internetResponse,
+      source: action.source,
+      reason: action.reason,
       requestId,
       idempotencyKey
     });

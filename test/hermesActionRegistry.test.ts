@@ -44,6 +44,7 @@ describe("Hermes action registry", () => {
     expect(prompt).toContain("send_ambient_context_turn");
     expect(prompt).toContain("current conversation and current setting");
     expect(prompt).toContain("Do not use send_ambient_context_turn for group chats");
+    expect(prompt).toContain("Do not use send_ambient_context_turn as a substitute for other registered actions");
   });
 
   it("registers journal suggestion actions when storage is available", () => {

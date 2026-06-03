@@ -34,6 +34,15 @@ describe("ambient context turns", () => {
     expect(turn.internetResponse).toContain("A new route is available through the maintenance corridor.");
   });
 
+  it("wraps supplied visible messages in narration delimiters", () => {
+    const turn = buildAmbientHermesContextTurn({
+      ambientMessage: "The console gives a soft two-note chime.",
+      hermesResult: "The north service door is now unlocked."
+    });
+
+    expect(turn.visibleMessage).toBe("*The console gives a soft two-note chime.*");
+  });
+
   it("selects a tone-specific visible message", () => {
     const turn = buildAmbientContextTurn({
       tone: "storm",

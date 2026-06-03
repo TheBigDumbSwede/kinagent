@@ -4,7 +4,11 @@ import { type JournalSuggestion, type JournalSuggestionStore } from "../journal/
 import type { DedupeStore } from "../state/dedupeStore.js";
 import type { AppConfig } from "../config/types.js";
 import type { Logger } from "../util/logger.js";
-import { AmbientContextActionHandler, isAmbientContextSender } from "./ambientContextActionHandler.js";
+import {
+  AmbientContextActionHandler,
+  isAmbientContextSender,
+  type AmbientContextSentEvent
+} from "./ambientContextActionHandler.js";
 import {
   CurrentSceneActionHandler,
   type HermesActionHandler,
@@ -17,6 +21,7 @@ export interface HermesActionRegistryOptions {
   onJournalSuggestionCreated?: (suggestion: JournalSuggestion) => void;
   journalContextProvider?: (notification: KindroidChatNotification) => Promise<JournalSuggestionContext>;
   dedupeStore?: DedupeStore;
+  onAmbientContextSent?: (event: AmbientContextSentEvent) => void;
 }
 
 export interface HermesActionRegistry {
@@ -72,7 +77,14 @@ export function createHermesActionRegistry(input: {
     | undefined;
 
   if (options.dedupeStore && isAmbientContextSender(input.kindroidClient)) {
-    handlers.push(new AmbientContextActionHandler(input.logger, input.kindroidClient, options.dedupeStore));
+    handlers.push(
+      new AmbientContextActionHandler(
+        input.logger,
+        input.kindroidClient,
+        options.dedupeStore,
+        options.onAmbientContextSent
+      )
+    );
   }
 
   if (options.journalSuggestions) {

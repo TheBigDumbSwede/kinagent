@@ -135,6 +135,7 @@ describe("HermesChatAdapter", () => {
   it("lets Hermes send an ambient context turn for direct Kin chat", async () => {
     const kindroid = testKindroidClient();
     const dedupeStore = new InMemoryDedupeStore(60_000);
+    const onAmbientContextSent = vi.fn();
     vi.stubGlobal(
       "fetch",
       vi.fn(async () =>
@@ -147,7 +148,7 @@ describe("HermesChatAdapter", () => {
                     {
                       type: "send_ambient_context_turn",
                       ai_id: "kin-1",
-                      ambient_message: "*The console gives a soft two-note chime.*",
+                      ambient_message: "The console gives a soft two-note chime.",
                       context: "The north service door is now unlocked.",
                       source: "tool:door-control",
                       confidence: "high",
@@ -162,7 +163,7 @@ describe("HermesChatAdapter", () => {
       )
     );
 
-    const adapter = new HermesChatAdapter(testConfig(), logger, kindroid, { dedupeStore });
+    const adapter = new HermesChatAdapter(testConfig(), logger, kindroid, { dedupeStore, onAmbientContextSent });
     await adapter.handleChatChanged({
       type: "kindroid.chat.changed",
       kinId: "kin-1",
@@ -189,6 +190,17 @@ describe("HermesChatAdapter", () => {
     await expect(
       dedupeStore.matchRecentOutbound({ kinId: "kin-1", text: "*The console gives a soft two-note chime.*" })
     ).resolves.toEqual(expect.objectContaining({ matched: true }));
+    expect(onAmbientContextSent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        aiId: "kin-1",
+        documentId: "doc-1",
+        visibleMessage: "*The console gives a soft two-note chime.*",
+        internetResponse: expect.stringContaining("The north service door is now unlocked."),
+        source: "tool:door-control",
+        requestId: expect.any(String),
+        idempotencyKey: expect.any(String)
+      })
+    );
     expect(logger.info).toHaveBeenCalledWith(
       "Hermes ambient context action requested.",
       expect.objectContaining({

@@ -104,9 +104,12 @@ Guardrails:
 
 ## Ambient Context Turns
 
-Ambient context turns are registered as Hermes' active context-injection path for direct Kin chats. This is currently the
-only Hermes action that can inject immediate context into the next Kindroid response without putting the operational
-context into visible chat text.
+Ambient context turns are registered as a peer Hermes action beside current-scene updates and journal suggestions. They
+are not the default route for all Hermes output. Use them only when a direct Kin needs immediate hidden per-turn
+operational context without putting that operational context into visible chat text.
+
+This is currently the only Hermes action that can inject immediate context into the next direct-Kin response without
+making the operational content overt in the transcript.
 
 Direct Kin request:
 
@@ -114,7 +117,7 @@ Direct Kin request:
 {
   "type": "send_ambient_context_turn",
   "ai_id": "<same direct chat ai_id>",
-  "ambient_message": "<small diegetic ambient beat fitted to the current conversation and current setting>",
+  "ambient_message": "<small asterisk-delimited diegetic ambient beat fitted to the current conversation and current setting>",
   "context": "<concise hidden operational context>",
   "source": "<source or tool name>",
   "confidence": "high",
@@ -126,7 +129,9 @@ Execution:
 
 - The handler builds a hidden `Hermes context packet` and sends it through `internet_response`.
 - The visible Kindroid `message` is only the `ambient_message`.
+- The visible message is normalized to leading and trailing asterisks so Kindroid formats it as narration.
 - The handler records outbound dedupe before sending so the bridge can suppress its own visible ambient echo.
+- The desktop Monitor receives a local `Hermes` entry containing the hidden packet that Kinagent sent.
 - Direct sends use Kindroid's observed `/v1/send-message` payload.
 - Group sends are not registered for Hermes ambient context. The observed `/v1/groupchats-user-message` payload accepts
   `internet_response`, but live diagnostics currently classify it as accepted-but-not-used by group AI responses.
@@ -134,8 +139,12 @@ Execution:
 Guardrails:
 
 - Use this only when a direct Kin needs immediate per-turn context that should not be dumped visibly into chat.
+- Do not use this as a substitute for other registered actions. Use `update_current_scene` or
+  `update_group_current_scene` for current setting changes, and journal suggestions for reviewed durable memory.
+- If the only useful action is a current setting update or journal proposal, do not add an ambient context turn.
 - The ambient message is visible and should be small, diegetic, and contextually appropriate to the current conversation
   and saved current scene when available.
+- The ambient message should be a single narration line delimited with asterisks.
 - The ambient message must not mention Hermes, tools, diagnostics, hidden context, `internet_response`, codenames, or the
   operational facts carried in the hidden context.
 - The context should be summarized and non-secret. Hidden does not mean private from Kindroid.

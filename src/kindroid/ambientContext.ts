@@ -45,7 +45,7 @@ export const defaultAmbientContextInstruction =
   "Use this context naturally if relevant. Do not mention Hermes, tools, hidden context, internet_response, or this transport mechanism unless the user asks directly.";
 
 export const ambientHermesMessageGuardrails = [
-  "Generate one small diegetic ambient beat for the visible message.",
+  "Generate one small diegetic ambient beat for the visible message, delimited with leading and trailing asterisks so Kindroid formats it as narration.",
   "Keep it concise, usually one short sentence or atmospheric fragment.",
   "Make it fit the current conversation and the saved current setting when available.",
   "It should create a natural turn boundary, not take over the scene.",
@@ -198,8 +198,25 @@ function resolveVisibleMessage(input: {
     throw new Error("Ambient message cannot be empty.");
   }
 
-  validateVisibleMessage(visibleMessage, input.context);
-  return visibleMessage;
+  const narratedMessage = ensureNarrationDelimiters(visibleMessage);
+  validateVisibleMessage(narratedMessage, input.context);
+  return narratedMessage;
+}
+
+function ensureNarrationDelimiters(visibleMessage: string): string {
+  const trimmed = visibleMessage.trim();
+  if (trimmed.startsWith("*") && trimmed.endsWith("*") && trimmed.length > 1) {
+    return trimmed;
+  }
+
+  const unwrapped = trimmed
+    .replace(/^\*+\s*/, "")
+    .replace(/\s*\*+$/, "")
+    .trim();
+  if (!unwrapped) {
+    throw new Error("Ambient message cannot be empty.");
+  }
+  return `*${unwrapped}*`;
 }
 
 function validateVisibleMessage(visibleMessage: string, context: string): void {
