@@ -556,7 +556,8 @@ h2 {
   background: #ffebe9;
 }
 
-.voice-form {
+.voice-form,
+.kin-hermes-form {
   display: grid;
   align-content: start;
   gap: 16px;

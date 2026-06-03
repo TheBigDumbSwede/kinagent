@@ -10,6 +10,7 @@ export interface KinSubscriptionStatus {
   kin: KindroidKin;
   enabled: boolean;
   running: boolean;
+  ambientContextEnabled: boolean;
 }
 
 export type KinRefreshState =
@@ -33,13 +34,19 @@ export interface KinSubscriptionSupervisorOptions {
 
 export class KinSubscriptionSupervisor {
   private readonly inner: SubscriptionSupervisor<KindroidKin>;
+  private readonly disabledKinIds: Set<string>;
+  private readonly ambientDisabledKinIds: Set<string>;
+  private readonly config: AppConfig;
 
   constructor(options: KinSubscriptionSupervisorOptions) {
+    this.config = options.config;
     const preferences = loadKinSubscriptionPreferences(options.config);
+    this.disabledKinIds = preferences.disabledKinIds;
+    this.ambientDisabledKinIds = preferences.ambientDisabledKinIds;
     this.inner = new SubscriptionSupervisor({
       refreshMs: options.refreshMs,
       pageSize: options.pageSize,
-      disabledIds: preferences.disabledKinIds,
+      disabledIds: this.disabledKinIds,
       listResources: async () => {
         const client = new KindroidApiClient(options.config, options.logger);
         return client.kins.list();
@@ -53,10 +60,13 @@ export class KinSubscriptionSupervisor {
         current: false
       }),
       saveDisabledIds: (disabledKinIds) => {
-        saveKinSubscriptionPreferences(options.config, { disabledKinIds });
+        saveKinSubscriptionPreferences(options.config, {
+          disabledKinIds,
+          ambientDisabledKinIds: this.ambientDisabledKinIds
+        });
       },
       startResource: options.startKin,
-      onResourcesUpdated: (statuses) => options.onKinsUpdated?.(toKinStatuses(statuses)),
+      onResourcesUpdated: (statuses) => options.onKinsUpdated?.(this.toKinStatuses(statuses)),
       onRefreshError: options.onRefreshError,
       onMonitorStarted: options.onMonitorStarted,
       onMonitorStopped: options.onMonitorStopped,
@@ -85,12 +95,33 @@ export class KinSubscriptionSupervisor {
     await this.inner.setEnabled(kinId, enabled);
   }
 
+  setKinAmbientContextEnabled(kinId: string, enabled: boolean): void {
+    if (!kinId) {
+      throw new Error("Missing Kin id.");
+    }
+
+    if (enabled) {
+      this.ambientDisabledKinIds.delete(kinId);
+    } else {
+      this.ambientDisabledKinIds.add(kinId);
+    }
+
+    saveKinSubscriptionPreferences(this.config, {
+      disabledKinIds: this.disabledKinIds,
+      ambientDisabledKinIds: this.ambientDisabledKinIds
+    });
+  }
+
+  isKinAmbientContextEnabled(kinId: string): boolean {
+    return !this.ambientDisabledKinIds.has(kinId);
+  }
+
   stopAll(reason: KinMonitorStopReason = "manual"): void {
     this.inner.stopAll(reason);
   }
 
   statuses(): KinSubscriptionStatus[] {
-    return toKinStatuses(this.inner.statuses());
+    return this.toKinStatuses(this.inner.statuses());
   }
 
   runningCount(): number {
@@ -100,12 +131,13 @@ export class KinSubscriptionSupervisor {
   refreshState(): KinRefreshState {
     return this.inner.refreshState() as KinRefreshState;
   }
-}
 
-function toKinStatuses(statuses: SubscriptionStatus<KindroidKin>[]): KinSubscriptionStatus[] {
-  return statuses.map((status) => ({
-    kin: status.resource,
-    enabled: status.enabled,
-    running: status.running
-  }));
+  private toKinStatuses(statuses: SubscriptionStatus<KindroidKin>[]): KinSubscriptionStatus[] {
+    return statuses.map((status) => ({
+      kin: status.resource,
+      enabled: status.enabled,
+      running: status.running,
+      ambientContextEnabled: this.isKinAmbientContextEnabled(status.resource.aiId)
+    }));
+  }
 }

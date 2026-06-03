@@ -46,6 +46,9 @@ The manual CLI currently sends direct Kin ambient turns. Hermes may use the regi
 Group `internet_response` remains diagnostic-only because live tests show the group endpoint accepts the field but group
 AI responses do not consume it.
 
+Ambient context is allowed per Kin by default. In the desktop app, use the Kin Hermes tab to disable ambient context for
+individual Kins that should not receive hidden Hermes injections.
+
 ```powershell
 npm run ambient-context -- --kin "abc123" --tone storm --context "Hermes context: The north service door is now unlocked. The backup generator is still offline."
 ```

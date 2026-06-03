@@ -91,6 +91,7 @@
             Captured
           </button>
           <button class="detail-tab" type="button" data-mode="journal" role="tab" aria-selected="false">Journal</button>
+          <button class="detail-tab" type="button" data-mode="hermes" role="tab" aria-selected="false">Hermes</button>
           <button class="detail-tab" type="button" data-mode="voice" role="tab" aria-selected="false">Voice</button>
         </div>
         <div id="settingTabs" class="setting-tabs" role="tablist" aria-label="Captured setting tabs" hidden>
@@ -288,6 +289,23 @@
                   <p id="voiceStatusLine" class="panel-note"></p>
                   <div class="button-row narrow">
                     <button id="voiceSaveButton" type="submit">Save Voice</button>
+                  </div>
+                </form>
+                <form id="kinHermesForm" class="kin-hermes-form" hidden>
+                  <section class="settings-section">
+                    <h2>Ambient Context</h2>
+                    <label class="checkbox-label">
+                      <input id="ambientContextEnabledInput" type="checkbox" />
+                      <span>Allow ambient Hermes context</span>
+                    </label>
+                    <p class="panel-note">
+                      Lets Hermes send small narrated turns with hidden context for this Kin. Disable this if the extra
+                      context feels intrusive.
+                    </p>
+                  </section>
+                  <p id="kinHermesStatusLine" class="panel-note"></p>
+                  <div class="button-row narrow">
+                    <button id="kinHermesSaveButton" type="submit">Save Hermes</button>
                   </div>
                 </form>
               </div>

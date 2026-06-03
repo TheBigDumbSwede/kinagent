@@ -18,6 +18,7 @@ const state = {
   selectedGroupId: null,
   selectedKinCapture: null,
   selectedKinVoice: null,
+  selectedKinAmbient: null,
   journalSuggestions: [],
   journalSavingId: null,
   journalError: null,
@@ -26,6 +27,9 @@ const state = {
   voiceLoading: false,
   voiceError: null,
   voiceSaving: false,
+  ambientLoading: false,
+  ambientError: null,
+  ambientSaving: false,
   activeTab: "monitor",
   selectedHistoryHash: null,
   monitorMessages: [],
@@ -85,6 +89,10 @@ const elements = {
   settingsElevenLabsModelInput: document.querySelector("#settingsElevenLabsModelInput"),
   settingsElevenLabsOutputFormatInput: document.querySelector("#settingsElevenLabsOutputFormatInput"),
   voiceForm: document.querySelector("#voiceForm"),
+  kinHermesForm: document.querySelector("#kinHermesForm"),
+  ambientContextEnabledInput: document.querySelector("#ambientContextEnabledInput"),
+  kinHermesStatusLine: document.querySelector("#kinHermesStatusLine"),
+  kinHermesSaveButton: document.querySelector("#kinHermesSaveButton"),
   voiceEnabledInput: document.querySelector("#voiceEnabledInput"),
   filterNarrationInput: document.querySelector("#filterNarrationInput"),
   voiceProviderInput: document.querySelector("#voiceProviderInput"),
@@ -172,6 +180,9 @@ elements.detailTabs.addEventListener("click", (event) => {
   if (state.activeTab === "voice" && state.selectedKinId && !state.selectedKinVoice && !state.voiceLoading) {
     void loadKinVoice(state.selectedKinId);
   }
+  if (state.activeTab === "hermes" && state.selectedKinId && !state.selectedKinAmbient && !state.ambientLoading) {
+    void loadKinAmbient(state.selectedKinId);
+  }
   renderActivity();
 });
 elements.kinDetailTabs.addEventListener("click", (event) => {
@@ -191,6 +202,9 @@ elements.kinDetailTabs.addEventListener("click", (event) => {
   state.activeTab = nextTab;
   if (state.activeTab === "voice" && state.selectedKinId && !state.selectedKinVoice && !state.voiceLoading) {
     void loadKinVoice(state.selectedKinId);
+  }
+  if (state.activeTab === "hermes" && state.selectedKinId && !state.selectedKinAmbient && !state.ambientLoading) {
+    void loadKinAmbient(state.selectedKinId);
   }
   renderActivity();
 });
@@ -223,6 +237,10 @@ elements.appSettingsForm.addEventListener("submit", (event) => {
 elements.voiceForm.addEventListener("submit", (event) => {
   event.preventDefault();
   void saveSelectedKinVoice();
+});
+elements.kinHermesForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  void saveSelectedKinAmbient();
 });
 
 window.kinagent.onEvent((message) => {
@@ -610,12 +628,15 @@ async function selectKin(kinId) {
   state.captureError = null;
   state.selectedKinCapture = null;
   state.selectedKinVoice = null;
+  state.selectedKinAmbient = null;
   state.journalError = null;
   state.voiceError = null;
+  state.ambientError = null;
   renderKinSubscriptions();
   renderGroupSubscriptions();
   renderActivity();
   void loadKinVoice(kinId);
+  void loadKinAmbient(kinId);
 
   try {
     state.selectedKinCapture = await withTimeout(
@@ -644,8 +665,11 @@ function selectGroup(groupId) {
   state.captureError = null;
   state.selectedKinCapture = null;
   state.selectedKinVoice = null;
+  state.selectedKinAmbient = null;
   state.voiceError = null;
+  state.ambientError = null;
   state.voiceLoading = false;
+  state.ambientLoading = false;
   renderKinSubscriptions();
   renderGroupSubscriptions();
   renderMonitorState();
@@ -663,6 +687,21 @@ async function loadKinVoice(kinId) {
     state.voiceError = error.message || String(error);
   } finally {
     state.voiceLoading = false;
+    renderActivity();
+  }
+}
+
+async function loadKinAmbient(kinId) {
+  state.ambientLoading = true;
+  state.ambientError = null;
+  renderActivity();
+
+  try {
+    state.selectedKinAmbient = await window.kinagent.getKinAmbientPreference({ kinId });
+  } catch (error) {
+    state.ambientError = error.message || String(error);
+  } finally {
+    state.ambientLoading = false;
     renderActivity();
   }
 }
@@ -687,6 +726,7 @@ function renderActivity() {
   const activeMode = modeForTab(activeTab);
   const isMonitor = activeMode === "monitor";
   const isVoice = activeMode === "voice";
+  const isHermes = activeMode === "hermes";
   const isAppSettings = activeMode === "app-settings";
 
   renderJournalTabBadge();
@@ -694,13 +734,13 @@ function renderActivity() {
     button.hidden = Boolean(state.selectedGroupId && button.dataset.mode === "settings");
     const selected =
       button.dataset.mode === activeMode ||
-      (button.dataset.mode === "settings" && ["settings", "journal", "voice"].includes(activeMode));
+      (button.dataset.mode === "settings" && ["settings", "journal", "hermes", "voice"].includes(activeMode));
     button.classList.toggle("active", selected);
     button.setAttribute("aria-selected", String(selected));
   }
 
   elements.kinDetailTabs.hidden = Boolean(
-    state.selectedGroupId || !state.selectedKinId || !["settings", "journal", "voice"].includes(activeMode)
+    state.selectedGroupId || !state.selectedKinId || !["settings", "journal", "hermes", "voice"].includes(activeMode)
   );
   for (const button of elements.kinDetailTabs.querySelectorAll("[data-mode]")) {
     const selected = button.dataset.mode === activeMode;
@@ -755,6 +795,11 @@ function renderActivity() {
     return;
   }
 
+  if (isHermes) {
+    renderKinHermesTab(selectedKin);
+    return;
+  }
+
   if (state.captureLoading) {
     renderDetailEmpty("Loading captured settings.");
     return;
@@ -792,6 +837,8 @@ function renderDetailEmpty(message) {
   elements.kinDetailContent.hidden = true;
   elements.kinDetailContent.classList.remove("app-settings-content");
   elements.appSettingsForm.hidden = true;
+  elements.voiceForm.hidden = true;
+  elements.kinHermesForm.hidden = true;
 }
 
 function renderDetailContent({ content, history, stats }) {
@@ -802,6 +849,7 @@ function renderDetailContent({ content, history, stats }) {
   elements.journalSuggestionPanel.hidden = true;
   elements.appSettingsForm.hidden = true;
   elements.voiceForm.hidden = true;
+  elements.kinHermesForm.hidden = true;
   elements.timeline.hidden = false;
   const selectedEntryIndex = history.findIndex((entry) => entry.hash === state.selectedHistoryHash);
   const selectedEntry = selectedEntryIndex >= 0 ? history[selectedEntryIndex] : null;
@@ -885,6 +933,7 @@ function renderAppSettingsTab() {
   elements.fieldContent.hidden = true;
   elements.journalSuggestionPanel.hidden = true;
   elements.voiceForm.hidden = true;
+  elements.kinHermesForm.hidden = true;
   elements.appSettingsForm.hidden = false;
   elements.timeline.hidden = true;
   elements.detailStats.replaceChildren();
@@ -973,6 +1022,7 @@ function renderVoiceTab(selectedKin) {
   elements.journalSuggestionPanel.hidden = true;
   elements.appSettingsForm.hidden = true;
   elements.voiceForm.hidden = false;
+  elements.kinHermesForm.hidden = true;
   elements.timeline.hidden = true;
   elements.voiceEnabledInput.checked = Boolean(preference.enabled);
   elements.voiceProviderInput.value = preference.provider || "openai";
@@ -985,6 +1035,59 @@ function renderVoiceTab(selectedKin) {
   renderVoiceProviderFields();
   renderVoiceStatusLine();
   renderVoiceStats(selectedKin, preference);
+}
+
+function renderKinHermesTab(selectedKin) {
+  if (state.ambientLoading) {
+    renderDetailEmpty("Loading Hermes settings.");
+    return;
+  }
+
+  if (state.ambientError) {
+    renderDetailEmpty(state.ambientError);
+    return;
+  }
+
+  if (!state.selectedKinAmbient?.ok) {
+    renderDetailEmpty("No Hermes settings found for this Kin.");
+    return;
+  }
+
+  elements.kinDetailEmpty.hidden = true;
+  elements.kinDetailContent.hidden = false;
+  elements.kinDetailContent.classList.remove("app-settings-content");
+  elements.fieldContent.hidden = true;
+  elements.journalSuggestionPanel.hidden = true;
+  elements.appSettingsForm.hidden = true;
+  elements.voiceForm.hidden = true;
+  elements.kinHermesForm.hidden = false;
+  elements.timeline.hidden = true;
+  elements.ambientContextEnabledInput.checked = state.selectedKinAmbient.enabled !== false;
+  elements.kinHermesSaveButton.disabled = state.ambientSaving;
+  elements.kinHermesStatusLine.textContent = state.selectedKinAmbient.enabled
+    ? "Ambient Hermes context is allowed for this Kin."
+    : "Ambient Hermes context is disabled for this Kin.";
+  renderKinHermesStats(selectedKin, state.selectedKinAmbient);
+}
+
+function renderKinHermesStats(selectedKin, preference) {
+  const stats = [
+    { label: "Kin", value: selectedKin?.name || state.selectedKinId || "Unknown" },
+    { label: "Ambient", value: preference.enabled ? "Enabled" : "Off" },
+    { label: "Preference", value: "Per Kin" },
+    { label: "Mode", value: "Hidden context" }
+  ];
+
+  elements.detailStats.replaceChildren();
+  for (const stat of stats) {
+    const item = document.createElement("div");
+    const label = document.createElement("span");
+    label.textContent = stat.label;
+    const value = document.createElement("strong");
+    value.textContent = stat.value;
+    item.append(label, value);
+    elements.detailStats.append(item);
+  }
 }
 
 function renderVoiceStats(selectedKin, preference) {
@@ -1132,6 +1235,33 @@ async function saveSelectedKinVoice() {
     state.voiceError = error.message || String(error);
   } finally {
     state.voiceSaving = false;
+    renderActivity();
+  }
+}
+
+async function saveSelectedKinAmbient() {
+  if (!state.selectedKinId) {
+    return;
+  }
+
+  state.ambientSaving = true;
+  renderActivity();
+  try {
+    state.selectedKinAmbient = await window.kinagent.setKinAmbientPreference({
+      kinId: state.selectedKinId,
+      enabled: elements.ambientContextEnabledInput.checked
+    });
+    state.subscriptions = state.subscriptions.map((subscription) =>
+      subscription.kin?.aiId === state.selectedKinId
+        ? { ...subscription, ambientContextEnabled: state.selectedKinAmbient.enabled }
+        : subscription
+    );
+    state.ambientError = null;
+    elements.monitorLine.textContent = "Hermes settings saved.";
+  } catch (error) {
+    state.ambientError = error.message || String(error);
+  } finally {
+    state.ambientSaving = false;
     renderActivity();
   }
 }
@@ -1431,10 +1561,13 @@ function clearMissingSelectedKin() {
     state.selectedKinId = null;
     state.selectedKinCapture = null;
     state.selectedKinVoice = null;
+    state.selectedKinAmbient = null;
     state.captureError = null;
     state.voiceError = null;
+    state.ambientError = null;
     state.captureLoading = false;
     state.voiceLoading = false;
+    state.ambientLoading = false;
     state.activeTab = "monitor";
     state.selectedHistoryHash = null;
   }
@@ -1455,6 +1588,10 @@ function tabLabelFor(tab) {
     return "Journal";
   }
 
+  if (tab === "hermes") {
+    return "Hermes";
+  }
+
   const settingButton = elements.settingTabs.querySelector(`[data-setting="${tab}"]`);
   if (settingButton) {
     return settingButton.textContent?.trim() || "Detail";
@@ -1473,7 +1610,7 @@ function tabForMode(mode) {
     return currentSettingTab();
   }
 
-  return mode === "journal" || mode === "voice" ? mode : "monitor";
+  return mode === "journal" || mode === "hermes" || mode === "voice" ? mode : "monitor";
 }
 
 function modeForTab(tab) {
@@ -1485,7 +1622,7 @@ function modeForTab(tab) {
     return "settings";
   }
 
-  return tab === "journal" || tab === "voice" ? tab : "monitor";
+  return tab === "journal" || tab === "hermes" || tab === "voice" ? tab : "monitor";
 }
 
 function currentSettingTab() {
@@ -1499,6 +1636,10 @@ function subtitleForDetailMode(mode) {
 
   if (mode === "voice") {
     return "Voice configuration";
+  }
+
+  if (mode === "hermes") {
+    return "Hermes configuration";
   }
 
   if (mode === "journal") {

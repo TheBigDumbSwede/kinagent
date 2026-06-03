@@ -269,6 +269,59 @@ describe("HermesChatAdapter", () => {
     );
   });
 
+  it("does not send ambient context when disabled for the Kin", async () => {
+    const kindroid = testKindroidClient();
+    const dedupeStore = new InMemoryDedupeStore(60_000);
+    const onAmbientContextSent = vi.fn();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  actions: [
+                    {
+                      type: "send_ambient_context_turn",
+                      ai_id: "kin-1",
+                      ambient_message: "*The console gives a soft two-note chime.*",
+                      context: "The north service door is now unlocked.",
+                      source: "tool:door-control",
+                      confidence: "high"
+                    }
+                  ]
+                })
+              }
+            }
+          ]
+        })
+      )
+    );
+
+    const adapter = new HermesChatAdapter(testConfig(), logger, kindroid, {
+      dedupeStore,
+      onAmbientContextSent,
+      isAmbientContextEnabled: () => false
+    });
+    await adapter.handleChatChanged({
+      type: "kindroid.chat.changed",
+      kinId: "kin-1",
+      documentId: "doc-1",
+      timestamp: "2026-06-01T12:00:00.000Z",
+      text: "Check the north service door.",
+      sender: "user",
+      role: null,
+      source: "firestore"
+    });
+
+    expect(kindroid.sendMessage).not.toHaveBeenCalled();
+    expect(onAmbientContextSent).not.toHaveBeenCalled();
+    await expect(
+      dedupeStore.matchRecentOutbound({ kinId: "kin-1", text: "*The console gives a soft two-note chime.*" })
+    ).resolves.toEqual({ matched: false });
+  });
+
   it("does not send unreadable encrypted text to Hermes", async () => {
     const kindroid = testKindroidUpdater();
     const fetchMock = vi.fn();

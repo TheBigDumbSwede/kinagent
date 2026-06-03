@@ -127,6 +127,7 @@ Direct Kin request:
 
 Execution:
 
+- Ambient context is allowed per Kin by default. The desktop Kin Hermes tab can disable it for individual Kins.
 - The handler builds a hidden `Hermes context packet` and sends it through `internet_response`.
 - The visible Kindroid `message` is only the `ambient_message`.
 - The visible message is normalized to leading and trailing asterisks so Kindroid formats it as narration.

@@ -11,7 +11,7 @@ import {
   type KindroidSceneUpdater
 } from "./currentSceneActionHandler.js";
 import { createHermesActionRegistry } from "./actionRegistry.js";
-import type { AmbientContextSentEvent } from "./ambientContextActionHandler.js";
+import type { AmbientContextPreference, AmbientContextSentEvent } from "./ambientContextActionHandler.js";
 import type { HermesAdapter } from "./types.js";
 
 interface HermesChatCompletionResult {
@@ -30,6 +30,7 @@ export interface HermesChatAdapterOptions {
   journalContextProvider?: (notification: KindroidChatNotification) => Promise<JournalSuggestionContext>;
   dedupeStore?: DedupeStore;
   onAmbientContextSent?: (event: AmbientContextSentEvent) => void;
+  isAmbientContextEnabled?: AmbientContextPreference;
 }
 
 export class LoggingHermesAdapter implements HermesAdapter {

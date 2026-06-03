@@ -21,18 +21,24 @@ describe("subscription preferences", () => {
     const preferences = loadKinSubscriptionPreferences(config);
 
     expect(preferences.disabledKinIds).toEqual(new Set());
+    expect(preferences.ambientDisabledKinIds).toEqual(new Set());
     expect(fs.existsSync(kinSubscriptionPreferencesPath(config))).toBe(false);
   });
 
   it("persists disabled Kin ids beside the bridge state", () => {
     const config = testConfig();
 
-    saveKinSubscriptionPreferences(config, { disabledKinIds: new Set(["kin-b", "kin-a"]) });
+    saveKinSubscriptionPreferences(config, {
+      disabledKinIds: new Set(["kin-b", "kin-a"]),
+      ambientDisabledKinIds: new Set(["kin-c"])
+    });
     const preferences = loadKinSubscriptionPreferences(config);
 
     expect(preferences.disabledKinIds).toEqual(new Set(["kin-a", "kin-b"]));
+    expect(preferences.ambientDisabledKinIds).toEqual(new Set(["kin-c"]));
     expect(JSON.parse(fs.readFileSync(kinSubscriptionPreferencesPath(config), "utf8"))).toEqual({
-      disabledKinIds: ["kin-a", "kin-b"]
+      disabledKinIds: ["kin-a", "kin-b"],
+      ambientDisabledKinIds: ["kin-c"]
     });
   });
 

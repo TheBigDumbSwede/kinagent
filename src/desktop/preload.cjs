@@ -20,6 +20,8 @@ contextBridge.exposeInMainWorld("kinagent", {
   dismissJournalSuggestion: (input) => ipcRenderer.invoke("journal:dismiss-suggestion", input),
   getKinVoicePreference: (input) => ipcRenderer.invoke("voice:get-kin-preference", input),
   setKinVoicePreference: (input) => ipcRenderer.invoke("voice:set-kin-preference", input),
+  getKinAmbientPreference: (input) => ipcRenderer.invoke("ambient:get-kin-preference", input),
+  setKinAmbientPreference: (input) => ipcRenderer.invoke("ambient:set-kin-preference", input),
   onEvent: (callback) => {
     const listener = (_event, message) => callback(message);
     ipcRenderer.on("app:event", listener);

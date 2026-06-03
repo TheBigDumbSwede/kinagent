@@ -46,12 +46,15 @@ export interface AmbientContextSentEvent {
   idempotencyKey: string;
 }
 
+export type AmbientContextPreference = (aiId: string) => boolean;
+
 export class AmbientContextActionHandler implements HermesActionHandler<SendAmbientContextTurnAction> {
   constructor(
     private readonly logger: Logger,
     private readonly kindroidClient: KindroidAmbientContextSender,
     private readonly dedupeStore: DedupeStore,
-    private readonly onAmbientContextSent?: (event: AmbientContextSentEvent) => void
+    private readonly onAmbientContextSent?: (event: AmbientContextSentEvent) => void,
+    private readonly isAmbientContextEnabled: AmbientContextPreference = () => true
   ) {}
 
   promptLines(): string[] {
@@ -141,6 +144,16 @@ export class AmbientContextActionHandler implements HermesActionHandler<SendAmbi
       this.logger.warn("Ignoring ambient context action for mismatched ai_id.", {
         expectedAiId: notification.kinId,
         requestedAiId: targetAiId
+      });
+      return;
+    }
+
+    if (!this.isAmbientContextEnabled(notification.kinId)) {
+      this.logger.info("Ignoring ambient context action because ambient context is disabled for this Kin.", {
+        aiId: notification.kinId,
+        documentId: notification.documentId,
+        source: action.source,
+        reason: action.reason
       });
       return;
     }

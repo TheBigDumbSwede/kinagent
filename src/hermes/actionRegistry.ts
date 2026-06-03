@@ -7,6 +7,7 @@ import type { Logger } from "../util/logger.js";
 import {
   AmbientContextActionHandler,
   isAmbientContextSender,
+  type AmbientContextPreference,
   type AmbientContextSentEvent
 } from "./ambientContextActionHandler.js";
 import {
@@ -22,6 +23,7 @@ export interface HermesActionRegistryOptions {
   journalContextProvider?: (notification: KindroidChatNotification) => Promise<JournalSuggestionContext>;
   dedupeStore?: DedupeStore;
   onAmbientContextSent?: (event: AmbientContextSentEvent) => void;
+  isAmbientContextEnabled?: AmbientContextPreference;
 }
 
 export interface HermesActionRegistry {
@@ -82,7 +84,8 @@ export function createHermesActionRegistry(input: {
         input.logger,
         input.kindroidClient,
         options.dedupeStore,
-        options.onAmbientContextSent
+        options.onAmbientContextSent,
+        options.isAmbientContextEnabled
       )
     );
   }

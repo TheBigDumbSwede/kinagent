@@ -233,6 +233,12 @@ function registerIpcHandlers(): void {
     async (_event, input: { kinId?: string; preference?: Partial<KinVoicePreference> } = {}) =>
       setKinVoicePreference(input.kinId ?? "", input.preference ?? {})
   );
+  ipcMain.handle("ambient:get-kin-preference", async (_event, input: { kinId?: string } = {}) =>
+    getKinAmbientPreference(input.kinId ?? "")
+  );
+  ipcMain.handle("ambient:set-kin-preference", async (_event, input: { kinId?: string; enabled?: boolean } = {}) =>
+    setKinAmbientPreference(input.kinId ?? "", input.enabled)
+  );
 }
 
 async function getDesktopStatus() {
@@ -431,6 +437,20 @@ function setKinVoicePreference(kinId: string, preference: Partial<KinVoicePrefer
     openAiVoiceOptions,
     preference: saved
   };
+}
+
+function getKinAmbientPreference(kinId: string) {
+  return requireRuntime().getKinAmbientContextPreference(kinId);
+}
+
+function setKinAmbientPreference(kinId: string, enabled: unknown) {
+  if (typeof enabled !== "boolean") {
+    throw new Error("Ambient context enabled must be true or false.");
+  }
+
+  const saved = requireRuntime().setKinAmbientContextEnabled(kinId, enabled);
+  logger.info("Saved Kin ambient context preference.", { kinId, enabled: saved.enabled });
+  return saved;
 }
 
 async function acceptJournalSuggestion(id: string) {

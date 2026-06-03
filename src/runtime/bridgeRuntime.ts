@@ -68,6 +68,7 @@ export class BridgeRuntime {
     this.journalSuggestions = JournalSuggestionStore.fromConfig(options.config);
     this.hermes = createHermesAdapter(options.config, options.logger, {
       dedupeStore,
+      isAmbientContextEnabled: (aiId) => this.kinSubscriptionSupervisor.isKinAmbientContextEnabled(aiId),
       onAmbientContextSent: (event) => {
         this.emit({
           channel: "monitor-line",
@@ -225,6 +226,22 @@ export class BridgeRuntime {
 
   async setKinEnabled(kinId: string, enabled: boolean): Promise<void> {
     await this.kinSubscriptionSupervisor.setKinEnabled(kinId, enabled);
+  }
+
+  setKinAmbientContextEnabled(kinId: string, enabled: boolean): KinAmbientContextPreference {
+    this.kinSubscriptionSupervisor.setKinAmbientContextEnabled(kinId, enabled);
+    return this.getKinAmbientContextPreference(kinId);
+  }
+
+  getKinAmbientContextPreference(kinId: string): KinAmbientContextPreference {
+    if (!kinId) {
+      throw new Error("Select a Kin before editing ambient context.");
+    }
+
+    return {
+      ok: true,
+      enabled: this.kinSubscriptionSupervisor.isKinAmbientContextEnabled(kinId)
+    };
   }
 
   async setGroupEnabled(groupId: string, enabled: boolean): Promise<void> {
@@ -542,6 +559,11 @@ export interface BridgeRuntimeStatus {
   groupRefresh: ReturnType<GroupSubscriptionSupervisor["refreshState"]>;
   voice: ReturnType<typeof voiceProviderConfigured> & { desktopPlayback: boolean };
   journalSuggestions: JournalSuggestion[];
+}
+
+export interface KinAmbientContextPreference {
+  ok: true;
+  enabled: boolean;
 }
 
 export type BridgeSessionSummary =
