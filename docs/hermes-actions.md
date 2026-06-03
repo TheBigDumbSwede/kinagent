@@ -1,0 +1,159 @@
+# Hermes Actions
+
+This document describes the current Hermes action surface in Kinagent. The code source of truth is
+[src/hermes/actionRegistry.ts](../src/hermes/actionRegistry.ts).
+
+Hermes receives readable Kindroid chat events and may return compact JSON:
+
+```json
+{ "actions": [] }
+```
+
+Each action must be accepted by a registered handler. Unknown action types, malformed payloads, mismatched ids, and
+disabled features are ignored.
+
+## Registry
+
+The active registry is built by `createHermesActionRegistry(...)`.
+
+| Action types                                         | Handler                          | Execution | Scope                                                                                           |
+| ---------------------------------------------------- | -------------------------------- | --------- | ----------------------------------------------------------------------------------------------- |
+| `update_current_scene`, `update_group_current_scene` | `CurrentSceneActionHandler`      | Immediate | Updates Kindroid `current_scene` for the same direct Kin or group chat.                         |
+| `send_ambient_context_turn`                          | `AmbientContextActionHandler`    | Immediate | Sends a direct Kin ambient visible message with hidden `internet_response` context.             |
+| `propose_journal_entry`, `delete_journal_entry`      | `JournalSuggestionActionHandler` | Reviewed  | Creates pending desktop review items. Kindroid journals are changed only after user acceptance. |
+
+## Current Scene Updates
+
+Direct Kin chats may request:
+
+```json
+{
+  "type": "update_current_scene",
+  "ai_id": "<same direct chat ai_id>",
+  "current_scene": "<brief current situation>",
+  "reason": "<short reason>"
+}
+```
+
+Group chats may request:
+
+```json
+{
+  "type": "update_group_current_scene",
+  "group_id": "<same group_id>",
+  "current_scene": "<brief current situation>",
+  "reason": "<short reason>"
+}
+```
+
+Guardrails:
+
+- Only use this when the current location, activity, scene, or situation materially changes.
+- Do not use it for routine conversation, greetings, emotional tone, preferences, memories, or speculation.
+- The handler rejects mismatched `ai_id` or `group_id`.
+- The handler trims and applies the configured `currentSceneUpdates.maxLength`.
+
+## Journal Suggestions
+
+Journal suggestions are review-only. Hermes may propose a journal create or delete, but the runtime only stores a pending
+suggestion. The desktop review flow performs the Kindroid mutation after user acceptance.
+
+Create request:
+
+```json
+{
+  "type": "propose_journal_entry",
+  "ai_id": "<same ai_id>",
+  "title": "<specific short title>",
+  "category": "relationship_milestone",
+  "category_detail": "<optional specific durable label>",
+  "entry": "<concise third-person journal capsule>",
+  "keyphrases": ["<distinctive recall phrase>"],
+  "evidence": ["<specific message evidence>"],
+  "durability_reason": "<why this changes future interpretation>",
+  "confidence": "high",
+  "strong_event": false
+}
+```
+
+Delete request:
+
+```json
+{
+  "type": "delete_journal_entry",
+  "ai_id": "<same ai_id>",
+  "journal_entry_id": "<id from journalContext.existingEntries>",
+  "title": "<short deletion review title>",
+  "target_title": "<existing entry title>",
+  "target_entry": "<brief existing entry excerpt>",
+  "evidence": ["<specific contradiction or duplicate evidence>"],
+  "durability_reason": "<why keeping this entry would harm future recall>",
+  "confidence": "high",
+  "strong_event": false
+}
+```
+
+Guardrails:
+
+- Journal create/delete suggestions require `confidence: "high"`.
+- Suggestions must include a durable reason.
+- Journal creation is only for Kin-authored messages where `sender` is `ai`.
+- Delete requests must use an id present in `journalContext.existingEntries`.
+- Suggestions are compared against existing journal entries and field excerpts when context is available.
+- Journals are triggerable capsules, not generic lore storage, duplicated backstory, transient mood capture, or always-on rules.
+
+## Ambient Context Turns
+
+Ambient context turns are registered as Hermes' active context-injection path for direct Kin chats. This is currently the
+only Hermes action that can inject immediate context into the next Kindroid response without putting the operational
+context into visible chat text.
+
+Direct Kin request:
+
+```json
+{
+  "type": "send_ambient_context_turn",
+  "ai_id": "<same direct chat ai_id>",
+  "ambient_message": "<small diegetic ambient beat fitted to the current conversation and current setting>",
+  "context": "<concise hidden operational context>",
+  "source": "<source or tool name>",
+  "confidence": "high",
+  "suggested_use": "<how the Kin should use this context if relevant>"
+}
+```
+
+Execution:
+
+- The handler builds a hidden `Hermes context packet` and sends it through `internet_response`.
+- The visible Kindroid `message` is only the `ambient_message`.
+- The handler records outbound dedupe before sending so the bridge can suppress its own visible ambient echo.
+- Direct sends use Kindroid's observed `/v1/send-message` payload.
+- Group sends are not registered for Hermes ambient context. The observed `/v1/groupchats-user-message` payload accepts
+  `internet_response`, but live diagnostics currently classify it as accepted-but-not-used by group AI responses.
+
+Guardrails:
+
+- Use this only when a direct Kin needs immediate per-turn context that should not be dumped visibly into chat.
+- The ambient message is visible and should be small, diegetic, and contextually appropriate to the current conversation
+  and saved current scene when available.
+- The ambient message must not mention Hermes, tools, diagnostics, hidden context, `internet_response`, codenames, or the
+  operational facts carried in the hidden context.
+- The context should be summarized and non-secret. Hidden does not mean private from Kindroid.
+- Do not use this for durable memory. Use reviewed journal suggestions for durable recall and `current_scene` for tiny
+  scene-state updates.
+
+Supporting docs:
+
+- [docs/ambient-context-turns.md](ambient-context-turns.md)
+- [docs/internet-response-experiment.md](internet-response-experiment.md)
+
+## Adding Actions
+
+When adding a Hermes function:
+
+- Add or update a `HermesActionHandler`.
+- Register it in `createHermesActionRegistry(...)`.
+- Add a row to `hermesActionRegistryEntries`.
+- Update this document.
+- Add tests for prompt lines, normalization, id matching, and side-effect boundaries.
+- Keep the action narrow. If it mutates Kindroid durable state, prefer review before execution unless there is a strong reason otherwise.

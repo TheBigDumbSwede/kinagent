@@ -33,7 +33,8 @@ interface CapturedProfile {
 const excerptFields = [
   ["ai_backstory", "Backstory"],
   ["ai_memory", "Key Memories"],
-  ["ai_directive", "Response Directive"]
+  ["ai_directive", "Response Directive"],
+  ["current_scene", "Current Scene"]
 ] as const;
 
 export function createCapturedJournalContextProvider(logger: Logger) {

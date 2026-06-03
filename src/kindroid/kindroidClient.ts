@@ -4,8 +4,12 @@ import type { Logger } from "../util/logger.js";
 import type {
   CreateKindroidJournalEntryInput,
   CreateKindroidJournalEntryResult,
+  CreateKindroidGroupAiResponseInput,
   DeleteKindroidJournalEntryInput,
   DeleteKindroidJournalEntryResult,
+  GetKindroidGroupTurnInput,
+  SendKindroidGroupMessageInput,
+  SendKindroidGroupMessageResult,
   SendKindroidMessageInput,
   SendKindroidMessageResult,
   UpdateKindroidCurrentSceneInput,
@@ -17,7 +21,10 @@ import type {
 } from "./types.js";
 import {
   buildCreateJournalEntryPayload,
+  buildCreateGroupAiResponsePayload,
   buildDeleteJournalEntryPayload,
+  buildGetGroupTurnPayload,
+  buildSendGroupMessagePayload,
   buildSendMessagePayload,
   buildUpdateCurrentScenePayload,
   buildUpdateGroupCurrentScenePayload,
@@ -25,6 +32,9 @@ import {
 } from "./payloads.js";
 
 const sendMessageUrl = "https://api.kindroid.ai/v1/send-message";
+const groupUserMessageUrl = "https://api.kindroid.ai/v1/groupchats-user-message";
+const groupGetTurnUrl = "https://api.kindroid.ai/v1/groupchats-get-turn";
+const groupAiResponseUrl = "https://api.kindroid.ai/v1/groupchats-ai-response";
 const updateInfoUrl = "https://api.kindroid.ai/v1/update-info";
 const updateGroupChatUrl = "https://api.kindroid.ai/v1/groupchats-update";
 const journalCreateUrl = "https://api.kindroid.ai/v1/journal-create";
@@ -56,6 +66,131 @@ export class KindroidClient {
       ok: response.ok,
       requestId: input.requestId,
       idempotencyKey: input.idempotencyKey,
+      responseText: response.ok ? undefined : responseText.slice(0, 1000)
+    };
+  }
+
+  async sendGroupMessage(input: SendKindroidGroupMessageInput): Promise<SendKindroidGroupMessageResult> {
+    const userMessagePayload = buildSendGroupMessagePayload(input);
+    const userMessageResponse = await fetch(groupUserMessageUrl, {
+      method: "POST",
+      headers: await this.authHeaders(),
+      body: JSON.stringify(userMessagePayload)
+    });
+
+    const userMessageResponseText = await userMessageResponse.text();
+    this.logger.info("Kindroid groupchats-user-message request completed.", {
+      status: userMessageResponse.status,
+      ok: userMessageResponse.ok,
+      groupId: input.groupId,
+      requestId: input.requestId
+    });
+
+    if (!userMessageResponse.ok) {
+      return {
+        status: userMessageResponse.status,
+        ok: false,
+        requestId: input.requestId,
+        idempotencyKey: input.idempotencyKey,
+        responseText: userMessageResponseText.slice(0, 1000)
+      };
+    }
+
+    if (!input.triggerAiResponse) {
+      return {
+        status: userMessageResponse.status,
+        ok: true,
+        requestId: input.requestId,
+        idempotencyKey: input.idempotencyKey
+      };
+    }
+
+    const turnResult = await this.getGroupTurn({ groupId: input.groupId, allowUser: input.allowUserTurn ?? false });
+    if (!turnResult.ok || !turnResult.aiId) {
+      return {
+        status: userMessageResponse.status,
+        ok: false,
+        requestId: input.requestId,
+        idempotencyKey: input.idempotencyKey,
+        responseText: turnResult.responseText,
+        nextAiId: turnResult.aiId
+      };
+    }
+
+    const aiResponseRequestId = `group-ai-${input.groupId}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const aiResponseResult = await this.createGroupAiResponse({
+      groupId: input.groupId,
+      aiId: turnResult.aiId,
+      requestId: aiResponseRequestId
+    });
+
+    return {
+      status: userMessageResponse.status,
+      ok: aiResponseResult.ok,
+      requestId: input.requestId,
+      idempotencyKey: input.idempotencyKey,
+      nextAiId: turnResult.aiId,
+      aiResponseStatus: aiResponseResult.status,
+      aiResponseOk: aiResponseResult.ok,
+      aiResponseText: aiResponseResult.responseText,
+      responseText: aiResponseResult.ok ? undefined : aiResponseResult.responseText
+    };
+  }
+
+  private async getGroupTurn(input: GetKindroidGroupTurnInput): Promise<{
+    ok: boolean;
+    status: number;
+    aiId?: string;
+    responseText?: string;
+  }> {
+    const payload = buildGetGroupTurnPayload(input);
+    const response = await fetch(groupGetTurnUrl, {
+      method: "POST",
+      headers: await this.authHeaders(),
+      body: JSON.stringify(payload)
+    });
+
+    const responseText = (await response.text()).trim();
+    this.logger.info("Kindroid groupchats-get-turn request completed.", {
+      status: response.status,
+      ok: response.ok,
+      groupId: input.groupId,
+      allowUser: input.allowUser,
+      aiIdPresent: Boolean(responseText)
+    });
+
+    return {
+      status: response.status,
+      ok: response.ok,
+      aiId: response.ok && responseText ? responseText : undefined,
+      responseText: response.ok ? undefined : responseText.slice(0, 1000)
+    };
+  }
+
+  private async createGroupAiResponse(input: CreateKindroidGroupAiResponseInput): Promise<{
+    ok: boolean;
+    status: number;
+    responseText?: string;
+  }> {
+    const payload = buildCreateGroupAiResponsePayload(input);
+    const response = await fetch(groupAiResponseUrl, {
+      method: "POST",
+      headers: await this.authHeaders(),
+      body: JSON.stringify(payload)
+    });
+
+    const responseText = await response.text();
+    this.logger.info("Kindroid groupchats-ai-response request completed.", {
+      status: response.status,
+      ok: response.ok,
+      groupId: input.groupId,
+      aiId: input.aiId,
+      requestId: input.requestId
+    });
+
+    return {
+      status: response.status,
+      ok: response.ok,
       responseText: response.ok ? undefined : responseText.slice(0, 1000)
     };
   }

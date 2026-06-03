@@ -4,6 +4,7 @@ import type { HermesAdapter } from "../hermes/types.js";
 import type { DedupeStore } from "../state/dedupeStore.js";
 import type { Logger } from "../util/logger.js";
 import { KindroidApiClient } from "../kindroid/client/index.js";
+import { findActiveDiagnosticSuppression } from "../state/diagnosticSuppressionStore.js";
 import { isRecentOutboundEcho } from "./messageDedupe.js";
 import { mapKindroidMessage } from "./messageMapper.js";
 import type { KindroidChatChangeNotification } from "./types.js";
@@ -47,6 +48,21 @@ export class KindroidChatListener {
             scope: "direct"
           })
         ) {
+          return;
+        }
+
+        const diagnosticSuppression = findActiveDiagnosticSuppression(this.config, {
+          kinId: message.kinId,
+          timestamp: message.timestamp
+        });
+        if (diagnosticSuppression) {
+          this.logger.info("Skipping diagnostic Kindroid chat event.", {
+            kinId: message.kinId,
+            documentId: message.id,
+            sender: message.sender,
+            reason: diagnosticSuppression.reason,
+            expiresAt: new Date(diagnosticSuppression.expiresAt).toISOString()
+          });
           return;
         }
 

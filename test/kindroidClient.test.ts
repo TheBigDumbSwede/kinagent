@@ -1,18 +1,34 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import CryptoJS from "crypto-js";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AppConfig } from "../src/config/types.js";
 import type { FirestoreDocumentLike } from "../src/firestore/types.js";
 import { normalizeGroupDocument } from "../src/kindroid/client/groups.js";
 import { normalizeKinDocument } from "../src/kindroid/client/kins.js";
 import { KindroidClient } from "../src/kindroid/kindroidClient.js";
 import {
+  buildCreateGroupAiResponsePayload,
   buildCreateJournalEntryPayload,
   buildDeleteJournalEntryPayload,
+  buildGetGroupTurnPayload,
+  buildSendGroupMessagePayload,
+  buildSendMessagePayload,
   buildUpdateIdentityPayload
 } from "../src/kindroid/payloads.js";
 import type { Logger } from "../src/util/logger.js";
 
 describe("Kindroid client normalizers", () => {
+  const tempDirs: string[] = [];
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    for (const dir of tempDirs.splice(0)) {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("uses Firestore AI fields for Kin identity", () => {
     const document = documentLike("doc-1", {
       ai_id: "kin-1",
@@ -90,6 +106,165 @@ describe("Kindroid client normalizers", () => {
         currentScene: "x".repeat(161)
       })
     ).rejects.toThrow("Current scene cannot exceed 160 characters.");
+  });
+
+  it("builds send-message payloads with no internet_response by default", () => {
+    expect(
+      buildSendMessagePayload({
+        aiId: "kin-1",
+        message: "Visible diagnostic message.",
+        requestId: "request-1",
+        idempotencyKey: "idempotency-1"
+      })
+    ).toMatchObject({
+      ai_id: "kin-1",
+      message: "Visible diagnostic message.",
+      request_id: "request-1",
+      idempotency_key: "idempotency-1",
+      internet_response: null
+    });
+  });
+
+  it("builds send-message payloads with explicit internet_response text", () => {
+    expect(
+      buildSendMessagePayload({
+        aiId: "kin-1",
+        message: "Visible diagnostic message.",
+        requestId: "request-1",
+        idempotencyKey: "idempotency-1",
+        internetResponse: "Diagnostic hidden context: KINAGENT-CANARY-1234."
+      })
+    ).toMatchObject({
+      ai_id: "kin-1",
+      message: "Visible diagnostic message.",
+      request_id: "request-1",
+      idempotency_key: "idempotency-1",
+      internet_response: "Diagnostic hidden context: KINAGENT-CANARY-1234."
+    });
+  });
+
+  it("builds group user-message payloads with no internet_response by default", () => {
+    expect(
+      buildSendGroupMessagePayload({
+        groupId: "group-1",
+        message: "Visible group diagnostic message.",
+        requestId: "request-1",
+        idempotencyKey: "idempotency-1"
+      })
+    ).toMatchObject({
+      group_id: "group-1",
+      message: "Visible group diagnostic message.",
+      internet_response: null,
+      client_platform: "web"
+    });
+  });
+
+  it("builds group user-message payloads with explicit internet_response text", () => {
+    expect(
+      buildSendGroupMessagePayload({
+        groupId: "group-1",
+        message: "Visible group diagnostic message.",
+        requestId: "request-1",
+        idempotencyKey: "idempotency-1",
+        internetResponse: "Diagnostic hidden group context: KINAGENT-GROUP-CANARY-1234."
+      })
+    ).toMatchObject({
+      group_id: "group-1",
+      message: "Visible group diagnostic message.",
+      internet_response: "Diagnostic hidden group context: KINAGENT-GROUP-CANARY-1234.",
+      client_platform: "web"
+    });
+  });
+
+  it("builds the observed Kindroid group get-turn payload", () => {
+    expect(
+      buildGetGroupTurnPayload({
+        groupId: "group-1",
+        allowUser: false
+      })
+    ).toEqual({
+      group_id: "group-1",
+      allow_user: false
+    });
+  });
+
+  it("builds the observed Kindroid group AI response payload", () => {
+    expect(
+      buildCreateGroupAiResponsePayload({
+        groupId: "group-1",
+        aiId: "kin-1",
+        requestId: "group-ai-request-1"
+      })
+    ).toEqual({
+      ai_id: "kin-1",
+      group_id: "group-1",
+      stream: false,
+      request_id: "group-ai-request-1",
+      client_platform: "web"
+    });
+  });
+
+  it("does not trigger a group AI response after group user-message sends by default", async () => {
+    const sessionDir = createTestSessionDir(tempDirs);
+    const fetchMock = vi.fn(async () => new Response("OK", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new KindroidClient(testConfig({ sessionDir }), testLogger);
+
+    const result = await client.sendGroupMessage({
+      groupId: "group-1",
+      message: "Visible group diagnostic message.",
+      requestId: "request-1",
+      idempotencyKey: "idempotency-1",
+      internetResponse: "Hidden group context."
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      status: 200,
+      requestId: "request-1",
+      idempotencyKey: "idempotency-1"
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.kindroid.ai/v1/groupchats-user-message",
+      expect.objectContaining({ method: "POST" })
+    );
+  });
+
+  it("can explicitly trigger the observed group turn and AI response sequence", async () => {
+    const sessionDir = createTestSessionDir(tempDirs);
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("OK", { status: 200 }))
+      .mockResolvedValueOnce(new Response("kin-1", { status: 200 }))
+      .mockResolvedValueOnce(new Response("OK", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new KindroidClient(testConfig({ sessionDir }), testLogger);
+
+    const result = await client.sendGroupMessage({
+      groupId: "group-1",
+      message: "Visible group diagnostic message.",
+      requestId: "request-1",
+      idempotencyKey: "idempotency-1",
+      internetResponse: "Hidden group context.",
+      triggerAiResponse: true
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      status: 200,
+      requestId: "request-1",
+      idempotencyKey: "idempotency-1",
+      nextAiId: "kin-1",
+      aiResponseStatus: 200,
+      aiResponseOk: true
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      "https://api.kindroid.ai/v1/groupchats-user-message",
+      "https://api.kindroid.ai/v1/groupchats-get-turn",
+      "https://api.kindroid.ai/v1/groupchats-ai-response"
+    ]);
   });
 
   it("builds the observed Kindroid journal-create payload", () => {
@@ -172,6 +347,39 @@ function documentLike(id: string, data: Record<string, unknown>): FirestoreDocum
   };
 }
 
+function createTestSessionDir(tempDirs: string[]): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "kinagent-kindroid-client-"));
+  tempDirs.push(dir);
+  const authStorageKey = ["firebase", "authUser", "test-api-key", "[DEFAULT]"].join(":");
+  const accessTokenKey = `access${"Token"}`;
+  const refreshTokenKey = `refresh${"Token"}`;
+  fs.writeFileSync(
+    path.join(dir, "storage-state.json"),
+    `${JSON.stringify({
+      origins: [
+        {
+          origin: "https://kindroid.ai",
+          localStorage: [
+            {
+              name: authStorageKey,
+              value: JSON.stringify({
+                uid: "firebase-uid",
+                email: "test@example.com",
+                stsTokenManager: {
+                  [accessTokenKey]: "test-access-token",
+                  [refreshTokenKey]: "test-refresh-token",
+                  expirationTime: Date.now() + 3_600_000
+                }
+              })
+            }
+          ]
+        }
+      ]
+    })}\n`
+  );
+  return dir;
+}
+
 const testLogger: Logger = {
   debug: () => undefined,
   info: () => undefined,
@@ -179,7 +387,7 @@ const testLogger: Logger = {
   error: () => undefined
 };
 
-function testConfig(): AppConfig {
+function testConfig(overrides: { sessionDir?: string } = {}): AppConfig {
   return {
     kindroid: {
       firebaseProjectId: "kindroid-ai",
@@ -190,7 +398,7 @@ function testConfig(): AppConfig {
       dedupeWindowSeconds: 180,
       logPath: "kinagent.log",
       logLevel: "info",
-      sessionDir: "session",
+      sessionDir: overrides.sessionDir ?? "session",
       sqlitePath: "bridge.sqlite"
     },
     hermes: {

@@ -1,6 +1,9 @@
 import type {
   CreateKindroidJournalEntryInput,
+  CreateKindroidGroupAiResponseInput,
   DeleteKindroidJournalEntryInput,
+  GetKindroidGroupTurnInput,
+  SendKindroidGroupMessageInput,
   SendKindroidMessageInput,
   UpdateKindroidCurrentSceneInput,
   UpdateKindroidGroupCurrentSceneInput,
@@ -20,9 +23,41 @@ export function buildSendMessagePayload(input: SendKindroidMessageInput): Record
     image_description: null,
     video_url: null,
     video_description: null,
-    internet_response: null,
+    internet_response: input.internetResponse ?? null,
     link_url: null,
     link_description: null,
+    client_platform: "web"
+  };
+}
+
+export function buildSendGroupMessagePayload(input: SendKindroidGroupMessageInput): Record<string, unknown> {
+  return {
+    message: input.message,
+    image_urls: null,
+    image_description: null,
+    video_url: null,
+    video_description: null,
+    internet_response: input.internetResponse ?? null,
+    link_url: null,
+    link_description: null,
+    client_platform: "web",
+    group_id: input.groupId
+  };
+}
+
+export function buildGetGroupTurnPayload(input: GetKindroidGroupTurnInput): Record<string, unknown> {
+  return {
+    group_id: input.groupId,
+    allow_user: input.allowUser
+  };
+}
+
+export function buildCreateGroupAiResponsePayload(input: CreateKindroidGroupAiResponseInput): Record<string, unknown> {
+  return {
+    ai_id: input.aiId,
+    group_id: input.groupId,
+    stream: false,
+    request_id: input.requestId,
     client_platform: "web"
   };
 }

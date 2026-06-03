@@ -3,6 +3,7 @@ export interface SendKindroidMessageInput {
   message: string;
   requestId: string;
   idempotencyKey: string;
+  internetResponse?: string | null;
 }
 
 export interface SendKindroidMessageResult {
@@ -11,6 +12,39 @@ export interface SendKindroidMessageResult {
   requestId: string;
   idempotencyKey: string;
   responseText?: string;
+}
+
+export interface SendKindroidGroupMessageInput {
+  groupId: string;
+  message: string;
+  requestId: string;
+  idempotencyKey: string;
+  internetResponse?: string | null;
+  triggerAiResponse?: boolean;
+  allowUserTurn?: boolean;
+}
+
+export interface SendKindroidGroupMessageResult {
+  status: number;
+  ok: boolean;
+  requestId: string;
+  idempotencyKey: string;
+  responseText?: string;
+  nextAiId?: string;
+  aiResponseStatus?: number;
+  aiResponseOk?: boolean;
+  aiResponseText?: string;
+}
+
+export interface GetKindroidGroupTurnInput {
+  groupId: string;
+  allowUser: boolean;
+}
+
+export interface CreateKindroidGroupAiResponseInput {
+  groupId: string;
+  aiId: string;
+  requestId: string;
 }
 
 export interface UpdateKindroidCurrentSceneInput {

@@ -1,16 +1,16 @@
 import type { AppConfig } from "../config/types.js";
 import type { KindroidChatNotification } from "../firestore/types.js";
 import { type JournalSuggestion, type JournalSuggestionStore } from "../journal/journalSuggestionStore.js";
-import { createCapturedJournalContextProvider, type JournalSuggestionContext } from "../journal/journalContext.js";
+import type { JournalSuggestionContext } from "../journal/journalContext.js";
 import { KindroidClient } from "../kindroid/kindroidClient.js";
+import type { DedupeStore } from "../state/dedupeStore.js";
 import type { Logger } from "../util/logger.js";
 import {
-  CurrentSceneActionHandler,
   type HermesActionDecision,
   type HermesActionHandler,
   type KindroidSceneUpdater
 } from "./currentSceneActionHandler.js";
-import { JournalSuggestionActionHandler } from "./journalSuggestionActionHandler.js";
+import { createHermesActionRegistry } from "./actionRegistry.js";
 import type { HermesAdapter } from "./types.js";
 
 interface HermesChatCompletionResult {
@@ -27,6 +27,7 @@ export interface HermesChatAdapterOptions {
   journalSuggestions?: JournalSuggestionStore;
   onJournalSuggestionCreated?: (suggestion: JournalSuggestion) => void;
   journalContextProvider?: (notification: KindroidChatNotification) => Promise<JournalSuggestionContext>;
+  dedupeStore?: DedupeStore;
 }
 
 export class LoggingHermesAdapter implements HermesAdapter {
@@ -49,15 +50,14 @@ export class HermesChatAdapter implements HermesAdapter {
     private readonly kindroidClient: KindroidSceneUpdater = new KindroidClient(config, logger),
     private readonly options: HermesChatAdapterOptions = {}
   ) {
-    this.actionHandlers = [new CurrentSceneActionHandler(config, logger, this.kindroidClient)];
-    if (options.journalSuggestions) {
-      this.journalContextProvider = options.journalContextProvider ?? createCapturedJournalContextProvider(logger);
-      this.actionHandlers.push(
-        new JournalSuggestionActionHandler(logger, options.journalSuggestions, options.onJournalSuggestionCreated, {
-          contextProvider: this.journalContextProvider
-        })
-      );
-    }
+    const registry = createHermesActionRegistry({
+      config,
+      logger,
+      kindroidClient: this.kindroidClient,
+      options
+    });
+    this.actionHandlers = registry.handlers;
+    this.journalContextProvider = registry.journalContextProvider;
   }
 
   async handleChatChanged(notification: KindroidChatNotification): Promise<void> {

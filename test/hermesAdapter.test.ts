@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AppConfig } from "../src/config/types.js";
 import { HermesChatAdapter } from "../src/hermes/hermesAdapter.js";
 import { JournalSuggestionStore } from "../src/journal/journalSuggestionStore.js";
+import { InMemoryDedupeStore } from "../src/state/dedupeStore.js";
 import type { Logger } from "../src/util/logger.js";
 
 const logger: Logger = {
@@ -129,6 +130,131 @@ describe("HermesChatAdapter", () => {
 
     expect(kindroid.updateCurrentScene).not.toHaveBeenCalled();
     expect(kindroid.updateGroupCurrentScene).not.toHaveBeenCalled();
+  });
+
+  it("lets Hermes send an ambient context turn for direct Kin chat", async () => {
+    const kindroid = testKindroidClient();
+    const dedupeStore = new InMemoryDedupeStore(60_000);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  actions: [
+                    {
+                      type: "send_ambient_context_turn",
+                      ai_id: "kin-1",
+                      ambient_message: "*The console gives a soft two-note chime.*",
+                      context: "The north service door is now unlocked.",
+                      source: "tool:door-control",
+                      confidence: "high",
+                      suggested_use: "Let the Kin incorporate this as immediate situational awareness."
+                    }
+                  ]
+                })
+              }
+            }
+          ]
+        })
+      )
+    );
+
+    const adapter = new HermesChatAdapter(testConfig(), logger, kindroid, { dedupeStore });
+    await adapter.handleChatChanged({
+      type: "kindroid.chat.changed",
+      kinId: "kin-1",
+      documentId: "doc-1",
+      timestamp: "2026-06-01T12:00:00.000Z",
+      text: "Check the north service door.",
+      sender: "user",
+      role: null,
+      source: "firestore"
+    });
+
+    expect(kindroid.sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        aiId: "kin-1",
+        message: "*The console gives a soft two-note chime.*",
+        internetResponse: expect.stringContaining("The north service door is now unlocked.")
+      })
+    );
+    expect(kindroid.sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        internetResponse: expect.stringContaining("Source: tool:door-control")
+      })
+    );
+    await expect(
+      dedupeStore.matchRecentOutbound({ kinId: "kin-1", text: "*The console gives a soft two-note chime.*" })
+    ).resolves.toEqual(expect.objectContaining({ matched: true }));
+    expect(logger.info).toHaveBeenCalledWith(
+      "Hermes ambient context action requested.",
+      expect.objectContaining({
+        aiId: "kin-1",
+        ambientMessageLength: expect.any(Number),
+        contextLength: expect.any(Number),
+        source: "tool:door-control"
+      })
+    );
+  });
+
+  it("ignores ambient context turns for group chat", async () => {
+    const kindroid = testKindroidClient();
+    const dedupeStore = new InMemoryDedupeStore(60_000);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  actions: [
+                    {
+                      type: "send_ambient_context_turn",
+                      group_id: "group-1",
+                      ambient_message: "*The wall display gives a low amber pulse.*",
+                      context: "The group route through the west corridor is clear.",
+                      source: "tool:route-control",
+                      confidence: "high",
+                      suggested_use: "Let the group incorporate this as immediate situational awareness."
+                    }
+                  ]
+                })
+              }
+            }
+          ]
+        })
+      )
+    );
+
+    const adapter = new HermesChatAdapter(testConfig(), logger, kindroid, { dedupeStore });
+    await adapter.handleChatChanged({
+      type: "kindroid.group_chat.changed",
+      groupId: "group-1",
+      aiId: "kin-1",
+      documentId: "doc-1",
+      timestamp: "2026-06-01T12:00:00.000Z",
+      text: "Can everyone reach the west corridor?",
+      sender: "user",
+      role: null,
+      source: "firestore"
+    });
+
+    expect(kindroid.sendGroupMessage).not.toHaveBeenCalled();
+    await expect(
+      dedupeStore.matchRecentOutbound({ kinId: "group-1", text: "*The wall display gives a low amber pulse.*" })
+    ).resolves.toEqual(expect.objectContaining({ matched: false }));
+    expect(logger.info).toHaveBeenCalledWith(
+      "Ignoring ambient context action for group chat because group internet_response is not consumed.",
+      expect.objectContaining({
+        groupId: "group-1",
+        aiId: "kin-1",
+        requestedGroupId: "group-1"
+      })
+    );
   });
 
   it("does not send unreadable encrypted text to Hermes", async () => {
@@ -594,6 +720,27 @@ function testKindroidUpdater() {
   return {
     updateCurrentScene: vi.fn(async () => ({ ok: true, status: 200 })),
     updateGroupCurrentScene: vi.fn(async () => ({ ok: true, status: 200 }))
+  };
+}
+
+function testKindroidClient() {
+  return {
+    ...testKindroidUpdater(),
+    sendMessage: vi.fn(async (input: { requestId: string; idempotencyKey: string }) => ({
+      ok: true,
+      status: 200,
+      requestId: input.requestId,
+      idempotencyKey: input.idempotencyKey
+    })),
+    sendGroupMessage: vi.fn(async (input: { requestId: string; idempotencyKey: string }) => ({
+      ok: true,
+      status: 200,
+      requestId: input.requestId,
+      idempotencyKey: input.idempotencyKey,
+      nextAiId: "kin-1",
+      aiResponseStatus: 200,
+      aiResponseOk: true
+    }))
   };
 }
 

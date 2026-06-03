@@ -6,6 +6,8 @@ import { runInstrumentedKindroidLogin } from "./auth/instrumentedLogin.js";
 import { runKindroidLogin } from "./auth/playwrightLogin.js";
 import { KindroidClient } from "./kindroid/kindroidClient.js";
 import { KindroidApiClient } from "./kindroid/client/index.js";
+import { registerAmbientContextCommand } from "./cli/ambientContextCommand.js";
+import { registerInternetResponseExperimentCommand } from "./cli/internetResponseExperimentCommand.js";
 import { KindroidChatListener } from "./firestore/chatListener.js";
 import { KindroidLiveMonitor } from "./firestore/liveMonitor.js";
 import { mapKindroidMessage } from "./firestore/messageMapper.js";
@@ -173,8 +175,8 @@ program
       throw new Error("--page-size must be an integer from 1 to 100.");
     }
 
-    const hermes = createHermesAdapter(config, logger);
     const dedupeStore = await createDedupeStore(config.bridge.sqlitePath, config.bridge.dedupeWindowSeconds);
+    const hermes = createHermesAdapter(config, logger, { dedupeStore });
     const listener = new KindroidChatListener(config, hermes, dedupeStore, logger);
     await listener.start({ kinId: options.kin, pageSize });
   });
@@ -242,6 +244,9 @@ program
       process.exitCode = 1;
     }
   });
+
+registerAmbientContextCommand(program, loadRuntime);
+registerInternetResponseExperimentCommand(program, loadRuntime);
 
 program
   .command("daemon")

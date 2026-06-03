@@ -25,6 +25,7 @@ The project has three classes of reference material. Keep them distinct.
 
 - [README.md](README.md): runtime architecture, setup, configuration, security notes, workflows, and current milestone status.
 - [docs/kindroid-kin-design-reference.md](docs/kindroid-kin-design-reference.md): public Kin design model used by the project when reasoning about Backstory, Key Memories, Journals, Response Directive, Greeting, Example Message, and related fields.
+- [docs/hermes-actions.md](docs/hermes-actions.md): current Hermes action registry, action JSON shapes, execution model, and action-addition checklist.
 
 The Kin design reference is operational guidance, not an official Kindroid document. It distills official, community, and local lessons into a practical model for Kinagent features.
 
@@ -49,6 +50,7 @@ The repository code is about automation around Kindroid sessions and Hermes acti
 
 The main bridge is the Hermes journal suggestion workflow:
 
+- [src/hermes/actionRegistry.ts](src/hermes/actionRegistry.ts) is the current source of truth for registered Hermes action handlers.
 - [src/hermes/journalSuggestionActionHandler.ts](src/hermes/journalSuggestionActionHandler.ts) prompts Hermes using the design-reference model.
 - [src/journal/journalSuggestionStore.ts](src/journal/journalSuggestionStore.ts) stores pending suggestions and applies pacing rules.
 - [src/runtime/bridgeRuntime.ts](src/runtime/bridgeRuntime.ts) wires suggestions into the desktop/runtime event stream and accepts reviewed suggestions.
@@ -56,6 +58,8 @@ The main bridge is the Hermes journal suggestion workflow:
 - [src/desktop/renderer/renderer.js](src/desktop/renderer/renderer.js) presents suggestions for review in the desktop app.
 
 Journal suggestions are review-only. The runtime may propose a triggerable journal capsule, but it must not silently write durable Kin memory without user acceptance.
+
+Use [docs/hermes-actions.md](docs/hermes-actions.md) before adding or changing Hermes functions. Ambient context turns are registered as the direct-Kin hidden context injection path via `send_ambient_context_turn`; keep them narrow, contextual, and non-durable. Group `internet_response` is diagnostic-only unless future live tests prove group AI responses consume it.
 
 ## Design Rules for Kin-Related Work
 
