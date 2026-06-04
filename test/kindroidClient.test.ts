@@ -258,6 +258,74 @@ describe("Kindroid client normalizers", () => {
     );
   });
 
+  it("fetches chat history through the public get-chat-messages endpoint", async () => {
+    const fetchMock = vi.fn(
+      async (_input: string | URL, _init?: RequestInit) =>
+        new Response(
+          JSON.stringify({
+            messages: [
+              {
+                id: "message-1",
+                sender: "Alexis",
+                sender_type: "ai",
+                display_name: "Alexis",
+                timestamp: 1_780_000_000_000,
+                message: "Hello."
+              }
+            ],
+            pagination: {
+              hasMore: false,
+              lastTimestamp: 1_780_000_000_000,
+              limit: 100
+            }
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        )
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new KindroidClient(testConfig({ apiKey: "kn_test-token" }), testLogger);
+
+    await expect(
+      client.getChatMessages({
+        aiId: "kin-1",
+        limit: 100,
+        startAfterTimestamp: 1_779_999_999_000
+      })
+    ).resolves.toEqual({
+      ok: true,
+      status: 200,
+      messages: [
+        {
+          id: "message-1",
+          sender: "Alexis",
+          sender_type: "ai",
+          display_name: "Alexis",
+          timestamp: 1_780_000_000_000,
+          message: "Hello."
+        }
+      ],
+      pagination: {
+        hasMore: false,
+        lastTimestamp: 1_780_000_000_000,
+        limit: 100
+      }
+    });
+
+    const requestedUrl = new URL(String(fetchMock.mock.calls[0]?.[0]));
+    expect(requestedUrl.href).toBe(
+      "https://api.kindroid.ai/v1/get-chat-messages?ai_id=kin-1&limit=100&start_after_timestamp=1779999999000"
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.any(URL),
+      expect.objectContaining({
+        method: "GET",
+        headers: expect.objectContaining({
+          authorization: "Bearer kn_test-token"
+        })
+      })
+    );
+  });
+
   it("does not trigger a group AI response after group user-message sends by default", async () => {
     const sessionDir = createTestSessionDir(tempDirs);
     const fetchMock = vi.fn(async () => new Response("OK", { status: 200 }));

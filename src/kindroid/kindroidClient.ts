@@ -7,6 +7,8 @@ import type {
   CreateKindroidGroupAiResponseInput,
   DeleteKindroidJournalEntryInput,
   DeleteKindroidJournalEntryResult,
+  GetKindroidChatMessagesInput,
+  GetKindroidChatMessagesResult,
   GetKindroidGroupTurnInput,
   SendKindroidGroupMessageInput,
   SendKindroidGroupMessageResult,
@@ -42,6 +44,7 @@ const updateInfoUrl = "https://api.kindroid.ai/v1/update-info";
 const updateGroupChatUrl = "https://api.kindroid.ai/v1/groupchats-update";
 const journalCreateUrl = "https://api.kindroid.ai/v1/journal-create";
 const journalDeleteUrl = "https://api.kindroid.ai/v1/journal-delete";
+const getChatMessagesUrl = "https://api.kindroid.ai/v1/get-chat-messages";
 
 export class KindroidClient {
   private fallbackAuthWarningLogged = false;
@@ -295,6 +298,59 @@ export class KindroidClient {
       status: response.status,
       ok: response.ok,
       responseText: response.ok ? undefined : responseText.slice(0, 1000)
+    };
+  }
+
+  async getChatMessages(input: GetKindroidChatMessagesInput): Promise<GetKindroidChatMessagesResult> {
+    const url = new URL(getChatMessagesUrl);
+    if (input.aiId && input.groupId) {
+      throw new Error("Chat history request must specify either aiId or groupId, not both.");
+    }
+    if (!input.aiId && !input.groupId) {
+      throw new Error("Chat history request requires an aiId or groupId.");
+    }
+    if (input.aiId) {
+      url.searchParams.set("ai_id", input.aiId);
+    }
+    if (input.groupId) {
+      url.searchParams.set("group_id", input.groupId);
+    }
+    url.searchParams.set("limit", String(Math.max(1, Math.min(100, input.limit ?? 100))));
+    if (typeof input.startAfterTimestamp === "number" && Number.isFinite(input.startAfterTimestamp)) {
+      url.searchParams.set("start_after_timestamp", String(input.startAfterTimestamp));
+    }
+
+    const response = await fetch(url, {
+      method: "GET",
+      headers: await this.authHeaders()
+    });
+    const responseText = await response.text();
+    this.logger.info("Kindroid get-chat-messages request completed.", {
+      status: response.status,
+      ok: response.ok,
+      aiId: input.aiId,
+      groupId: input.groupId,
+      startAfterTimestamp: input.startAfterTimestamp
+    });
+
+    if (!response.ok) {
+      return {
+        status: response.status,
+        ok: false,
+        messages: [],
+        responseText: responseText.slice(0, 1000)
+      };
+    }
+
+    const payload = JSON.parse(responseText) as {
+      messages?: unknown;
+      pagination?: GetKindroidChatMessagesResult["pagination"];
+    };
+    return {
+      status: response.status,
+      ok: true,
+      messages: Array.isArray(payload.messages) ? payload.messages : [],
+      pagination: payload.pagination
     };
   }
 

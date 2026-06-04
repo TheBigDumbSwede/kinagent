@@ -84,6 +84,40 @@ export interface DeleteKindroidJournalEntryInput {
 
 export type DeleteKindroidJournalEntryResult = CreateKindroidJournalEntryResult;
 
+export interface GetKindroidChatMessagesInput {
+  aiId?: string;
+  groupId?: string;
+  limit?: number;
+  startAfterTimestamp?: number;
+}
+
+export interface KindroidChatHistoryMessage {
+  id?: string;
+  sender?: string;
+  sender_type?: string;
+  display_name?: string;
+  timestamp?: number;
+  message?: string;
+  image_urls?: string[];
+  image_description?: string;
+  video_description?: string;
+  internet_response?: string;
+  link_url?: string;
+  link_description?: string;
+}
+
+export interface GetKindroidChatMessagesResult {
+  status: number;
+  ok: boolean;
+  messages: KindroidChatHistoryMessage[];
+  pagination?: {
+    hasMore?: boolean;
+    lastTimestamp?: number;
+    limit?: number;
+  };
+  responseText?: string;
+}
+
 export interface UpdateKindroidIdentityInput {
   aiId: string;
   backstory: string;

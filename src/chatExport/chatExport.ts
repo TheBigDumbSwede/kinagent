@@ -1,10 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
-import { loadBrowserSession } from "../auth/firebaseSession.js";
 import type { AppConfig } from "../config/types.js";
-import { mapKindroidMessage } from "../firestore/messageMapper.js";
 import type { NormalizedKindroidMessage } from "../firestore/types.js";
-import { KindroidApiClient } from "../kindroid/client/index.js";
+import { KindroidClient } from "../kindroid/kindroidClient.js";
+import type { KindroidChatHistoryMessage } from "../kindroid/types.js";
 import type { Logger } from "../util/logger.js";
 
 export interface KinChatExportOptions {
@@ -25,7 +24,7 @@ export interface GroupChatExportOptions {
 }
 
 export interface KinChatExportProgress {
-  phase: "loading" | "decrypting" | "writing" | "complete";
+  phase: "loading" | "writing" | "complete";
   processed: number;
   total?: number;
   message: string;
@@ -105,48 +104,33 @@ async function exportChatTranscript(
   onProgress: (progress: KinChatExportProgress) => void
 ): Promise<KinChatExportResult> {
   onProgress({ phase: "loading", processed: 0, message: "Loading chat entries." });
-  const client = new KindroidApiClient(config, logger);
-  const documents =
-    options.scope === "group"
-      ? await client.groupChats.listMessages({ groupId: options.id, pageSize: 100 })
-      : await client.chats.listMessages({ kinId: options.id, pageSize: 100 });
+  const messages = await loadPublicApiMessages(config, logger, options);
   const range = normalizeDateRange(options.fromDate, options.toDate);
-  const candidates = documents
-    .map((document) => ({
-      document,
-      message:
-        options.scope === "group" ? mapGroupMessage(document, options.id) : mapKindroidMessage(document, options.id)
-    }))
+  const candidates = messages
+    .map((message) => normalizePublicApiMessage(message, options))
     .filter((entry) => isMessageInRange(entry.message, range))
     .sort((left, right) => compareMessagesAscending(left.message, right.message));
 
   onProgress({
-    phase: "decrypting",
-    processed: 0,
+    phase: "loading",
+    processed: candidates.length,
     total: candidates.length,
-    message: candidates.length === 1 ? "Decrypting 1 chat entry." : `Decrypting ${candidates.length} chat entries.`
+    message: candidates.length === 1 ? "Loaded 1 chat entry." : `Loaded ${candidates.length} chat entries.`
   });
-
-  const decryptionKey = resolveDecryptionKey(config);
-  const messages: NormalizedKindroidMessage[] = [];
-  for (let index = 0; index < candidates.length; index += 1) {
-    messages.push(
-      options.scope === "group"
-        ? mapGroupMessage(candidates[index].document, options.id, decryptionKey)
-        : mapKindroidMessage(candidates[index].document, options.id, { decryptionKey })
-    );
-    onProgress({
-      phase: "decrypting",
-      processed: index + 1,
-      total: candidates.length,
-      message: `Decrypted ${index + 1} of ${candidates.length} chat entries.`
-    });
-  }
 
   onProgress({
     phase: "writing",
-    processed: messages.length,
-    total: messages.length,
+    processed: 0,
+    total: candidates.length,
+    message: "Preparing transcript."
+  });
+
+  const normalizedMessages = candidates.map((entry) => entry.message);
+
+  onProgress({
+    phase: "writing",
+    processed: normalizedMessages.length,
+    total: normalizedMessages.length,
     message: "Writing transcript."
   });
 
@@ -155,7 +139,7 @@ async function exportChatTranscript(
   const tempPath = path.join(options.tempDir, `${Date.now()}-${fileName}`);
   fs.writeFileSync(
     tempPath,
-    renderChatTranscript(messages, {
+    renderChatTranscript(normalizedMessages, {
       kinName: options.displayName || "Kin",
       speakerNames: options.speakerNames
     })
@@ -163,15 +147,15 @@ async function exportChatTranscript(
 
   onProgress({
     phase: "complete",
-    processed: messages.length,
-    total: messages.length,
+    processed: normalizedMessages.length,
+    total: normalizedMessages.length,
     message: "Transcript ready."
   });
 
   return {
     tempPath,
     fileName,
-    exportedCount: messages.length,
+    exportedCount: normalizedMessages.length,
     totalCount: candidates.length
   };
 }
@@ -270,28 +254,73 @@ function timeLabel(timestamp: string | null): string {
   return timestamp ? timestamp.slice(11, 16) || "Unknown" : "Unknown";
 }
 
-function mapGroupMessage(
-  document: Parameters<typeof mapKindroidMessage>[0],
-  groupId: string,
-  decryptionKey?: string
-): NormalizedKindroidMessage {
-  const data = document.data();
-  const record = typeof data === "object" && data !== null ? (data as Record<string, unknown>) : {};
-  const aiId = stringValue(record.ai_id) ?? stringValue(record.aiId);
+async function loadPublicApiMessages(
+  config: AppConfig,
+  logger: Logger,
+  options: {
+    scope: "kin" | "group";
+    id: string;
+  }
+): Promise<KindroidChatHistoryMessage[]> {
+  const client = new KindroidClient(config, logger);
+  const messages: KindroidChatHistoryMessage[] = [];
+  let startAfterTimestamp: number | undefined;
+
+  for (;;) {
+    const result = await client.getChatMessages({
+      aiId: options.scope === "kin" ? options.id : undefined,
+      groupId: options.scope === "group" ? options.id : undefined,
+      limit: 100,
+      startAfterTimestamp
+    });
+    if (!result.ok) {
+      throw new Error(`Kindroid get-chat-messages failed with HTTP ${result.status}.`);
+    }
+
+    messages.push(...result.messages);
+    if (!result.pagination?.hasMore || typeof result.pagination.lastTimestamp !== "number") {
+      return messages;
+    }
+    if (result.pagination.lastTimestamp === startAfterTimestamp) {
+      throw new Error("Kindroid get-chat-messages pagination did not advance.");
+    }
+    startAfterTimestamp = result.pagination.lastTimestamp;
+  }
+}
+
+function normalizePublicApiMessage(
+  message: KindroidChatHistoryMessage,
+  options: { scope: "kin" | "group"; id: string }
+): { message: NormalizedKindroidMessage } {
+  const timestamp = normalizePublicApiTimestamp(message.timestamp);
   return {
-    ...mapKindroidMessage(document, aiId ?? groupId, decryptionKey ? { decryptionKey } : {}),
-    groupId
+    message: {
+      id: stringValue(message.id) ?? `${options.id}-${timestamp ?? "undated"}`,
+      kinId: options.scope === "kin" ? options.id : (stringValue(message.sender) ?? options.id),
+      groupId: options.scope === "group" ? options.id : undefined,
+      timestamp,
+      text: stringValue(message.message),
+      textEncrypted: false,
+      textDecrypted: true,
+      sender: stringValue(message.sender_type) ?? stringValue(message.sender),
+      role: stringValue(message.sender_type),
+      raw: message
+    }
   };
 }
 
 function speakerLabel(
-  message: Pick<NormalizedKindroidMessage, "kinId" | "sender" | "role">,
+  message: Pick<NormalizedKindroidMessage, "kinId" | "sender" | "role" | "raw">,
   kinName: string,
   speakerNames: Record<string, string>
 ): string {
   const sender = (message.sender || message.role || "").toLowerCase();
   if (sender === "user" || sender === "human") {
     return "User";
+  }
+  const displayName = publicApiDisplayName(message.raw);
+  if (displayName) {
+    return displayName;
   }
   if (speakerNames[message.kinId]) {
     return speakerNames[message.kinId];
@@ -300,19 +329,6 @@ function speakerLabel(
     return kinName;
   }
   return message.sender || message.role || "Unknown";
-}
-
-function resolveDecryptionKey(config: AppConfig): string {
-  if (config.kindroid.uid) {
-    return config.kindroid.uid;
-  }
-
-  const session = loadBrowserSession(config.bridge.sessionDir);
-  if (!session.firebaseAuth?.uid) {
-    throw new Error("Cannot decrypt chat export without a Firebase UID. Save a Kindroid session first.");
-  }
-
-  return session.firebaseAuth.uid;
 }
 
 function parseDateStart(value?: string): Date | undefined {
@@ -363,4 +379,21 @@ function safeFilePart(value: string): string {
 
 function stringValue(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function normalizePublicApiTimestamp(value: unknown): string | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return null;
+  }
+
+  const milliseconds = value > 10_000_000_000 ? value : value * 1000;
+  return new Date(milliseconds).toISOString();
+}
+
+function publicApiDisplayName(raw: unknown): string | null {
+  if (!raw || typeof raw !== "object") {
+    return null;
+  }
+
+  return stringValue((raw as { display_name?: unknown }).display_name);
 }
