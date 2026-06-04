@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import os from "node:os";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -44,17 +45,30 @@ let smokeRuntimeReady = false;
 
 app.setName("Kinagent");
 
-void app.whenReady().then(() => {
-  initializeDesktopConfig();
-  createMainWindow();
-  createTray();
-  registerIpcHandlers();
-  void startRuntime();
+if (process.env.KINAGENT_DESKTOP_SMOKE === "1") {
+  app.setPath("userData", path.join(os.tmpdir(), `kinagent-desktop-smoke-${process.pid}`));
+}
 
-  app.on("activate", () => {
+const singleInstanceLock = app.requestSingleInstanceLock();
+if (!singleInstanceLock) {
+  app.quit();
+} else {
+  app.on("second-instance", () => {
     showMainWindow();
   });
-});
+
+  void app.whenReady().then(() => {
+    initializeDesktopConfig();
+    createMainWindow();
+    createTray();
+    registerIpcHandlers();
+    void startRuntime();
+
+    app.on("activate", () => {
+      showMainWindow();
+    });
+  });
+}
 
 function initializeDesktopConfig(): void {
   desktopUserDataDir = app.getPath("userData");
