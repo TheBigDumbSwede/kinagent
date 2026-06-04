@@ -21,6 +21,15 @@ import {
   renderKinSubscriptions
 } from "./subscriptionLists.js";
 import {
+  handleDetailTabsClick,
+  handleKinDetailTabsClick,
+  handleSettingTabsClick,
+  modeForTab,
+  renderTabNavigation,
+  subtitleForDetailMode,
+  tabLabelFor
+} from "./tabNavigation.js";
+import {
   renderKinHermesTab,
   renderVoiceProviderFields,
   renderVoiceTab,
@@ -73,7 +82,6 @@ const state = {
 const captureRequestTimeoutMs = 12_000;
 const maxMonitorMessages = 500;
 const loginOnboardingMessage = "Use Open Login, then Save Session to begin.";
-const settingTabKeys = new Set(["backstory", "directive", "memory", "example", "scene", "background", "profile"]);
 const chatDynamismSlider = {
   hardMin: 0.6,
   hardMax: 1.8,
@@ -257,6 +265,23 @@ function journalSuggestionsContext() {
   };
 }
 
+function tabNavigationContext() {
+  return {
+    state,
+    elements,
+    loadAppSettings: () => {
+      void loadAppSettings();
+    },
+    loadKinVoice: (kinId) => {
+      void loadKinVoice(kinId);
+    },
+    loadKinAmbient: (kinId) => {
+      void loadKinAmbient(kinId);
+    },
+    renderActivity
+  };
+}
+
 elements.loginStartButton.addEventListener("click", () =>
   runAction("Opening login", () => window.kinagent.startLogin())
 );
@@ -293,74 +318,13 @@ elements.clearButton.addEventListener("click", () => {
   clearVisibleMonitorMessages();
 });
 elements.detailTabs.addEventListener("click", (event) => {
-  if (!(event.target instanceof Element)) {
-    return;
-  }
-
-  const button = event.target.closest("[data-mode]");
-  if (!button) {
-    return;
-  }
-
-  const nextTab = tabForMode(button.dataset.mode);
-  if (state.activeTab !== nextTab) {
-    state.selectedHistoryHash = null;
-  }
-  state.activeTab = nextTab;
-  if (state.activeTab === "app-settings" && !state.appSettings && !state.appSettingsLoading) {
-    void loadAppSettings();
-  }
-  if (state.activeTab === "voice" && state.selectedKinId && !state.selectedKinVoice && !state.voiceLoading) {
-    void loadKinVoice(state.selectedKinId);
-  }
-  if (state.activeTab === "hermes" && state.selectedKinId && !state.selectedKinAmbient && !state.ambientLoading) {
-    void loadKinAmbient(state.selectedKinId);
-  }
-  renderActivity();
+  handleDetailTabsClick(tabNavigationContext(), event);
 });
 elements.kinDetailTabs.addEventListener("click", (event) => {
-  if (!(event.target instanceof Element)) {
-    return;
-  }
-
-  const button = event.target.closest("[data-mode]");
-  if (!button) {
-    return;
-  }
-
-  const nextTab = tabForMode(button.dataset.mode);
-  if (state.activeTab !== nextTab) {
-    state.selectedHistoryHash = null;
-  }
-  state.activeTab = nextTab;
-  if (state.activeTab === "voice" && state.selectedKinId && !state.selectedKinVoice && !state.voiceLoading) {
-    void loadKinVoice(state.selectedKinId);
-  }
-  if (state.activeTab === "hermes" && state.selectedKinId && !state.selectedKinAmbient && !state.ambientLoading) {
-    void loadKinAmbient(state.selectedKinId);
-  }
-  renderActivity();
+  handleKinDetailTabsClick(tabNavigationContext(), event);
 });
 elements.settingTabs.addEventListener("click", (event) => {
-  if (!(event.target instanceof Element)) {
-    return;
-  }
-
-  const button = event.target.closest("[data-setting]");
-  if (!button) {
-    return;
-  }
-
-  const nextTab = button.dataset.setting;
-  if (!settingTabKeys.has(nextTab)) {
-    return;
-  }
-
-  if (state.activeTab !== nextTab) {
-    state.selectedHistoryHash = null;
-  }
-  state.activeTab = nextTab;
-  renderActivity();
+  handleSettingTabsClick(tabNavigationContext(), event);
 });
 elements.voiceProviderInput.addEventListener("change", () => {
   renderVoiceProviderFields(voiceHermesContext());
@@ -724,42 +688,9 @@ function renderActivity() {
   const isAnalyze = activeMode === "analyze";
   const isExport = activeMode === "export";
   const isAppSettings = activeMode === "app-settings";
-  const kinModes = ["settings", "journal", "hermes", "voice", "analyze", "export"];
 
   renderJournalTabBadge(journalSuggestionsContext());
-  for (const button of elements.detailTabs.querySelectorAll("[data-mode]")) {
-    if (button.dataset.mode === "settings") {
-      button.hidden = Boolean(state.selectedGroupId);
-    } else if (button.dataset.mode === "export") {
-      button.hidden = !state.selectedGroupId;
-    } else {
-      button.hidden = false;
-    }
-    const selected =
-      button.dataset.mode === activeMode || (button.dataset.mode === "settings" && kinModes.includes(activeMode));
-    button.classList.toggle("active", selected);
-    button.setAttribute("aria-selected", String(selected));
-  }
-
-  elements.kinDetailTabs.hidden = Boolean(
-    state.selectedGroupId || !state.selectedKinId || !kinModes.includes(activeMode)
-  );
-  for (const button of elements.kinDetailTabs.querySelectorAll("[data-mode]")) {
-    const selected = button.dataset.mode === activeMode;
-    button.classList.toggle("active", selected);
-    button.setAttribute("aria-selected", String(selected));
-  }
-
-  elements.settingTabs.hidden = Boolean(state.selectedGroupId || activeMode !== "settings");
-  for (const button of elements.settingTabs.querySelectorAll("[data-setting]")) {
-    const selected = button.dataset.setting === currentSettingTab();
-    button.classList.toggle("active", selected);
-    button.setAttribute("aria-selected", String(selected));
-  }
-
-  elements.monitorPane.hidden = !isMonitor;
-  elements.detailPane.hidden = isMonitor;
-  elements.clearButton.hidden = !isMonitor;
+  renderTabNavigation(tabNavigationContext(), activeMode);
 
   if (isMonitor) {
     const selectedKin = currentSelectedKin();
@@ -791,7 +722,7 @@ function renderActivity() {
 
   const selectedKin = currentSelectedKin();
   const field = currentCapturedField();
-  const tabLabel = field?.label || tabLabelFor(activeTab);
+  const tabLabel = field?.label || tabLabelFor(tabNavigationContext(), activeTab);
   elements.activityTitle.textContent = selectedKin ? `${selectedKin.name || "Kin"} · ${tabLabel}` : tabLabel;
   elements.monitorLine.textContent = subtitleForDetailMode(activeMode);
 
@@ -843,7 +774,7 @@ function renderActivity() {
         selectedKin,
         field,
         capture: state.selectedKinCapture,
-        fallbackSettingLabel: tabLabelFor(state.activeTab)
+        fallbackSettingLabel: tabLabelFor(tabNavigationContext(), state.activeTab)
       })
     });
     renderJournalSuggestions(journalSuggestionsContext());
@@ -857,7 +788,7 @@ function renderActivity() {
       selectedKin,
       field,
       capture: state.selectedKinCapture,
-      fallbackSettingLabel: tabLabelFor(state.activeTab)
+      fallbackSettingLabel: tabLabelFor(tabNavigationContext(), state.activeTab)
     })
   });
   renderJournalSuggestions(journalSuggestionsContext());
@@ -1064,92 +995,6 @@ function clearMissingSelectedGroup() {
   if (!state.groups.some((group) => group.groupId === state.selectedGroupId)) {
     state.selectedGroupId = null;
   }
-}
-
-function tabLabelFor(tab) {
-  if (tab === "journal") {
-    return "Journal";
-  }
-
-  if (tab === "hermes") {
-    return "Hermes";
-  }
-
-  if (tab === "voice") {
-    return "Voice";
-  }
-
-  if (tab === "analyze") {
-    return "Analyze";
-  }
-
-  if (tab === "export") {
-    return "Export";
-  }
-
-  const settingButton = elements.settingTabs.querySelector(`[data-setting="${tab}"]`);
-  if (settingButton) {
-    return settingButton.textContent?.trim() || "Detail";
-  }
-
-  const modeButton = elements.detailTabs.querySelector(`[data-mode="${modeForTab(tab)}"]`);
-  return modeButton?.textContent?.trim() || "Detail";
-}
-
-function tabForMode(mode) {
-  if (mode === "app-settings") {
-    return "app-settings";
-  }
-
-  if (mode === "settings") {
-    return currentSettingTab();
-  }
-
-  return ["journal", "hermes", "voice", "analyze", "export"].includes(mode) ? mode : "monitor";
-}
-
-function modeForTab(tab) {
-  if (tab === "app-settings") {
-    return "app-settings";
-  }
-
-  if (settingTabKeys.has(tab)) {
-    return "settings";
-  }
-
-  return ["journal", "hermes", "voice", "analyze", "export"].includes(tab) ? tab : "monitor";
-}
-
-function currentSettingTab() {
-  return settingTabKeys.has(state.activeTab) ? state.activeTab : "backstory";
-}
-
-function subtitleForDetailMode(mode) {
-  if (mode === "app-settings") {
-    return "Application configuration";
-  }
-
-  if (mode === "voice") {
-    return "Voice configuration";
-  }
-
-  if (mode === "hermes") {
-    return "Hermes configuration";
-  }
-
-  if (mode === "analyze") {
-    return "Kin analysis";
-  }
-
-  if (mode === "export") {
-    return "Chat export";
-  }
-
-  if (mode === "journal") {
-    return "Captured journal history";
-  }
-
-  return "Captured settings history";
 }
 
 function withTimeout(promise, timeoutMs, message) {
