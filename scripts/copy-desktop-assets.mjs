@@ -9,13 +9,32 @@ const preloadTarget = path.join(projectRoot, "dist", "desktop", "preload.cjs");
 const assetsSource = path.join(projectRoot, "assets");
 const assetsTarget = path.join(projectRoot, "dist", "desktop", "assets");
 
-fs.rmSync(rendererTarget, { recursive: true, force: true });
 fs.rmSync(assetsTarget, { recursive: true, force: true });
 fs.mkdirSync(rendererTarget, { recursive: true });
 fs.mkdirSync(assetsTarget, { recursive: true });
 
+const expectedRendererFiles = new Set();
 for (const entry of fs.readdirSync(rendererSource, { withFileTypes: true })) {
   if (!entry.isFile()) {
+    continue;
+  }
+
+  const extension = path.extname(entry.name);
+  expectedRendererFiles.add(extension === ".ts" ? `${path.basename(entry.name, extension)}.js` : entry.name);
+}
+
+for (const entry of fs.readdirSync(rendererTarget, { withFileTypes: true })) {
+  if (entry.isFile() && !expectedRendererFiles.has(entry.name)) {
+    fs.rmSync(path.join(rendererTarget, entry.name), { force: true });
+  }
+}
+
+for (const entry of fs.readdirSync(rendererSource, { withFileTypes: true })) {
+  if (!entry.isFile()) {
+    continue;
+  }
+
+  if (path.extname(entry.name) === ".ts") {
     continue;
   }
 

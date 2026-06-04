@@ -1,6 +1,30 @@
 import { formatTime } from "./formatters.js";
 
-export function visibleMonitorMessages(messages, { selectedGroupId, selectedKinId, activeTab }) {
+export interface MonitorMessage {
+  type?: string;
+  kinId?: string | null;
+  kinName?: string | null;
+  groupId?: string | null;
+  groupName?: string | null;
+  sender?: string | null;
+  senderLabel?: string | null;
+  source?: string | null;
+  timestamp?: string | null;
+  text?: string | null;
+  textDecrypted?: boolean;
+  visibleMessage?: string | null;
+}
+
+export interface MonitorMessageFilter {
+  selectedGroupId?: string | null;
+  selectedKinId?: string | null;
+  activeTab?: string | null;
+}
+
+export function visibleMonitorMessages(
+  messages: MonitorMessage[],
+  { selectedGroupId, selectedKinId, activeTab }: MonitorMessageFilter
+): MonitorMessage[] {
   if (selectedGroupId) {
     return messages.filter((message) => message.groupId === selectedGroupId);
   }
@@ -12,7 +36,7 @@ export function visibleMonitorMessages(messages, { selectedGroupId, selectedKinI
   return messages;
 }
 
-export function createMessageElement(message) {
+export function createMessageElement(message: MonitorMessage): HTMLElement {
   const item = document.createElement("article");
   item.className = `message ${message.sender || ""}`;
   if (message.type === "kindroid.hermes_context") {

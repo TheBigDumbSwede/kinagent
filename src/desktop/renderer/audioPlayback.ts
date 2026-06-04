@@ -1,10 +1,25 @@
-export function createVoiceAudioPlayer({ onError }) {
-  const voiceAudio = {
+export interface VoiceAudioPayload {
+  audio?: ArrayBuffer | ArrayBufferView;
+  format?: string;
+  boundaryGapMs?: number;
+}
+
+export interface VoiceAudioPlayerOptions {
+  onError: (error: unknown) => void;
+}
+
+export function createVoiceAudioPlayer({
+  onError
+}: VoiceAudioPlayerOptions): (payload?: VoiceAudioPayload) => Promise<void> {
+  const voiceAudio: {
+    context: AudioContext | null;
+    nextStartTime: number;
+  } = {
     context: null,
     nextStartTime: 0
   };
 
-  return async function playVoiceAudio(payload) {
+  return async function playVoiceAudio(payload?: VoiceAudioPayload) {
     if (!payload?.audio || payload.format !== "mp3") {
       return;
     }
@@ -38,13 +53,13 @@ export function createVoiceAudioPlayer({ onError }) {
   };
 }
 
-function audioPayloadToArrayBuffer(audio) {
+function audioPayloadToArrayBuffer(audio: ArrayBuffer | ArrayBufferView): ArrayBuffer {
   if (audio instanceof ArrayBuffer) {
     return audio;
   }
 
   if (ArrayBuffer.isView(audio)) {
-    return audio.buffer.slice(audio.byteOffset, audio.byteOffset + audio.byteLength);
+    return audio.buffer.slice(audio.byteOffset, audio.byteOffset + audio.byteLength) as ArrayBuffer;
   }
 
   throw new Error("Unsupported audio payload.");

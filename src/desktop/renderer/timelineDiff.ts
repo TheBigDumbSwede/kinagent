@@ -1,9 +1,21 @@
-export function renderSelectedHistoryDiff(entry, previousEntry) {
+export interface HistoryDiffEntry {
+  content?: string | null;
+}
+
+export interface DiffLine {
+  prefix: " " | "+" | "-";
+  text: string;
+}
+
+export function renderSelectedHistoryDiff(
+  entry: HistoryDiffEntry,
+  previousEntry?: HistoryDiffEntry | null
+): DiffLine[] {
   const lines = buildLineDiff(previousEntry?.content || "", entry.content || "");
   return lines.length > 0 ? lines : [{ prefix: " ", text: "No text differences." }];
 }
 
-export function createDiffLine(line) {
+export function createDiffLine(line: DiffLine): HTMLSpanElement {
   const element = document.createElement("span");
   element.className =
     line.prefix === "+"
@@ -15,7 +27,7 @@ export function createDiffLine(line) {
   return element;
 }
 
-function buildLineDiff(previousContent, selectedContent) {
+function buildLineDiff(previousContent: string, selectedContent: string): DiffLine[] {
   const previousLines = splitDiffLines(previousContent);
   const selectedLines = splitDiffLines(selectedContent);
   if (previousContent === selectedContent) {
@@ -39,7 +51,7 @@ function buildLineDiff(previousContent, selectedContent) {
     }
   }
 
-  const diff = [];
+  const diff: DiffLine[] = [];
   let leftIndex = 0;
   let rightIndex = 0;
   while (leftIndex < previousLines.length && rightIndex < selectedLines.length) {
@@ -69,7 +81,7 @@ function buildLineDiff(previousContent, selectedContent) {
   return diff;
 }
 
-function splitDiffLines(value) {
+function splitDiffLines(value: string): string[] {
   const normalized = value.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   return normalized.length === 0 ? [] : normalized.split("\n");
 }

@@ -1,4 +1,12 @@
-export function formatTime(value) {
+export interface TimelineChangeEntry {
+  changed?: boolean;
+  previousShortHash?: string;
+  addedLines?: number;
+  removedLines?: number;
+  characterDelta?: number;
+}
+
+export function formatTime(value: string | null | undefined): string {
   if (!value) {
     return "";
   }
@@ -7,7 +15,7 @@ export function formatTime(value) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }
 
-export function formatTimelineChange(entry) {
+export function formatTimelineChange(entry: TimelineChangeEntry): string {
   if (!entry.changed && entry.previousShortHash) {
     return "No text change from previous snapshot";
   }
@@ -24,6 +32,6 @@ export function formatTimelineChange(entry) {
   return `Compared with ${entry.previousShortHash} · +${added} / -${removed} lines · ${characterLabel}`;
 }
 
-export function providerLabel(provider) {
+export function providerLabel(provider: string | null | undefined): string {
   return provider === "elevenlabs" ? "ElevenLabs" : "OpenAI";
 }
