@@ -246,6 +246,9 @@ function registerIpcHandlers(): void {
   ipcMain.handle("journal:accept-suggestion", async (_event, input: { id?: string } = {}) =>
     acceptJournalSuggestion(input.id ?? "")
   );
+  ipcMain.handle("journal:delete-invalidated-suggestion", async (_event, input: { id?: string } = {}) =>
+    deleteInvalidatedJournalSuggestion(input.id ?? "")
+  );
   ipcMain.handle("journal:dismiss-suggestion", async (_event, input: { id?: string } = {}) =>
     dismissJournalSuggestion(input.id ?? "")
   );
@@ -673,6 +676,16 @@ async function acceptJournalSuggestion(id: string) {
   }
 
   const suggestion = await requireRuntime().acceptJournalSuggestion(id);
+  sendRendererEvent("journal-suggestions-updated", requireRuntime().pendingJournalSuggestions());
+  return { ok: true, suggestion };
+}
+
+async function deleteInvalidatedJournalSuggestion(id: string) {
+  if (!id) {
+    throw new Error("Journal suggestion id is required.");
+  }
+
+  const suggestion = await requireRuntime().deleteInvalidatedJournalSuggestion(id);
   sendRendererEvent("journal-suggestions-updated", requireRuntime().pendingJournalSuggestions());
   return { ok: true, suggestion };
 }

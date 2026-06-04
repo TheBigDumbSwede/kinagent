@@ -23,7 +23,13 @@ export interface JournalSuggestionStoreOptions {
   strongEventBypass: boolean;
 }
 
-export type JournalSuggestionStatus = "pending" | "accepted" | "dismissed" | "stale";
+export type JournalSuggestionStatus =
+  | "pending"
+  | "accepted"
+  | "dismissed"
+  | "stale"
+  | "source_invalidated"
+  | "remediated";
 export type JournalSuggestionCategory = (typeof journalSuggestionCategories)[number];
 export type JournalSuggestionAction = "create" | "delete";
 
@@ -78,6 +84,20 @@ export interface JournalSuggestion {
   dismissedAt?: string;
   staleAt?: string;
   staleReason?: string;
+  sourceInvalidatedAt?: string;
+  sourceInvalidationReason?: string;
+  createdJournalEntryId?: string;
+  createdJournalEntryCreated?: string;
+  createdJournalEntryResolvedAt?: string;
+  remediatedAt?: string;
+  remediationAction?: "delete_created_journal_entry";
+  remediationResult?: {
+    ok: boolean;
+    status?: number;
+    responseText?: string;
+    captureCommitHash?: string;
+    captureCreatedCommit?: boolean;
+  };
   result?: {
     ok: boolean;
     status?: number;
@@ -119,6 +139,15 @@ export class JournalSuggestionStore {
     const suggestions = file.suggestions ?? [];
     const filtered = status ? suggestions.filter((suggestion) => suggestion.status === status) : suggestions;
     return [...filtered].sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+  }
+
+  listReviewable(): JournalSuggestion[] {
+    const file = this.read();
+    const suggestions = file.suggestions ?? [];
+    const filtered = suggestions.filter(
+      (suggestion) => suggestion.status === "pending" || suggestion.status === "source_invalidated"
+    );
+    return [...filtered].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
   }
 
   get(id: string): JournalSuggestion | null {
@@ -287,12 +316,23 @@ export class JournalSuggestionStore {
     return suggestion;
   }
 
-  markAccepted(id: string, result: NonNullable<JournalSuggestion["result"]>): JournalSuggestion {
+  markAccepted(
+    id: string,
+    result: NonNullable<JournalSuggestion["result"]>,
+    createdJournalEntry?: {
+      id: string;
+      created?: string;
+      resolvedAt: string;
+    } | null
+  ): JournalSuggestion {
     return this.updateSuggestion(id, (suggestion, now) => ({
       ...suggestion,
       status: "accepted",
       acceptedAt: now,
       updatedAt: now,
+      createdJournalEntryId: createdJournalEntry?.id,
+      createdJournalEntryCreated: createdJournalEntry?.created,
+      createdJournalEntryResolvedAt: createdJournalEntry?.resolvedAt,
       result
     }));
   }
@@ -315,9 +355,12 @@ export class JournalSuggestionStore {
     const file = this.read();
     const suggestions = file.suggestions ?? [];
     const now = new Date().toISOString();
-    const stale: JournalSuggestion[] = [];
+    const changed: JournalSuggestion[] = [];
     const nextSuggestions = suggestions.map((suggestion) => {
-      if (suggestion.status !== "pending" || suggestion.documentId !== documentId) {
+      if (
+        (suggestion.status !== "pending" && suggestion.status !== "accepted") ||
+        suggestion.documentId !== documentId
+      ) {
         return suggestion;
       }
       if (input.groupId && suggestion.groupId !== input.groupId) {
@@ -327,21 +370,46 @@ export class JournalSuggestionStore {
         return suggestion;
       }
 
-      const next = {
-        ...suggestion,
-        status: "stale" as const,
-        updatedAt: now,
-        staleAt: now,
-        staleReason: "Source chat message was deleted or rewound before review."
-      };
-      stale.push(next);
+      const next =
+        suggestion.status === "accepted"
+          ? {
+              ...suggestion,
+              status: "source_invalidated" as const,
+              updatedAt: now,
+              sourceInvalidatedAt: now,
+              sourceInvalidationReason:
+                "Source chat message was deleted or rewound after this journal change was accepted."
+            }
+          : {
+              ...suggestion,
+              status: "stale" as const,
+              updatedAt: now,
+              staleAt: now,
+              staleReason: "Source chat message was deleted or rewound before review."
+            };
+      changed.push(next);
       return next;
     });
 
-    if (stale.length > 0) {
+    if (changed.length > 0) {
       this.write({ ...file, suggestions: nextSuggestions });
     }
-    return stale;
+    return changed;
+  }
+
+  markRemediated(
+    id: string,
+    remediationAction: NonNullable<JournalSuggestion["remediationAction"]>,
+    remediationResult: NonNullable<JournalSuggestion["remediationResult"]>
+  ): JournalSuggestion {
+    return this.updateSuggestion(id, (suggestion, now) => ({
+      ...suggestion,
+      status: "remediated",
+      updatedAt: now,
+      remediatedAt: now,
+      remediationAction,
+      remediationResult
+    }));
   }
 
   private updateSuggestion(

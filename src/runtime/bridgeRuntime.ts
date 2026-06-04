@@ -1,10 +1,12 @@
 import { extractFirebaseAppCheckState, loadBrowserSession, summarizeSessionAuth } from "../auth/firebaseSession.js";
+import { captureDocument } from "../capture/capturedValue.js";
 import { captureKindroidState, type CaptureKindroidStateResult } from "../capture/kinStateCapture.js";
 import {
   ChatDynamismSuggestionStore,
   type ChatDynamismSuggestion
 } from "../chatDynamism/chatDynamismSuggestionStore.js";
 import type { AppConfig } from "../config/types.js";
+import { FirestoreRestClient } from "../firestore/firestoreRestClient.js";
 import { KindroidLiveMonitor } from "../firestore/liveMonitor.js";
 import { isRecentOutboundEcho } from "../firestore/messageDedupe.js";
 import { mapKindroidMessage } from "../firestore/messageMapper.js";
@@ -19,6 +21,7 @@ import {
 } from "../kindroid/chatDynamism.js";
 import { JournalSuggestionStore, type JournalSuggestion } from "../journal/journalSuggestionStore.js";
 import { KindroidApiClient, type KindroidGroup, type KindroidKin } from "../kindroid/client/index.js";
+import { groupChatMessagesPath, kinChatMessagesPath } from "../kindroid/client/firestorePaths.js";
 import { KindroidClient } from "../kindroid/kindroidClient.js";
 import type { Logger } from "../util/logger.js";
 import { GroupSubscriptionSupervisor, type GroupSubscriptionStatus } from "./groupSubscriptionSupervisor.js";
@@ -289,7 +292,7 @@ export class BridgeRuntime {
   }
 
   pendingJournalSuggestions(): JournalSuggestion[] {
-    return this.journalSuggestions.list("pending");
+    return this.journalSuggestions.listReviewable();
   }
 
   dismissJournalSuggestion(id: string): JournalSuggestion {
@@ -307,6 +310,9 @@ export class BridgeRuntime {
       throw new Error("Journal suggestion has already been handled.");
     }
 
+    await this.ensureJournalSuggestionSourceExists(suggestion);
+
+    const mutationStartedAt = new Date().toISOString();
     const client = new KindroidClient(this.options.config, this.options.logger);
     const action = suggestion.action ?? "create";
     const result =
@@ -332,7 +338,52 @@ export class BridgeRuntime {
           ? `Capture Kindroid journal deletion ${suggestion.aiId}`
           : `Capture Kindroid journal entry ${suggestion.aiId}`
     });
-    const accepted = this.journalSuggestions.markAccepted(id, {
+    const createdJournalEntry =
+      action === "create" ? await this.resolveCreatedJournalEntry(suggestion, mutationStartedAt) : null;
+    const accepted = this.journalSuggestions.markAccepted(
+      id,
+      {
+        ok: result.ok,
+        status: result.status,
+        responseText: result.responseText,
+        captureCommitHash: capture.commitHash,
+        captureCreatedCommit: capture.createdCommit
+      },
+      createdJournalEntry
+    );
+    this.emit({ channel: "journal-suggestions-updated", payload: this.pendingJournalSuggestions() });
+    this.emit({ channel: "identity-capture-completed", payload: capture });
+    return accepted;
+  }
+
+  async deleteInvalidatedJournalSuggestion(id: string): Promise<JournalSuggestion> {
+    const suggestion = this.journalSuggestions.get(id);
+    if (!suggestion) {
+      throw new Error("Journal suggestion not found.");
+    }
+    if (suggestion.status !== "source_invalidated") {
+      throw new Error("Journal suggestion is not awaiting source-invalidation review.");
+    }
+    if ((suggestion.action ?? "create") !== "create") {
+      throw new Error("Only accepted journal-create suggestions can delete a created journal entry.");
+    }
+    if (!suggestion.createdJournalEntryId) {
+      throw new Error("Cannot delete invalidated journal entry because no created journal entry id was resolved.");
+    }
+
+    const client = new KindroidClient(this.options.config, this.options.logger);
+    const result = await client.deleteJournalEntry({
+      aiId: suggestion.aiId,
+      id: suggestion.createdJournalEntryId
+    });
+    if (!result.ok) {
+      throw new Error(`Kindroid journal-delete failed with HTTP ${result.status}.`);
+    }
+
+    const capture = await captureKindroidState(this.options.config, this.options.logger, {
+      message: `Capture Kindroid invalidated journal deletion ${suggestion.aiId}`
+    });
+    const remediated = this.journalSuggestions.markRemediated(id, "delete_created_journal_entry", {
       ok: result.ok,
       status: result.status,
       responseText: result.responseText,
@@ -341,7 +392,7 @@ export class BridgeRuntime {
     });
     this.emit({ channel: "journal-suggestions-updated", payload: this.pendingJournalSuggestions() });
     this.emit({ channel: "identity-capture-completed", payload: capture });
-    return accepted;
+    return remediated;
   }
 
   status(): BridgeRuntimeStatus {
@@ -520,7 +571,7 @@ export class BridgeRuntime {
       }
     });
 
-    const staleJournalSuggestions = this.journalSuggestions.markSourceDeleted({
+    const changedJournalSuggestions = this.journalSuggestions.markSourceDeleted({
       documentId,
       aiId: kin.aiId
     });
@@ -528,15 +579,18 @@ export class BridgeRuntime {
       documentId,
       aiId: kin.aiId
     });
-    if (staleJournalSuggestions.length > 0) {
+    if (changedJournalSuggestions.length > 0) {
       this.emit({ channel: "journal-suggestions-updated", payload: this.pendingJournalSuggestions() });
     }
-    if (staleJournalSuggestions.length > 0 || staleChatDynamismSuggestions.length > 0) {
-      this.options.logger.info("Marked pending suggestions stale after source message deletion.", {
+    if (changedJournalSuggestions.length > 0 || staleChatDynamismSuggestions.length > 0) {
+      this.options.logger.info("Marked source-backed suggestions after source message deletion.", {
         scope: "direct",
         aiId: kin.aiId,
         documentId,
-        journalSuggestions: staleJournalSuggestions.length,
+        staleJournalSuggestions: changedJournalSuggestions.filter((suggestion) => suggestion.status === "stale").length,
+        invalidatedJournalSuggestions: changedJournalSuggestions.filter(
+          (suggestion) => suggestion.status === "source_invalidated"
+        ).length,
         chatDynamismSuggestions: staleChatDynamismSuggestions.length
       });
     }
@@ -555,19 +609,110 @@ export class BridgeRuntime {
       }
     });
 
-    const staleJournalSuggestions = this.journalSuggestions.markSourceDeleted({
+    const changedJournalSuggestions = this.journalSuggestions.markSourceDeleted({
       documentId,
       groupId: group.groupId
     });
-    if (staleJournalSuggestions.length > 0) {
+    if (changedJournalSuggestions.length > 0) {
       this.emit({ channel: "journal-suggestions-updated", payload: this.pendingJournalSuggestions() });
-      this.options.logger.info("Marked pending suggestions stale after source message deletion.", {
+      this.options.logger.info("Marked source-backed journal suggestions after source message deletion.", {
         scope: "group",
         groupId: group.groupId,
         documentId,
-        journalSuggestions: staleJournalSuggestions.length
+        staleJournalSuggestions: changedJournalSuggestions.filter((suggestion) => suggestion.status === "stale").length,
+        invalidatedJournalSuggestions: changedJournalSuggestions.filter(
+          (suggestion) => suggestion.status === "source_invalidated"
+        ).length
       });
     }
+  }
+
+  private async ensureJournalSuggestionSourceExists(suggestion: JournalSuggestion): Promise<void> {
+    const restClient = new FirestoreRestClient(this.options.config, this.options.logger);
+    const documentPath = await this.journalSuggestionSourcePath(restClient, suggestion);
+    if (!documentPath) {
+      return;
+    }
+
+    const document = await restClient.getDocument(documentPath);
+    if (document) {
+      return;
+    }
+
+    this.journalSuggestions.markSourceDeleted({
+      documentId: suggestion.documentId,
+      aiId: suggestion.source === "direct" ? suggestion.aiId : undefined,
+      groupId: suggestion.source === "group" ? suggestion.groupId : undefined
+    });
+    this.emit({ channel: "journal-suggestions-updated", payload: this.pendingJournalSuggestions() });
+    throw new Error("Journal suggestion source message has been deleted or rewound; suggestion was marked stale.");
+  }
+
+  private async journalSuggestionSourcePath(
+    restClient: FirestoreRestClient,
+    suggestion: JournalSuggestion
+  ): Promise<string | null> {
+    if (!suggestion.documentId) {
+      return null;
+    }
+
+    const uid = await restClient.resolveUid();
+    if (suggestion.source === "group") {
+      return suggestion.groupId ? `${groupChatMessagesPath(uid, suggestion.groupId)}/${suggestion.documentId}` : null;
+    }
+
+    return `${kinChatMessagesPath(uid, suggestion.aiId)}/${suggestion.documentId}`;
+  }
+
+  private async resolveCreatedJournalEntry(
+    suggestion: JournalSuggestion,
+    mutationStartedAt: string
+  ): Promise<{ id: string; created?: string; resolvedAt: string } | null> {
+    const restClient = new FirestoreRestClient(this.options.config, this.options.logger);
+    const uid = await restClient.resolveUid();
+    const documents = await restClient.listDocuments({
+      collectionPath: `Users/${uid}/AIs/${suggestion.aiId}/JournalV3`,
+      pageSize: 25,
+      maxDocuments: 25,
+      orderBy: "created desc",
+      logLabel: "journal.resolveCreatedEntry"
+    });
+    const matches = documents
+      .map((document) => captureDocument(document, uid, ["id", "entry", "keyphrases", "created", "is_global"]))
+      .filter((entry) => {
+        const entryText = fieldString(entry.fields.entry?.value);
+        const keyphrases = fieldStringArray(entry.fields.keyphrases?.value);
+        return (
+          normalizedText(entryText) === normalizedText(suggestion.entry) &&
+          sameStringSet(keyphrases, suggestion.keyphrases)
+        );
+      })
+      .map((entry) => ({
+        id: entry.id,
+        created: fieldString(entry.fields.created?.value) || entry.createTime || entry.updateTime
+      }));
+    if (matches.length === 1) {
+      return { ...matches[0], resolvedAt: new Date().toISOString() };
+    }
+
+    const mutationStartedMs = Date.parse(mutationStartedAt);
+    const recentMatches = Number.isFinite(mutationStartedMs)
+      ? matches.filter((entry) => {
+          const createdMs = entry.created ? Date.parse(entry.created) : NaN;
+          return Number.isFinite(createdMs) && createdMs >= mutationStartedMs - 5 * 60 * 1000;
+        })
+      : [];
+    if (recentMatches.length === 1) {
+      return { ...recentMatches[0], resolvedAt: new Date().toISOString() };
+    }
+
+    this.options.logger.warn("Accepted journal entry id could not be resolved unambiguously.", {
+      aiId: suggestion.aiId,
+      suggestionId: suggestion.id,
+      matchCount: matches.length,
+      recentMatchCount: recentMatches.length
+    });
+    return null;
   }
 
   private resolveKinName(aiId: string): string {
@@ -726,3 +871,30 @@ export interface KinChatDynamismPreference {
 export type BridgeSessionSummary =
   | (ReturnType<typeof summarizeSessionAuth> & { available: true })
   | { available: false; error: string };
+
+function fieldString(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function fieldStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.map((item) => String(item).trim()).filter(Boolean) : [];
+}
+
+function normalizedText(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function sameStringSet(left: string[], right: string[]): boolean {
+  const leftSet = new Set(left.map(normalizedText).filter(Boolean));
+  const rightSet = new Set(right.map(normalizedText).filter(Boolean));
+  if (leftSet.size !== rightSet.size) {
+    return false;
+  }
+
+  for (const value of leftSet) {
+    if (!rightSet.has(value)) {
+      return false;
+    }
+  }
+  return true;
+}

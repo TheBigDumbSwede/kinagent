@@ -19,6 +19,7 @@ export interface JournalSuggestionsContext {
   state: JournalSuggestionsState;
   elements: JournalSuggestionsElements;
   onAcceptSuggestion: (id: string) => void;
+  onDeleteInvalidatedSuggestion: (id: string) => void;
   onDismissSuggestion: (id: string) => void;
 }
 
@@ -91,6 +92,9 @@ export function journalSuggestionNotice(
   suggestion: JournalSuggestionSummary | null | undefined
 ): string {
   const selectedKin = state.kins.find((kin) => kin.aiId === suggestion?.aiId);
+  if (suggestion?.status === "source_invalidated") {
+    return `Journal source invalidated for ${selectedKin?.name || suggestion?.aiId || "Kin"}.`;
+  }
   return `Journal suggestion ready for ${selectedKin?.name || suggestion?.aiId || "Kin"}.`;
 }
 
@@ -100,7 +104,8 @@ function createJournalSuggestionElement(
 ): HTMLElement {
   const item = document.createElement("article");
   const action = suggestionAction(suggestion);
-  item.className = `journal-suggestion ${action}`;
+  const sourceInvalidated = suggestion.status === "source_invalidated";
+  item.className = `journal-suggestion ${action}${sourceInvalidated ? " source-invalidated" : ""}`;
 
   const header = document.createElement("header");
   const heading = document.createElement("div");
@@ -121,6 +126,9 @@ function createJournalSuggestionElement(
   if (suggestion.strongEvent) {
     appendSuggestionBadge(meta, "Strong event");
   }
+  if (sourceInvalidated) {
+    appendSuggestionBadge(meta, "Source invalidated");
+  }
   heading.append(title, meta);
   const date = document.createElement("span");
   date.textContent = formatTime(suggestion.createdAt);
@@ -136,6 +144,13 @@ function createJournalSuggestionElement(
   if (action === "delete") {
     appendSuggestionDetail(details, "Target", suggestion.targetJournalTitle || suggestion.targetJournalEntryId);
   }
+  if (sourceInvalidated) {
+    appendSuggestionDetail(
+      details,
+      "Integrity warning",
+      suggestion.sourceInvalidationReason || "The source message for this accepted journal change no longer exists."
+    );
+  }
   appendSuggestionDetail(details, "Reason", suggestion.durabilityReason);
   appendSuggestionListDetail(details, "Evidence", suggestion.evidence || []);
   if (action === "create") {
@@ -145,27 +160,10 @@ function createJournalSuggestionElement(
   const actions = document.createElement("div");
   actions.className = "journal-suggestion-actions";
 
-  const accept = document.createElement("button");
-  accept.type = "button";
-  accept.textContent =
-    context.state.journalSavingId === suggestion.id
-      ? action === "delete"
-        ? "Deleting"
-        : "Accepting"
-      : action === "delete"
-        ? "Delete"
-        : "Accept";
-  accept.disabled = Boolean(context.state.journalSavingId);
-  accept.addEventListener("click", () => {
-    if (suggestion.id) {
-      context.onAcceptSuggestion(suggestion.id);
-    }
-  });
-
   const dismiss = document.createElement("button");
   dismiss.type = "button";
   dismiss.className = "secondary";
-  dismiss.textContent = "Dismiss";
+  dismiss.textContent = sourceInvalidated ? "Dismiss warning" : "Dismiss";
   dismiss.disabled = Boolean(context.state.journalSavingId);
   dismiss.addEventListener("click", () => {
     if (suggestion.id) {
@@ -173,7 +171,37 @@ function createJournalSuggestionElement(
     }
   });
 
-  actions.append(accept, dismiss);
+  if (sourceInvalidated && canDeleteInvalidatedJournalEntry(suggestion)) {
+    const deleteEntry = document.createElement("button");
+    deleteEntry.type = "button";
+    deleteEntry.textContent = context.state.journalSavingId === suggestion.id ? "Deleting" : "Delete journal entry";
+    deleteEntry.disabled = Boolean(context.state.journalSavingId);
+    deleteEntry.addEventListener("click", () => {
+      if (suggestion.id) {
+        context.onDeleteInvalidatedSuggestion(suggestion.id);
+      }
+    });
+    actions.append(deleteEntry);
+  } else if (!sourceInvalidated) {
+    const accept = document.createElement("button");
+    accept.type = "button";
+    accept.textContent =
+      context.state.journalSavingId === suggestion.id
+        ? action === "delete"
+          ? "Deleting"
+          : "Accepting"
+        : action === "delete"
+          ? "Delete"
+          : "Accept";
+    accept.disabled = Boolean(context.state.journalSavingId);
+    accept.addEventListener("click", () => {
+      if (suggestion.id) {
+        context.onAcceptSuggestion(suggestion.id);
+      }
+    });
+    actions.append(accept);
+  }
+  actions.append(dismiss);
   item.append(header, entry, details, actions);
   return item;
 }
@@ -241,4 +269,12 @@ function categoryDetailLabel(detail: string | null | undefined): string {
 
 function suggestionAction(suggestion: JournalSuggestionSummary): "create" | "delete" {
   return suggestion?.action === "delete" ? "delete" : "create";
+}
+
+function canDeleteInvalidatedJournalEntry(suggestion: JournalSuggestionSummary): boolean {
+  return (
+    suggestion.status === "source_invalidated" &&
+    suggestionAction(suggestion) === "create" &&
+    Boolean(suggestion.createdJournalEntryId)
+  );
 }

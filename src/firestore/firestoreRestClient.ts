@@ -89,6 +89,28 @@ export class FirestoreRestClient {
     return documents.slice(0, options.maxDocuments).map((document) => firestoreDocumentLike(document));
   }
 
+  async getDocument(documentPath: string): Promise<FirestoreDocumentLike | null> {
+    const auth = await loadFreshFirebaseAuth(this.config.bridge.sessionDir);
+    const session = loadBrowserSession(this.config.bridge.sessionDir);
+    const appCheck = extractFirebaseAppCheckState(session.storageState);
+    const url = new URL(
+      `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(
+        this.config.kindroid.firebaseProjectId
+      )}/databases/(default)/documents/${encodeFirestorePath(documentPath)}`
+    );
+
+    const response = await fetch(url, { headers: this.authHeaders(auth.accessToken, appCheck?.token) });
+    if (response.status === 404) {
+      return null;
+    }
+    if (!response.ok) {
+      const responseText = await response.text();
+      throw new Error(`Firestore document read failed with HTTP ${response.status}: ${responseText.slice(0, 500)}`);
+    }
+
+    return firestoreDocumentLike((await response.json()) as FirestoreRestDocument);
+  }
+
   private authHeaders(firebaseAuthJwt: string, appCheckToken?: string): Record<string, string> {
     const headers: Record<string, string> = {
       authorization: `Bearer ${firebaseAuthJwt}`,

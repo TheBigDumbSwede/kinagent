@@ -485,6 +485,11 @@ h2 {
   background: #fffafa;
 }
 
+.journal-suggestion.source-invalidated {
+  border-color: #d7b468;
+  background: #fffaf0;
+}
+
 .journal-suggestion header {
   display: flex;
   justify-content: space-between;

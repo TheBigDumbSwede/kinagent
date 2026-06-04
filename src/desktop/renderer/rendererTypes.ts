@@ -104,6 +104,7 @@ export interface GroupSubscriptionSummary {
 export interface JournalSuggestionSummary {
   id?: string | null;
   aiId?: string | null;
+  status?: string | null;
   action?: "create" | "delete" | string | null;
   title?: string | null;
   strongEvent?: boolean;
@@ -117,6 +118,13 @@ export interface JournalSuggestionSummary {
   evidence?: unknown[];
   keyphrases?: unknown[];
   entry?: string | null;
+  createdJournalEntryId?: string | null;
+  createdJournalEntryCreated?: string | null;
+  createdJournalEntryResolvedAt?: string | null;
+  staleAt?: string | null;
+  staleReason?: string | null;
+  sourceInvalidatedAt?: string | null;
+  sourceInvalidationReason?: string | null;
 }
 
 export interface CapturedHistoryEntry {

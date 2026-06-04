@@ -259,6 +259,7 @@ interface RendererApi {
   getCapturedKin(input: { kinId: string }): Promise<CapturedKinResult>;
   listJournalSuggestions(): Promise<JournalSuggestionSummary[]>;
   acceptJournalSuggestion(input: { id: string }): Promise<unknown>;
+  deleteInvalidatedJournalSuggestion(input: { id: string }): Promise<unknown>;
   dismissJournalSuggestion(input: { id: string }): Promise<unknown>;
   getKinVoicePreference(input: { kinId: string }): Promise<KinVoicePreferenceResult>;
   setKinVoicePreference(input: { kinId: string; preference: KinVoicePreference }): Promise<KinVoicePreferenceResult>;
@@ -517,6 +518,9 @@ function journalSuggestionsContext() {
     elements,
     onAcceptSuggestion: (id: string) => {
       void acceptJournalSuggestion(id);
+    },
+    onDeleteInvalidatedSuggestion: (id: string) => {
+      void deleteInvalidatedJournalSuggestion(id);
     },
     onDismissSuggestion: (id: string) => {
       void dismissJournalSuggestion(id);
@@ -1071,6 +1075,29 @@ async function acceptJournalSuggestion(id: string): Promise<void> {
       );
     }
     elements.monitorLine.textContent = "Journal review accepted and capture refreshed.";
+  } catch (error) {
+    state.journalError = errorMessage(error);
+  } finally {
+    state.journalSavingId = null;
+    renderActivity();
+  }
+}
+
+async function deleteInvalidatedJournalSuggestion(id: string): Promise<void> {
+  state.journalSavingId = id;
+  state.journalError = null;
+  renderActivity();
+  try {
+    await window.kinagent.deleteInvalidatedJournalSuggestion({ id });
+    state.journalSuggestions = await window.kinagent.listJournalSuggestions();
+    if (state.selectedKinId) {
+      state.selectedKinCapture = await withTimeout(
+        window.kinagent.getCapturedKin({ kinId: state.selectedKinId }),
+        captureRequestTimeoutMs,
+        "Captured settings request timed out."
+      );
+    }
+    elements.monitorLine.textContent = "Invalidated journal entry deleted and capture refreshed.";
   } catch (error) {
     state.journalError = errorMessage(error);
   } finally {

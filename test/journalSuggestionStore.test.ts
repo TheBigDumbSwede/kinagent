@@ -147,6 +147,70 @@ describe("JournalSuggestionStore", () => {
     expect(store.list("stale").map((suggestion) => suggestion.id)).toEqual([first?.id]);
   });
 
+  it("marks accepted suggestions source-invalidated when their source message is deleted", () => {
+    const store = testStore();
+    const first = store.createPending(notification("doc-1"), suggestionInput("First durable event."));
+    if (!first) {
+      throw new Error("Expected first suggestion.");
+    }
+    store.markAccepted(
+      first.id,
+      { ok: true },
+      {
+        id: "journal-1",
+        created: "2026-06-01T12:01:00.000Z",
+        resolvedAt: "2026-06-01T12:01:05.000Z"
+      }
+    );
+
+    const changed = store.markSourceDeleted({ documentId: "doc-1", aiId: "kin-1" });
+
+    expect(changed).toEqual([
+      expect.objectContaining({
+        id: first.id,
+        status: "source_invalidated",
+        sourceInvalidationReason: "Source chat message was deleted or rewound after this journal change was accepted."
+      })
+    ]);
+    expect(store.list("accepted")).toEqual([]);
+    expect(store.list("source_invalidated").map((suggestion) => suggestion.id)).toEqual([first.id]);
+    expect(store.listReviewable().map((suggestion) => suggestion.id)).toEqual([first.id]);
+  });
+
+  it("removes remediated invalidated suggestions from the reviewable list", () => {
+    const store = testStore();
+    const first = store.createPending(notification("doc-1"), suggestionInput("First durable event."));
+    if (!first) {
+      throw new Error("Expected first suggestion.");
+    }
+    store.markAccepted(
+      first.id,
+      { ok: true },
+      {
+        id: "journal-1",
+        created: "2026-06-01T12:01:00.000Z",
+        resolvedAt: "2026-06-01T12:01:05.000Z"
+      }
+    );
+    store.markSourceDeleted({ documentId: "doc-1", aiId: "kin-1" });
+
+    expect(
+      store.markRemediated(first.id, "delete_created_journal_entry", {
+        ok: true,
+        status: 200
+      })
+    ).toEqual(
+      expect.objectContaining({
+        id: first.id,
+        status: "remediated",
+        remediatedAt: expect.any(String),
+        remediationAction: "delete_created_journal_entry",
+        remediationResult: expect.objectContaining({ ok: true, status: 200 })
+      })
+    );
+    expect(store.listReviewable()).toEqual([]);
+  });
+
   it("rejects near-duplicates of accepted or captured journal entries", () => {
     const store = testStore();
     const first = store.createPending(
