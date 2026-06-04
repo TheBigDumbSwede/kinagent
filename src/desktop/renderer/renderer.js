@@ -1,4 +1,6 @@
+import { analyzeSelectedKin, renderKinAnalysisProgress, renderMarkdownReport } from "./analysisPanel.js";
 import { createVoiceAudioPlayer } from "./audioPlayback.js";
+import { exportSelectedChat, renderChatExportProgress } from "./chatExportPanel.js";
 import { formatTime, formatTimelineChange, providerLabel } from "./formatters.js";
 import { createMessageElement, visibleMonitorMessages as filterVisibleMonitorMessages } from "./monitorMessages.js";
 import { createDiffLine, renderSelectedHistoryDiff } from "./timelineDiff.js";
@@ -277,13 +279,13 @@ elements.kinHermesForm.addEventListener("submit", (event) => {
 elements.chatDynamismMinInput.addEventListener("input", syncChatDynamismRangeLabels);
 elements.chatDynamismMaxInput.addEventListener("input", syncChatDynamismRangeLabels);
 elements.kinAnalyzeButton.addEventListener("click", () => {
-  void analyzeSelectedKin();
+  void analyzeSelectedKin({ state, elements, api: window.kinagent, renderActivity });
 });
 elements.chatExportRangeButton.addEventListener("click", () => {
-  void exportSelectedChat(false);
+  void exportSelectedChat({ state, elements, api: window.kinagent, renderActivity }, false);
 });
 elements.chatExportAllButton.addEventListener("click", () => {
-  void exportSelectedChat(true);
+  void exportSelectedChat({ state, elements, api: window.kinagent, renderActivity }, true);
 });
 
 window.kinagent.onEvent((message) => {
@@ -322,12 +324,12 @@ window.kinagent.onEvent((message) => {
   }
 
   if (message.channel === "chat-export-progress") {
-    renderChatExportProgress(message.payload);
+    renderChatExportProgress({ state, elements }, message.payload);
     return;
   }
 
   if (message.channel === "kin-analysis-progress") {
-    renderKinAnalysisProgress(message.payload);
+    renderKinAnalysisProgress({ state, elements }, message.payload);
     return;
   }
 
@@ -1536,169 +1538,6 @@ function resetKinActionPlaceholders() {
   elements.kinAnalyzeReport.hidden = true;
   elements.kinAnalyzeReport.replaceChildren();
   elements.chatExportStatusLine.textContent = "";
-}
-
-async function analyzeSelectedKin() {
-  if (!state.selectedKinId || state.kinAnalysisRunning) {
-    return;
-  }
-
-  state.kinAnalysisRunning = true;
-  state.kinAnalysisJobId = null;
-  state.kinAnalysisReport = "";
-  elements.kinAnalyzeProgress.hidden = false;
-  elements.kinAnalyzeProgress.removeAttribute("value");
-  elements.kinAnalyzeStatusLine.textContent = "Preparing Kin analysis.";
-  elements.kinAnalyzeReport.hidden = true;
-  elements.kinAnalyzeReport.replaceChildren();
-  renderActivity();
-
-  try {
-    const result = await window.kinagent.analyzeKin({ kinId: state.selectedKinId });
-    state.kinAnalysisJobId = result.jobId || state.kinAnalysisJobId;
-    state.kinAnalysisReport = result.reportMarkdown || "";
-    renderMarkdownReport(elements.kinAnalyzeReport, state.kinAnalysisReport);
-    elements.kinAnalyzeReport.hidden = !state.kinAnalysisReport;
-    elements.kinAnalyzeStatusLine.textContent = `Analysis complete with ${result.findingCount} finding${
-      result.findingCount === 1 ? "" : "s"
-    }.`;
-  } catch (error) {
-    elements.kinAnalyzeStatusLine.textContent = error.message || String(error);
-  } finally {
-    state.kinAnalysisRunning = false;
-    state.kinAnalysisJobId = null;
-    elements.kinAnalyzeProgress.hidden = true;
-    elements.kinAnalyzeProgress.value = 0;
-    renderActivity();
-  }
-}
-
-function renderKinAnalysisProgress(progress) {
-  if (!progress || !state.kinAnalysisRunning) {
-    return;
-  }
-
-  if (progress.jobId) {
-    state.kinAnalysisJobId = progress.jobId;
-  }
-  if (progress.phase === "complete") {
-    elements.kinAnalyzeProgress.hidden = true;
-    elements.kinAnalyzeProgress.value = 0;
-    elements.kinAnalyzeStatusLine.textContent = progress.message || "Analysis report ready.";
-    return;
-  }
-
-  elements.kinAnalyzeProgress.hidden = false;
-  elements.kinAnalyzeProgress.removeAttribute("value");
-  elements.kinAnalyzeStatusLine.textContent = progress.message || "Running Kin analysis.";
-}
-
-function renderMarkdownReport(container, markdown) {
-  container.replaceChildren();
-  const lines = String(markdown || "").split(/\r?\n/);
-  let list = null;
-
-  const closeList = () => {
-    list = null;
-  };
-
-  for (const rawLine of lines) {
-    const line = rawLine.trim();
-    if (!line) {
-      closeList();
-      continue;
-    }
-
-    const heading = line.match(/^(#{1,3})\s+(.+)$/);
-    if (heading) {
-      closeList();
-      const level = heading[1].length;
-      const element = document.createElement(level === 1 ? "h2" : level === 2 ? "h3" : "h4");
-      element.textContent = heading[2];
-      container.append(element);
-      continue;
-    }
-
-    if (line.startsWith("- ")) {
-      if (!list) {
-        list = document.createElement("ul");
-        container.append(list);
-      }
-      const item = document.createElement("li");
-      item.textContent = line.slice(2);
-      list.append(item);
-      continue;
-    }
-
-    closeList();
-    const paragraph = document.createElement("p");
-    paragraph.textContent = line;
-    container.append(paragraph);
-  }
-}
-
-async function exportSelectedChat(exportAll) {
-  if ((!state.selectedKinId && !state.selectedGroupId) || state.chatExportSaving) {
-    return;
-  }
-
-  state.chatExportSaving = true;
-  state.chatExportJobId = null;
-  elements.chatExportProgress.hidden = false;
-  elements.chatExportProgress.removeAttribute("value");
-  elements.chatExportStatusLine.textContent = exportAll ? "Preparing full chat export." : "Preparing chat export.";
-  renderActivity();
-
-  try {
-    const request = {
-      fromDate: exportAll ? "" : elements.chatExportFromInput.value,
-      toDate: exportAll ? "" : elements.chatExportToInput.value
-    };
-    const result = state.selectedGroupId
-      ? await window.kinagent.exportGroupChat({ ...request, groupId: state.selectedGroupId })
-      : await window.kinagent.exportKinChat({ ...request, kinId: state.selectedKinId });
-    state.chatExportJobId = result.jobId || state.chatExportJobId;
-    if (result.ok) {
-      elements.chatExportStatusLine.textContent = `Exported ${result.exportedCount} chat entries to ${result.filePath}.`;
-    } else if (result.canceled) {
-      elements.chatExportStatusLine.textContent = `Export prepared ${result.exportedCount} chat entries; save was canceled.`;
-    } else {
-      elements.chatExportStatusLine.textContent = "Export did not complete.";
-    }
-  } catch (error) {
-    elements.chatExportStatusLine.textContent = error.message || String(error);
-  } finally {
-    state.chatExportSaving = false;
-    state.chatExportJobId = null;
-    elements.chatExportProgress.hidden = true;
-    elements.chatExportProgress.value = 0;
-    renderActivity();
-  }
-}
-
-function renderChatExportProgress(progress) {
-  if (!progress || !state.chatExportSaving) {
-    return;
-  }
-
-  if (progress.jobId) {
-    state.chatExportJobId = progress.jobId;
-  }
-  if (progress.phase === "complete") {
-    elements.chatExportProgress.hidden = true;
-    elements.chatExportProgress.value = 0;
-    elements.chatExportStatusLine.textContent = progress.message || "Transcript ready.";
-    return;
-  }
-
-  elements.chatExportProgress.hidden = false;
-  if (typeof progress.total === "number" && progress.total > 0) {
-    elements.chatExportProgress.max = progress.total;
-    elements.chatExportProgress.value = progress.processed || 0;
-  } else {
-    elements.chatExportProgress.removeAttribute("value");
-  }
-  elements.chatExportStatusLine.textContent = progress.message || "Exporting chat.";
 }
 
 function detailStats(selectedKin, field, capture) {
