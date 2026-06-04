@@ -80,10 +80,25 @@ export interface KinSummary {
   name?: string | null;
 }
 
-export interface SubscriptionSummary {
+export interface GroupSummary {
+  groupId?: string | null;
+  name?: string | null;
+}
+
+export interface KinSubscriptionSummary {
   kin?: KinSummary;
+  enabled?: boolean;
+  running?: boolean;
   ambientContextEnabled?: boolean;
   chatDynamism?: unknown;
+}
+
+export type SubscriptionSummary = KinSubscriptionSummary;
+
+export interface GroupSubscriptionSummary {
+  group?: GroupSummary;
+  enabled?: boolean;
+  running?: boolean;
 }
 
 export interface ChatDynamismValue {
