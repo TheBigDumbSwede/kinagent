@@ -1,4 +1,5 @@
-import { analyzeSelectedKin, renderKinAnalysisProgress, renderMarkdownReport } from "./analysisPanel.js";
+import { analyzeSelectedKin, renderKinAnalysisProgress } from "./analysisPanel.js";
+import { renderGroupExportTab, renderKinAnalyzeTab, renderKinExportTab } from "./actionPanels.js";
 import { renderAppSettingsTab, saveAppSettings } from "./appSettingsForm.js";
 import { createVoiceAudioPlayer } from "./audioPlayback.js";
 import {
@@ -279,6 +280,13 @@ function tabNavigationContext() {
       void loadKinAmbient(kinId);
     },
     renderActivity
+  };
+}
+
+function actionPanelContext() {
+  return {
+    state,
+    elements
   };
 }
 
@@ -716,7 +724,7 @@ function renderActivity() {
   if (selectedGroup && isExport) {
     elements.activityTitle.textContent = `${selectedGroup.name || "Group"} · Export`;
     elements.monitorLine.textContent = subtitleForDetailMode(activeMode);
-    renderGroupExportTab(selectedGroup);
+    renderGroupExportTab(actionPanelContext(), selectedGroup);
     return;
   }
 
@@ -742,12 +750,12 @@ function renderActivity() {
   }
 
   if (isAnalyze) {
-    renderKinAnalyzeTab(selectedKin);
+    renderKinAnalyzeTab(actionPanelContext(), selectedKin);
     return;
   }
 
   if (isExport) {
-    renderKinExportTab(selectedKin);
+    renderKinExportTab(actionPanelContext(), selectedKin);
     return;
   }
 
@@ -792,106 +800,6 @@ function renderActivity() {
     })
   });
   renderJournalSuggestions(journalSuggestionsContext());
-}
-
-function renderKinAnalyzeTab(selectedKin) {
-  elements.kinDetailEmpty.hidden = true;
-  elements.kinDetailContent.hidden = false;
-  elements.kinDetailContent.classList.remove("app-settings-content");
-  elements.kinDetailContent.classList.add("form-detail-content");
-  elements.fieldContent.hidden = true;
-  elements.journalSuggestionPanel.hidden = true;
-  elements.appSettingsForm.hidden = true;
-  elements.voiceForm.hidden = true;
-  elements.kinHermesForm.hidden = true;
-  elements.kinAnalyzePanel.hidden = false;
-  elements.chatExportPanel.hidden = true;
-  elements.timeline.hidden = true;
-  elements.kinAnalyzeButton.disabled = state.kinAnalysisRunning;
-  elements.kinAnalyzeReport.hidden = !state.kinAnalysisReport;
-  renderMarkdownReport(elements.kinAnalyzeReport, state.kinAnalysisReport);
-  renderKinActionStats(selectedKin, "Analysis", state.kinAnalysisRunning ? "Running" : "Manual");
-}
-
-function renderKinExportTab(selectedKin) {
-  elements.kinDetailEmpty.hidden = true;
-  elements.kinDetailContent.hidden = false;
-  elements.kinDetailContent.classList.remove("app-settings-content");
-  elements.kinDetailContent.classList.add("form-detail-content");
-  elements.fieldContent.hidden = true;
-  elements.journalSuggestionPanel.hidden = true;
-  elements.appSettingsForm.hidden = true;
-  elements.voiceForm.hidden = true;
-  elements.kinHermesForm.hidden = true;
-  elements.kinAnalyzePanel.hidden = true;
-  elements.chatExportPanel.hidden = false;
-  elements.timeline.hidden = true;
-  elements.chatExportTitle.textContent = "Export";
-  elements.chatExportDescription.textContent = "Export decrypted direct chat history for this Kin.";
-  elements.chatExportRangeButton.disabled = state.chatExportSaving;
-  elements.chatExportAllButton.disabled = state.chatExportSaving;
-  renderKinActionStats(selectedKin, "Export", "Pending");
-}
-
-function renderGroupExportTab(selectedGroup) {
-  elements.kinDetailEmpty.hidden = true;
-  elements.kinDetailContent.hidden = false;
-  elements.kinDetailContent.classList.remove("app-settings-content");
-  elements.kinDetailContent.classList.add("form-detail-content");
-  elements.fieldContent.hidden = true;
-  elements.journalSuggestionPanel.hidden = true;
-  elements.appSettingsForm.hidden = true;
-  elements.voiceForm.hidden = true;
-  elements.kinHermesForm.hidden = true;
-  elements.kinAnalyzePanel.hidden = true;
-  elements.chatExportPanel.hidden = false;
-  elements.timeline.hidden = true;
-  elements.chatExportTitle.textContent = "Export Group";
-  elements.chatExportDescription.textContent =
-    "Export decrypted group chat history with Kin names resolved from message AI IDs.";
-  elements.chatExportRangeButton.disabled = state.chatExportSaving;
-  elements.chatExportAllButton.disabled = state.chatExportSaving;
-  renderGroupActionStats(selectedGroup, "Export", "Pending");
-}
-
-function renderKinActionStats(selectedKin, action, status) {
-  const stats = [
-    { label: "Kin", value: selectedKin?.name || state.selectedKinId || "Unknown" },
-    { label: "Action", value: action },
-    { label: "Status", value: status },
-    { label: "Mode", value: "Manual" }
-  ];
-
-  elements.detailStats.replaceChildren();
-  for (const stat of stats) {
-    const item = document.createElement("div");
-    const label = document.createElement("span");
-    label.textContent = stat.label;
-    const value = document.createElement("strong");
-    value.textContent = stat.value;
-    item.append(label, value);
-    elements.detailStats.append(item);
-  }
-}
-
-function renderGroupActionStats(selectedGroup, action, status) {
-  const stats = [
-    { label: "Group", value: selectedGroup?.name || state.selectedGroupId || "Unknown" },
-    { label: "Action", value: action },
-    { label: "Status", value: status },
-    { label: "Mode", value: "Manual" }
-  ];
-
-  elements.detailStats.replaceChildren();
-  for (const stat of stats) {
-    const item = document.createElement("div");
-    const label = document.createElement("span");
-    label.textContent = stat.label;
-    const value = document.createElement("strong");
-    value.textContent = stat.value;
-    item.append(label, value);
-    elements.detailStats.append(item);
-  }
 }
 
 function resetKinActionPlaceholders() {
