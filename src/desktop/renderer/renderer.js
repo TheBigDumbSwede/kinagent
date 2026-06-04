@@ -1,8 +1,12 @@
 import { analyzeSelectedKin, renderKinAnalysisProgress, renderMarkdownReport } from "./analysisPanel.js";
 import { renderAppSettingsTab, saveAppSettings } from "./appSettingsForm.js";
 import { createVoiceAudioPlayer } from "./audioPlayback.js";
+import {
+  capturedDetailStats,
+  renderDetailContent as renderCapturedDetailContent,
+  renderDetailEmpty as renderCapturedDetailEmpty
+} from "./capturedDetailPanel.js";
 import { exportSelectedChat, renderChatExportProgress } from "./chatExportPanel.js";
-import { formatTime, formatTimelineChange } from "./formatters.js";
 import {
   journalSuggestionNotice,
   renderJournalSuggestions,
@@ -16,7 +20,6 @@ import {
   renderGroupSubscriptions,
   renderKinSubscriptions
 } from "./subscriptionLists.js";
-import { createDiffLine, renderSelectedHistoryDiff } from "./timelineDiff.js";
 import {
   renderKinHermesTab,
   renderVoiceProviderFields,
@@ -179,6 +182,17 @@ const playVoiceAudio = createVoiceAudioPlayer({
   }
 });
 
+function capturedDetailContext() {
+  return {
+    state,
+    elements,
+    onSelectHistoryEntry: (hash) => {
+      state.selectedHistoryHash = hash;
+      renderActivity();
+    }
+  };
+}
+
 function appSettingsContext() {
   return {
     state,
@@ -188,6 +202,10 @@ function appSettingsContext() {
     renderDetailEmpty,
     loadAppSettings
   };
+}
+
+function renderDetailEmpty(message) {
+  renderCapturedDetailEmpty(capturedDetailContext(), message);
 }
 
 function voiceHermesContext() {
@@ -818,101 +836,31 @@ function renderActivity() {
   }
 
   if (!field || !field.available) {
-    renderDetailContent({
+    renderCapturedDetailContent(capturedDetailContext(), {
       content: "No captured value for this setting.",
       history: [],
-      stats: detailStats(selectedKin, field, state.selectedKinCapture)
+      stats: capturedDetailStats({
+        selectedKin,
+        field,
+        capture: state.selectedKinCapture,
+        fallbackSettingLabel: tabLabelFor(state.activeTab)
+      })
     });
+    renderJournalSuggestions(journalSuggestionsContext());
     return;
   }
 
-  renderDetailContent({
+  renderCapturedDetailContent(capturedDetailContext(), {
     content: field.content || "",
     history: field.history || [],
-    stats: detailStats(selectedKin, field, state.selectedKinCapture)
+    stats: capturedDetailStats({
+      selectedKin,
+      field,
+      capture: state.selectedKinCapture,
+      fallbackSettingLabel: tabLabelFor(state.activeTab)
+    })
   });
-}
-
-function renderDetailEmpty(message) {
-  elements.kinDetailEmpty.hidden = false;
-  elements.kinDetailEmpty.textContent = message;
-  elements.kinDetailContent.hidden = true;
-  elements.kinDetailContent.classList.remove("app-settings-content", "form-detail-content");
-  elements.appSettingsForm.hidden = true;
-  elements.voiceForm.hidden = true;
-  elements.kinHermesForm.hidden = true;
-  elements.kinAnalyzePanel.hidden = true;
-  elements.chatExportPanel.hidden = true;
-}
-
-function renderDetailContent({ content, history, stats }) {
-  elements.kinDetailEmpty.hidden = true;
-  elements.kinDetailContent.hidden = false;
-  elements.kinDetailContent.classList.remove("app-settings-content", "form-detail-content");
-  elements.fieldContent.hidden = false;
-  elements.journalSuggestionPanel.hidden = true;
-  elements.appSettingsForm.hidden = true;
-  elements.voiceForm.hidden = true;
-  elements.kinHermesForm.hidden = true;
-  elements.kinAnalyzePanel.hidden = true;
-  elements.chatExportPanel.hidden = true;
-  elements.timeline.hidden = false;
-  const selectedEntryIndex = history.findIndex((entry) => entry.hash === state.selectedHistoryHash);
-  const selectedEntry = selectedEntryIndex >= 0 ? history[selectedEntryIndex] : null;
-  const previousEntry = selectedEntryIndex >= 0 ? history[selectedEntryIndex + 1] : null;
-  renderFieldContent(content, selectedEntry, previousEntry);
   renderJournalSuggestions(journalSuggestionsContext());
-
-  elements.detailStats.replaceChildren();
-  const visibleStats = selectedEntry
-    ? [...stats, { label: "Viewing", value: `${formatTime(selectedEntry.committedAt)} (${selectedEntry.shortHash})` }]
-    : stats;
-  for (const stat of visibleStats) {
-    const item = document.createElement("div");
-    const label = document.createElement("span");
-    label.textContent = stat.label;
-    const value = document.createElement("strong");
-    value.textContent = stat.value;
-    item.append(label, value);
-    elements.detailStats.append(item);
-  }
-
-  elements.timelineList.replaceChildren();
-  if (history.length === 0) {
-    const empty = document.createElement("p");
-    empty.className = "empty-line";
-    empty.textContent = "No recorded changes for this setting.";
-    elements.timelineList.append(empty);
-    return;
-  }
-
-  for (const entry of history) {
-    const item = document.createElement("button");
-    item.type = "button";
-    item.className = `timeline-entry${entry.hash === state.selectedHistoryHash ? " active" : ""}`;
-    item.title = entry.subject || "";
-    item.addEventListener("click", () => {
-      state.selectedHistoryHash = state.selectedHistoryHash === entry.hash ? null : entry.hash;
-      renderActivity();
-    });
-
-    const date = document.createElement("div");
-    date.className = "timeline-date";
-    date.textContent = formatTime(entry.committedAt);
-
-    const summary = document.createElement("p");
-    summary.textContent = entry.summary || "Captured value";
-
-    const change = document.createElement("span");
-    change.className = "timeline-change";
-    change.textContent = formatTimelineChange(entry);
-
-    const hash = document.createElement("span");
-    hash.textContent = entry.shortHash;
-
-    item.append(date, summary, change, hash);
-    elements.timelineList.append(item);
-  }
 }
 
 function renderKinAnalyzeTab(selectedKin) {
@@ -1027,28 +975,6 @@ function resetKinActionPlaceholders() {
   elements.kinAnalyzeReport.hidden = true;
   elements.kinAnalyzeReport.replaceChildren();
   elements.chatExportStatusLine.textContent = "";
-}
-
-function detailStats(selectedKin, field, capture) {
-  return [
-    { label: "Kin", value: selectedKin?.name || capture.kinId || "Unknown" },
-    { label: "Capture", value: capture.folderName || "Unavailable" },
-    { label: "Setting", value: field?.label || tabLabelFor(state.activeTab) },
-    { label: "Changes", value: String(field?.history?.length || 0) }
-  ];
-}
-
-function renderFieldContent(content, selectedEntry, previousEntry) {
-  elements.fieldContent.replaceChildren();
-
-  if (!selectedEntry) {
-    elements.fieldContent.textContent = content;
-    return;
-  }
-
-  for (const line of renderSelectedHistoryDiff(selectedEntry, previousEntry)) {
-    elements.fieldContent.append(createDiffLine(line));
-  }
 }
 
 async function acceptJournalSuggestion(id) {

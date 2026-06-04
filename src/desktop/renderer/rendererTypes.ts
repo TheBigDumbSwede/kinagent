@@ -119,6 +119,40 @@ export interface JournalSuggestionSummary {
   entry?: string | null;
 }
 
+export interface CapturedHistoryEntry {
+  hash?: string | null;
+  shortHash?: string | null;
+  committedAt?: string | null;
+  subject?: string | null;
+  summary?: string | null;
+  content?: string | null;
+  changed?: boolean;
+  previousShortHash?: string;
+  addedLines?: number;
+  removedLines?: number;
+  characterDelta?: number;
+}
+
+export interface CapturedFieldSummary {
+  key?: string | null;
+  label?: string | null;
+  available?: boolean;
+  content?: string | null;
+  history?: CapturedHistoryEntry[];
+}
+
+export interface CapturedKinSummary {
+  ok?: boolean;
+  kinId?: string | null;
+  folderName?: string | null;
+  error?: string | null;
+}
+
+export interface DetailStat {
+  label: string;
+  value: string;
+}
+
 export interface ChatDynamismValue {
   display?: string | null;
   numeric?: number | null;
