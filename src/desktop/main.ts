@@ -318,6 +318,8 @@ function saveDesktopSettings(input: unknown) {
   const fields = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
   const next = cloneConfig(config);
 
+  next.kindroid.apiKey = stringSetting(fields.kindroidApiKey, next.kindroid.apiKey ?? "");
+
   next.bridge.logLevel = logLevelSetting(fields.logLevel, next.bridge.logLevel);
   next.bridge.dedupeWindowSeconds = positiveIntegerSetting(
     fields.dedupeWindowSeconds,

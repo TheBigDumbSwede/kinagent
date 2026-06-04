@@ -15,6 +15,7 @@ describe("loadConfig", () => {
 
     const config = loadConfig({ configPath: missingConfig });
 
+    expect(config.kindroid.apiKey).toBe("");
     expect(config.kindroid.firebaseProjectId).toBe("kindroid-ai");
     expect(config.bridge.sessionDir).toBe(path.resolve(process.cwd(), "./data/browser-session"));
     expect(config.hermes.enabled).toBe(false);
@@ -82,6 +83,7 @@ describe("loadConfig", () => {
       configPath,
       [
         "kindroid:",
+        '  apiKey: "file-kindroid-key"',
         '  firebaseProjectId: "file-project"',
         '  uid: "file-uid"',
         "  kins:",
@@ -127,6 +129,7 @@ describe("loadConfig", () => {
     );
 
     vi.stubEnv("KINDROID_UID", "env-uid");
+    vi.stubEnv("KINAGENT_KINDROID_API_KEY", "env-kindroid-key");
     vi.stubEnv("BRIDGE_LOG_LEVEL", "debug");
     vi.stubEnv("HERMES_ENABLED", "false");
     vi.stubEnv("HERMES_API_KEY", "env-token");
@@ -147,6 +150,7 @@ describe("loadConfig", () => {
 
     const config = loadConfig({ configPath });
 
+    expect(config.kindroid.apiKey).toBe("env-kindroid-key");
     expect(config.kindroid.firebaseProjectId).toBe("file-project");
     expect(config.kindroid.uid).toBe("env-uid");
     expect(config.kindroid.kins).toEqual([{ name: "Brielle", aiId: "kin-1", enabled: true }]);

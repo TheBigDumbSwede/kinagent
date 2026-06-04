@@ -23,6 +23,7 @@ export interface AppSettingsElements {
   appSettingsStatusLine: HTMLElement;
   appSettingsSaveButton: HTMLButtonElement;
   settingsPathLine: HTMLElement;
+  settingsKindroidApiKeyInput: HTMLInputElement;
   settingsLogLevelInput: HTMLInputElement | HTMLSelectElement;
   settingsDedupeWindowInput: HTMLInputElement;
   settingsHermesEnabledInput: HTMLInputElement;
@@ -118,6 +119,7 @@ export async function saveAppSettings(context: AppSettingsContext): Promise<void
 function populateAppSettingsForm(context: AppSettingsContext, config: AppConfigView): void {
   const { state, elements } = context;
   const bridge = config.bridge || {};
+  const kindroid = config.kindroid || {};
   const hermes = config.hermes || {};
   const currentScene = hermes.currentSceneUpdates || {};
   const journal = hermes.journalSuggestions || {};
@@ -128,6 +130,7 @@ function populateAppSettingsForm(context: AppSettingsContext, config: AppConfigV
   elements.settingsLogLevelInput.value = bridge.logLevel || "info";
   elements.settingsDedupeWindowInput.value = String(bridge.dedupeWindowSeconds || 180);
   elements.settingsPathLine.textContent = state.appSettings?.configPath || "";
+  elements.settingsKindroidApiKeyInput.value = kindroid.apiKey || "";
 
   elements.settingsHermesEnabledInput.checked = Boolean(hermes.enabled);
   elements.settingsHermesBaseUrlInput.value = hermes.baseUrl || "";
@@ -159,6 +162,7 @@ function populateAppSettingsForm(context: AppSettingsContext, config: AppConfigV
 
 function readAppSettingsForm(elements: AppSettingsElements): AppSettingsFormValue {
   return {
+    kindroidApiKey: elements.settingsKindroidApiKeyInput.value,
     logLevel: elements.settingsLogLevelInput.value,
     dedupeWindowSeconds: numberInputValue(elements.settingsDedupeWindowInput),
     hermesEnabled: elements.settingsHermesEnabledInput.checked,

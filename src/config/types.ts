@@ -7,6 +7,7 @@ export interface KinConfig {
 }
 
 export interface KindroidConfig {
+  apiKey?: string;
   firebaseProjectId: string;
   uid: string;
   kins: KinConfig[];

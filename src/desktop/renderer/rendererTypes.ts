@@ -190,6 +190,7 @@ export interface KinVoicePreferenceResult {
 }
 
 export interface AppSettingsFormValue {
+  kindroidApiKey: string;
   logLevel: string;
   dedupeWindowSeconds: number;
   hermesEnabled: boolean;
@@ -213,6 +214,9 @@ export interface AppSettingsFormValue {
 }
 
 export interface AppConfigView {
+  kindroid?: {
+    apiKey?: string;
+  };
   bridge?: {
     logLevel?: string;
     dedupeWindowSeconds?: number;

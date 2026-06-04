@@ -12,6 +12,7 @@ const defaultOpenAiVoice = "marin";
 
 const defaultConfig: AppConfig = {
   kindroid: {
+    apiKey: "",
     firebaseProjectId: "kindroid-ai",
     uid: "",
     kins: []
@@ -71,6 +72,7 @@ const logLevelSchema = z.enum(["debug", "info", "warn", "error"]);
 const voiceProviderSchema = z.enum(["none", "openai", "elevenlabs"]);
 const appConfigSchema = z.object({
   kindroid: z.object({
+    apiKey: z.string().optional(),
     firebaseProjectId: z.string().min(1, "kindroid.firebaseProjectId is required."),
     uid: z.string(),
     kins: z.array(
@@ -241,6 +243,8 @@ function mergeConfig(base: AppConfig, override: Partial<AppConfig>): AppConfig {
 }
 
 function applyEnvOverrides(config: AppConfig): void {
+  config.kindroid.apiKey =
+    process.env.KINAGENT_KINDROID_API_KEY ?? process.env.KINDROID_API_KEY ?? config.kindroid.apiKey;
   config.kindroid.firebaseProjectId = process.env.KINDROID_FIREBASE_PROJECT_ID ?? config.kindroid.firebaseProjectId;
   config.kindroid.uid = process.env.KINDROID_UID ?? config.kindroid.uid;
 

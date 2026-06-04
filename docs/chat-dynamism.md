@@ -2,8 +2,9 @@
 
 Chat Dynamism is the Kindroid UI name for the observed Kin profile field `user_set_temperature`.
 
-The field appears to control per-Kin temperature, randomness, or response variance. This behavior is undocumented by
-Kindroid and may change without notice, so Kinagent treats all writes as experimental and reversible.
+The field appears to control per-Kin temperature, randomness, or response variance. This behavior is not part of
+Kindroid's public API documentation and may change without notice, so Kinagent treats all writes as experimental and
+reversible.
 
 ## Current Support
 

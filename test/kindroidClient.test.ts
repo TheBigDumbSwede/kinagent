@@ -157,9 +157,7 @@ describe("Kindroid client normalizers", () => {
     ).toMatchObject({
       ai_id: "kin-1",
       message: "Visible diagnostic message.",
-      request_id: "request-1",
-      idempotency_key: "idempotency-1",
-      internet_response: null
+      stream: false
     });
   });
 
@@ -175,8 +173,7 @@ describe("Kindroid client normalizers", () => {
     ).toMatchObject({
       ai_id: "kin-1",
       message: "Visible diagnostic message.",
-      request_id: "request-1",
-      idempotency_key: "idempotency-1",
+      stream: false,
       internet_response: "Diagnostic hidden context: KINAGENT-CANARY-1234."
     });
   });
@@ -191,9 +188,7 @@ describe("Kindroid client normalizers", () => {
       })
     ).toMatchObject({
       group_id: "group-1",
-      message: "Visible group diagnostic message.",
-      internet_response: null,
-      client_platform: "web"
+      message: "Visible group diagnostic message."
     });
   });
 
@@ -209,8 +204,7 @@ describe("Kindroid client normalizers", () => {
     ).toMatchObject({
       group_id: "group-1",
       message: "Visible group diagnostic message.",
-      internet_response: "Diagnostic hidden group context: KINAGENT-GROUP-CANARY-1234.",
-      client_platform: "web"
+      internet_response: "Diagnostic hidden group context: KINAGENT-GROUP-CANARY-1234."
     });
   });
 
@@ -226,7 +220,7 @@ describe("Kindroid client normalizers", () => {
     });
   });
 
-  it("builds the observed Kindroid group AI response payload", () => {
+  it("builds the documented Kindroid group AI response payload", () => {
     expect(
       buildCreateGroupAiResponsePayload({
         groupId: "group-1",
@@ -236,10 +230,32 @@ describe("Kindroid client normalizers", () => {
     ).toEqual({
       ai_id: "kin-1",
       group_id: "group-1",
-      stream: false,
-      request_id: "group-ai-request-1",
-      client_platform: "web"
+      stream: false
     });
+  });
+
+  it("authenticates /v1 requests with the configured Kindroid API key when available", async () => {
+    const fetchMock = vi.fn(async () => new Response("OK", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new KindroidClient(testConfig({ apiKey: "kn_test-token" }), testLogger);
+
+    await expect(
+      client.sendMessage({
+        aiId: "kin-1",
+        message: "Visible diagnostic message.",
+        requestId: "request-1",
+        idempotencyKey: "idempotency-1"
+      })
+    ).resolves.toMatchObject({ ok: true, status: 200 });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.kindroid.ai/v1/send-message",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          authorization: "Bearer kn_test-token"
+        })
+      })
+    );
   });
 
   it("does not trigger a group AI response after group user-message sends by default", async () => {
@@ -460,9 +476,10 @@ const testLogger: Logger = {
   error: () => undefined
 };
 
-function testConfig(overrides: { sessionDir?: string } = {}): AppConfig {
+function testConfig(overrides: { apiKey?: string; sessionDir?: string } = {}): AppConfig {
   return {
     kindroid: {
+      apiKey: overrides.apiKey ?? "",
       firebaseProjectId: "kindroid-ai",
       uid: "",
       kins: []

@@ -139,6 +139,7 @@ interface RendererElements {
   appSettingsStatusLine: HTMLElement;
   appSettingsSaveButton: HTMLButtonElement;
   settingsPathLine: HTMLElement;
+  settingsKindroidApiKeyInput: HTMLInputElement;
   settingsLogLevelInput: HTMLInputElement;
   settingsDedupeWindowInput: HTMLInputElement;
   settingsHermesEnabledInput: HTMLInputElement;
@@ -370,6 +371,7 @@ const elements: RendererElements = {
   appSettingsStatusLine: query<HTMLElement>("#appSettingsStatusLine"),
   appSettingsSaveButton: query<HTMLButtonElement>("#appSettingsSaveButton"),
   settingsPathLine: query<HTMLElement>("#settingsPathLine"),
+  settingsKindroidApiKeyInput: query<HTMLInputElement>("#settingsKindroidApiKeyInput"),
   settingsLogLevelInput: query<HTMLInputElement>("#settingsLogLevelInput"),
   settingsDedupeWindowInput: query<HTMLInputElement>("#settingsDedupeWindowInput"),
   settingsHermesEnabledInput: query<HTMLInputElement>("#settingsHermesEnabledInput"),

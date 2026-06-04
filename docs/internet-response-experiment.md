@@ -1,8 +1,9 @@
 # Kindroid `internet_response` Experiment
 
-This is a manual live diagnostic for Kindroid's undocumented `internet_response` field on the observed direct
-`send-message` and group `groupchats-user-message` endpoints. It is not part of the normal bridge runtime, does not run
-in CI, and should be used only with harmless test content.
+This is a manual live diagnostic for Kindroid's undocumented `internet_response` field on the documented direct
+`send-message` and group `groupchats-user-message` endpoints. Kindroid's public API documentation does not list this
+field. The diagnostic is not part of the normal bridge runtime, does not run in CI, and should be used only with
+harmless test content.
 
 The experiment asks whether text supplied in `internet_response` is accepted as transient context attached to a
 visible user message without being displayed as part of that visible message.

@@ -44,6 +44,8 @@ const journalCreateUrl = "https://api.kindroid.ai/v1/journal-create";
 const journalDeleteUrl = "https://api.kindroid.ai/v1/journal-delete";
 
 export class KindroidClient {
+  private fallbackAuthWarningLogged = false;
+
   constructor(
     private readonly config: AppConfig,
     private readonly logger: Logger
@@ -350,12 +352,27 @@ export class KindroidClient {
   }
 
   private async authHeaders(): Promise<Record<string, string>> {
-    const auth = await loadFreshFirebaseAuth(this.config.bridge.sessionDir);
+    const apiKey = this.config.kindroid.apiKey?.trim();
+    if (apiKey) {
+      return this.requestHeaders(apiKey);
+    }
 
+    if (!this.fallbackAuthWarningLogged) {
+      this.fallbackAuthWarningLogged = true;
+      this.logger.warn(
+        "Kindroid API key is not configured; falling back to saved Firebase browser auth for /v1 requests."
+      );
+    }
+
+    const auth = await loadFreshFirebaseAuth(this.config.bridge.sessionDir);
+    return this.requestHeaders(auth.accessToken);
+  }
+
+  private requestHeaders(bearerToken: string): Record<string, string> {
     return {
       "content-type": "application/json",
-      accept: "application/json",
-      authorization: `Bearer ${auth.accessToken}`
+      accept: "text/plain, application/json",
+      authorization: `Bearer ${bearerToken}`
     };
   }
 }

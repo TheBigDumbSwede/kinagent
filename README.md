@@ -1,6 +1,6 @@
 # kinagent
 
-`kinagent` is a headless Node.js/TypeScript bridge prototype for watching Kindroid chat activity and forwarding it into Hermes Agent. It can also send a single message back to a Kin through Kindroid's observed `send-message` endpoint.
+`kinagent` is a headless Node.js/TypeScript bridge prototype for watching Kindroid chat activity and forwarding it into Hermes Agent. It can also send a single message back to a Kin through Kindroid's public `send-message` endpoint.
 
 This is intentionally a small service foundation. It does not depend on Cadence; the optional desktop control panel is an Electron wrapper around the same Node internals.
 
@@ -20,7 +20,7 @@ Working in this first milestone:
 - Firestore realtime listen stream for `ChatMessages` using the saved Firebase browser auth state, with gRPC keepalive and reconnect backoff.
 - Optional Firestore chat text decryption in `probe-chat` using the saved Firebase UID as the Kindroid AES passphrase.
 - Live plaintext monitor for new incoming Firestore chat messages.
-- Kindroid outbound `POST https://api.kindroid.ai/v1/send-message` client.
+- Kindroid outbound `POST https://api.kindroid.ai/v1/send-message` client using the documented `kn_` API-key flow when configured.
 - SQLite-backed outbound dedupe for recent bridge-originated messages.
 - Hermes chat adapter for the local Cadence Hermes gateway, including a narrow `current_scene` action executor.
 
@@ -69,18 +69,33 @@ Kindroid browser session data, cookies, Firebase ID tokens, refresh tokens, and 
 - This project redacts common token/cookie fields from logs, but the safest path is still to avoid logging raw session objects.
 - `.env.example` and `config.example.yaml` contain placeholders only.
 
-## Internal API Warning
+## Kindroid API Boundary
 
-This prototype depends on observed Kindroid web behavior:
+Kindroid now documents a public `kn_` API-key surface at
+[https://kindroid.ai/docs/article/api-documentation/](https://kindroid.ai/docs/article/api-documentation/), with base
+URL `https://api.kindroid.ai/v1`.
+
+Kinagent uses the documented API shape for:
 
 - `POST https://api.kindroid.ai/v1/send-message`
+- `POST https://api.kindroid.ai/v1/groupchats-user-message`
+- `POST https://api.kindroid.ai/v1/groupchats-get-turn`
+- `POST https://api.kindroid.ai/v1/groupchats-ai-response`
 - `POST https://api.kindroid.ai/v1/update-info` for `current_scene`
 - `POST https://api.kindroid.ai/v1/groupchats-update` for group `current_scene`
+
+Kinagent still depends on observed Kindroid web behavior for:
+
+- `POST https://api.kindroid.ai/v1/journal-create`
+- `POST https://api.kindroid.ai/v1/journal-delete`
+- `internet_response` on direct and group message sends
+- `user_set_temperature` through `update-info`
 - Firebase project `kindroid-ai`
 - Firestore path `Users/{uid}/AIs/{ai_id}/ChatMessages`
 - `!enc:` chat text decrypts with CryptoJS AES using the Firebase UID as the observed passphrase
 
-Those details may be private, undocumented, and subject to change without notice. The code is organized around adapters and defensive checks for that reason.
+Observed details may be private, undocumented, and subject to change without notice. The code is organized around
+adapters and defensive checks for that reason.
 
 ## Setup
 
@@ -89,7 +104,12 @@ npm install
 Copy-Item config.example.yaml config.yaml
 ```
 
-Edit `config.yaml`. If you know your Kindroid UID, set `kindroid.uid`; otherwise the project will try to read it from the saved Firebase auth state. The daemon discovers available Kins from the saved session, so static Kin entries are optional compatibility data rather than the primary subscription source.
+Edit `config.yaml`. Set `kindroid.apiKey` to the `kn_` API key from Kindroid Profile Settings for documented `/v1`
+writes. If it is omitted, Kinagent falls back to the saved browser Firebase session for legacy observed write paths.
+
+If you know your Kindroid UID, set `kindroid.uid`; otherwise the project will try to read it from the saved Firebase
+auth state. The daemon discovers available Kins from the saved session, so static Kin entries are optional compatibility
+data rather than the primary subscription source.
 
 ## Commands
 
@@ -317,6 +337,7 @@ input, it verifies the version and uploads the portable exe to that release.
 
 ```yaml
 kindroid:
+  apiKey: ""
   firebaseProjectId: "kindroid-ai"
   uid: ""
   kins:

@@ -15,36 +15,30 @@ import { normalizeChatDynamismInput } from "./chatDynamism.js";
 export const currentSceneMaxLengthLimit = 160;
 
 export function buildSendMessagePayload(input: SendKindroidMessageInput): Record<string, unknown> {
-  return {
+  const payload: Record<string, unknown> = {
     ai_id: input.aiId,
     message: input.message,
-    stream: false,
-    idempotency_key: input.idempotencyKey,
-    request_id: input.requestId,
-    image_urls: null,
-    image_description: null,
-    video_url: null,
-    video_description: null,
-    internet_response: input.internetResponse ?? null,
-    link_url: null,
-    link_description: null,
-    client_platform: "web"
+    stream: false
   };
+
+  if (input.internetResponse) {
+    payload.internet_response = input.internetResponse;
+  }
+
+  return payload;
 }
 
 export function buildSendGroupMessagePayload(input: SendKindroidGroupMessageInput): Record<string, unknown> {
-  return {
+  const payload: Record<string, unknown> = {
     message: input.message,
-    image_urls: null,
-    image_description: null,
-    video_url: null,
-    video_description: null,
-    internet_response: input.internetResponse ?? null,
-    link_url: null,
-    link_description: null,
-    client_platform: "web",
     group_id: input.groupId
   };
+
+  if (input.internetResponse) {
+    payload.internet_response = input.internetResponse;
+  }
+
+  return payload;
 }
 
 export function buildGetGroupTurnPayload(input: GetKindroidGroupTurnInput): Record<string, unknown> {
@@ -58,9 +52,7 @@ export function buildCreateGroupAiResponsePayload(input: CreateKindroidGroupAiRe
   return {
     ai_id: input.aiId,
     group_id: input.groupId,
-    stream: false,
-    request_id: input.requestId,
-    client_platform: "web"
+    stream: false
   };
 }
 

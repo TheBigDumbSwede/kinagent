@@ -1,4 +1,7 @@
 kindroid:
+  # Official Kindroid API key from Profile Settings. Starts with kn_.
+  # If omitted, Kinagent falls back to the saved browser Firebase session for legacy observed write paths.
+  apiKey: ""
   firebaseProjectId: "kindroid-ai"
   uid: ""
   kins:

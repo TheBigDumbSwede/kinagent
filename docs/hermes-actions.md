@@ -171,9 +171,10 @@ Execution:
 - The visible message is normalized to leading and trailing asterisks so Kindroid formats it as narration.
 - The handler records outbound dedupe before sending so the bridge can suppress its own visible ambient echo.
 - The desktop Monitor receives a local `Hermes` entry containing the hidden packet that Kinagent sent.
-- Direct sends use Kindroid's observed `/v1/send-message` payload.
-- Group sends are not registered for Hermes ambient context. The observed `/v1/groupchats-user-message` payload accepts
-  `internet_response`, but live diagnostics currently classify it as accepted-but-not-used by group AI responses.
+- Direct sends use Kindroid's documented `/v1/send-message` endpoint with an observed `internet_response` extension.
+- Group sends are not registered for Hermes ambient context. The documented `/v1/groupchats-user-message` payload does
+  not include `internet_response`; the observed extension has been accepted in live diagnostics, but those diagnostics
+  currently classify it as accepted-but-not-used by group AI responses.
 
 Guardrails:
 
