@@ -122,6 +122,31 @@ describe("JournalSuggestionStore", () => {
     );
   });
 
+  it("marks pending suggestions stale when their source message is deleted", () => {
+    const store = testStore();
+    const first = store.createPending(notification("doc-1"), suggestionInput("First durable event."));
+    const second = store.createPending(notification("doc-2"), {
+      ...suggestionInput("Second durable event."),
+      title: "Second Durable Event",
+      keyphrases: ["second durable event"],
+      strongEvent: true
+    });
+
+    expect(first).toEqual(expect.objectContaining({ status: "pending" }));
+    expect(second).toEqual(expect.objectContaining({ status: "pending" }));
+    const stale = store.markSourceDeleted({ documentId: "doc-1", aiId: "kin-1" });
+
+    expect(stale).toEqual([
+      expect.objectContaining({
+        id: first?.id,
+        status: "stale",
+        staleReason: "Source chat message was deleted or rewound before review."
+      })
+    ]);
+    expect(store.list("pending").map((suggestion) => suggestion.id)).toEqual([second?.id]);
+    expect(store.list("stale").map((suggestion) => suggestion.id)).toEqual([first?.id]);
+  });
+
   it("rejects near-duplicates of accepted or captured journal entries", () => {
     const store = testStore();
     const first = store.createPending(

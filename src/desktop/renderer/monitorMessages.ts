@@ -2,6 +2,7 @@ import { formatTime } from "./formatters.js";
 
 export interface MonitorMessage {
   type?: string;
+  id?: string | null;
   kinId?: string | null;
   kinName?: string | null;
   groupId?: string | null;
@@ -118,6 +119,11 @@ export function handleMonitorLine(
     return;
   }
 
+  if (payload.type === "kindroid.chat.deleted") {
+    removeDeletedMonitorMessage(context, payload);
+    return;
+  }
+
   if (payload.message) {
     context.elements.monitorLine.textContent = payload.message;
     return;
@@ -133,6 +139,33 @@ export function addMonitorMessage(context: MonitorPanelContext, message: Monitor
   context.state.monitorMessages = context.state.monitorMessages.slice(0, context.maxMonitorMessages);
   renderMessageList(context);
   renderMonitorState(context);
+}
+
+export function removeDeletedMonitorMessage(context: MonitorPanelContext, message: MonitorMessage): void {
+  if (!message.id) {
+    return;
+  }
+
+  const beforeCount = context.state.monitorMessages.length;
+  context.state.monitorMessages = context.state.monitorMessages.filter((current) => {
+    if (current.id !== message.id) {
+      return true;
+    }
+    if (message.groupId) {
+      return current.groupId !== message.groupId;
+    }
+    if (message.kinId) {
+      return current.kinId !== message.kinId;
+    }
+    return false;
+  });
+  const removedCount = beforeCount - context.state.monitorMessages.length;
+  renderMessageList(context);
+  renderMonitorState(context);
+  context.elements.monitorLine.textContent =
+    removedCount > 0
+      ? `${removedCount} deleted or rewound message${removedCount === 1 ? "" : "s"} removed.`
+      : "Message deletion observed.";
 }
 
 export function renderMessageList(context: Pick<MonitorPanelContext, "state" | "elements">): void {

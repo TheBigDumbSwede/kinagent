@@ -11,9 +11,11 @@ export interface KindroidLiveMonitorOptions {
   includeRaw?: boolean;
   signal?: AbortSignal;
   onMessage?: (message: KindroidLiveMonitorMessage) => void | Promise<void>;
+  onMessageDeleted?: (message: KindroidLiveMonitorDeletedMessage) => void | Promise<void>;
 }
 
 export type KindroidLiveMonitorMessage = ReturnType<typeof toOutputMessage>;
+export type KindroidLiveMonitorDeletedMessage = ReturnType<typeof toDeletedMessage>;
 
 export class KindroidLiveMonitor {
   constructor(
@@ -39,6 +41,9 @@ export class KindroidLiveMonitor {
       onDocument: async (document) => {
         const message = mapKindroidMessage(document, options.kinId, { decryptionKey });
         await emitMessage(toOutputMessage(message, Boolean(options.includeRaw)), options);
+      },
+      onDocumentDeleted: async (document) => {
+        await emitDeletedMessage(toDeletedMessage(document.id, options.kinId, document.readTime ?? null), options);
       }
     });
   }
@@ -78,9 +83,31 @@ function toOutputMessage(message: NormalizedKindroidMessage, includeRaw: boolean
   return includeRaw ? { ...output, raw: message.raw } : output;
 }
 
+function toDeletedMessage(documentId: string, kinId: string, timestamp: string | null) {
+  return {
+    type: "kindroid.chat.deleted",
+    id: documentId,
+    kinId,
+    timestamp,
+    source: "firestore"
+  };
+}
+
 async function emitMessage(message: KindroidLiveMonitorMessage, options: KindroidLiveMonitorOptions): Promise<void> {
   if (options.onMessage) {
     await options.onMessage(message);
+    return;
+  }
+
+  process.stdout.write(`${JSON.stringify(message)}\n`);
+}
+
+async function emitDeletedMessage(
+  message: KindroidLiveMonitorDeletedMessage,
+  options: KindroidLiveMonitorOptions
+): Promise<void> {
+  if (options.onMessageDeleted) {
+    await options.onMessageDeleted(message);
     return;
   }
 

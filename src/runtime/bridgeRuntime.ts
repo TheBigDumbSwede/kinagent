@@ -420,6 +420,9 @@ export class BridgeRuntime {
           role: message.role,
           source: "firestore"
         });
+      },
+      onMessageDeleted: async (message) => {
+        this.handleDirectMessageDeleted(kin, message.id, message.timestamp ?? null);
       }
     });
   }
@@ -497,8 +500,74 @@ export class BridgeRuntime {
           textDecryptionError: message.textDecryptionError
         });
         await this.hermes.handleChatChanged(notification);
+      },
+      onDocumentDeleted: async (document) => {
+        this.handleGroupMessageDeleted(group, document.id, document.readTime ?? null);
       }
     });
+  }
+
+  private handleDirectMessageDeleted(kin: KindroidKin, documentId: string, timestamp: string | null): void {
+    this.emit({
+      channel: "monitor-line",
+      payload: {
+        type: "kindroid.chat.deleted",
+        id: documentId,
+        kinId: kin.aiId,
+        kinName: kin.name,
+        timestamp,
+        source: "firestore"
+      }
+    });
+
+    const staleJournalSuggestions = this.journalSuggestions.markSourceDeleted({
+      documentId,
+      aiId: kin.aiId
+    });
+    const staleChatDynamismSuggestions = this.chatDynamismSuggestions.markSourceDeleted({
+      documentId,
+      aiId: kin.aiId
+    });
+    if (staleJournalSuggestions.length > 0) {
+      this.emit({ channel: "journal-suggestions-updated", payload: this.pendingJournalSuggestions() });
+    }
+    if (staleJournalSuggestions.length > 0 || staleChatDynamismSuggestions.length > 0) {
+      this.options.logger.info("Marked pending suggestions stale after source message deletion.", {
+        scope: "direct",
+        aiId: kin.aiId,
+        documentId,
+        journalSuggestions: staleJournalSuggestions.length,
+        chatDynamismSuggestions: staleChatDynamismSuggestions.length
+      });
+    }
+  }
+
+  private handleGroupMessageDeleted(group: KindroidGroup, documentId: string, timestamp: string | null): void {
+    this.emit({
+      channel: "monitor-line",
+      payload: {
+        type: "kindroid.chat.deleted",
+        id: documentId,
+        groupId: group.groupId,
+        groupName: group.name,
+        timestamp,
+        source: "firestore"
+      }
+    });
+
+    const staleJournalSuggestions = this.journalSuggestions.markSourceDeleted({
+      documentId,
+      groupId: group.groupId
+    });
+    if (staleJournalSuggestions.length > 0) {
+      this.emit({ channel: "journal-suggestions-updated", payload: this.pendingJournalSuggestions() });
+      this.options.logger.info("Marked pending suggestions stale after source message deletion.", {
+        scope: "group",
+        groupId: group.groupId,
+        documentId,
+        journalSuggestions: staleJournalSuggestions.length
+      });
+    }
   }
 
   private resolveKinName(aiId: string): string {

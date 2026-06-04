@@ -4,7 +4,7 @@ import type { AppConfig } from "../config/types.js";
 import type { KindroidChatNotification } from "../firestore/types.js";
 import { parseChatDynamismValue } from "../kindroid/chatDynamism.js";
 
-export type ChatDynamismSuggestionStatus = "pending" | "accepted" | "rejected" | "expired";
+export type ChatDynamismSuggestionStatus = "pending" | "accepted" | "rejected" | "expired" | "stale";
 export type ChatDynamismSuggestionDirection = "increase" | "decrease" | "set";
 
 export interface ChatDynamismSuggestionInput {
@@ -30,6 +30,8 @@ export interface ChatDynamismSuggestion {
   createdAt: string;
   updatedAt: string;
   status: ChatDynamismSuggestionStatus;
+  staleAt?: string;
+  staleReason?: string;
   safetyNotes: string[];
 }
 
@@ -89,6 +91,39 @@ export class ChatDynamismSuggestionStore {
 
     this.write({ ...file, suggestions: [suggestion, ...suggestions] });
     return suggestion;
+  }
+
+  markSourceDeleted(input: { aiId: string; documentId: string }): ChatDynamismSuggestion[] {
+    const aiId = input.aiId.trim();
+    const documentId = input.documentId.trim();
+    if (!aiId || !documentId) {
+      return [];
+    }
+
+    const file = this.read();
+    const suggestions = file.suggestions ?? [];
+    const now = new Date().toISOString();
+    const stale: ChatDynamismSuggestion[] = [];
+    const nextSuggestions = suggestions.map((suggestion) => {
+      if (suggestion.status !== "pending" || suggestion.aiId !== aiId || suggestion.sourceDocumentId !== documentId) {
+        return suggestion;
+      }
+
+      const next = {
+        ...suggestion,
+        status: "stale" as const,
+        updatedAt: now,
+        staleAt: now,
+        staleReason: "Source chat message was deleted or rewound before review."
+      };
+      stale.push(next);
+      return next;
+    });
+
+    if (stale.length > 0) {
+      this.write({ ...file, suggestions: nextSuggestions });
+    }
+    return stale;
   }
 
   private read(): ChatDynamismSuggestionFile {

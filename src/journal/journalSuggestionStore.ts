@@ -23,7 +23,7 @@ export interface JournalSuggestionStoreOptions {
   strongEventBypass: boolean;
 }
 
-export type JournalSuggestionStatus = "pending" | "accepted" | "dismissed";
+export type JournalSuggestionStatus = "pending" | "accepted" | "dismissed" | "stale";
 export type JournalSuggestionCategory = (typeof journalSuggestionCategories)[number];
 export type JournalSuggestionAction = "create" | "delete";
 
@@ -76,6 +76,8 @@ export interface JournalSuggestion {
   targetJournalEntry?: string;
   acceptedAt?: string;
   dismissedAt?: string;
+  staleAt?: string;
+  staleReason?: string;
   result?: {
     ok: boolean;
     status?: number;
@@ -302,6 +304,44 @@ export class JournalSuggestionStore {
       dismissedAt: now,
       updatedAt: now
     }));
+  }
+
+  markSourceDeleted(input: { documentId: string; aiId?: string | null; groupId?: string | null }): JournalSuggestion[] {
+    const documentId = input.documentId.trim();
+    if (!documentId) {
+      return [];
+    }
+
+    const file = this.read();
+    const suggestions = file.suggestions ?? [];
+    const now = new Date().toISOString();
+    const stale: JournalSuggestion[] = [];
+    const nextSuggestions = suggestions.map((suggestion) => {
+      if (suggestion.status !== "pending" || suggestion.documentId !== documentId) {
+        return suggestion;
+      }
+      if (input.groupId && suggestion.groupId !== input.groupId) {
+        return suggestion;
+      }
+      if (!input.groupId && input.aiId && suggestion.aiId !== input.aiId) {
+        return suggestion;
+      }
+
+      const next = {
+        ...suggestion,
+        status: "stale" as const,
+        updatedAt: now,
+        staleAt: now,
+        staleReason: "Source chat message was deleted or rewound before review."
+      };
+      stale.push(next);
+      return next;
+    });
+
+    if (stale.length > 0) {
+      this.write({ ...file, suggestions: nextSuggestions });
+    }
+    return stale;
   }
 
   private updateSuggestion(

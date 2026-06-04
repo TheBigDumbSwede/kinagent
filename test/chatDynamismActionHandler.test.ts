@@ -157,6 +157,37 @@ describe("ChatDynamismActionHandler", () => {
 
     expect(store.list()).toHaveLength(0);
   });
+
+  it("marks pending suggestions stale when their source message is deleted", async () => {
+    const store = testStore();
+    const handler = new ChatDynamismActionHandler(testConfig(), testLogger, store);
+    const action = handler.normalizeActions({
+      actions: [
+        {
+          type: "propose_chat_dynamism_adjustment",
+          ai_id: "kin-1",
+          direction: "increase",
+          suggested_target: 0.9,
+          reason: "The direct Kin is flat across multiple turns.",
+          confidence: "high"
+        }
+      ]
+    })[0];
+    await handler.handle(directNotification("kin-1"), action);
+
+    const stale = store.markSourceDeleted({ aiId: "kin-1", documentId: "doc-1" });
+
+    expect(stale).toEqual([
+      expect.objectContaining({
+        aiId: "kin-1",
+        sourceDocumentId: "doc-1",
+        status: "stale",
+        staleReason: "Source chat message was deleted or rewound before review."
+      })
+    ]);
+    expect(store.list("pending")).toHaveLength(0);
+    expect(store.list("stale")).toHaveLength(1);
+  });
 });
 
 function testStore() {

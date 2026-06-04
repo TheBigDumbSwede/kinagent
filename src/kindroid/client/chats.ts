@@ -1,6 +1,6 @@
 import type { FirestoreListenClient } from "../../firestore/firestoreListenClient.js";
 import type { FirestoreRestClient } from "../../firestore/firestoreRestClient.js";
-import type { FirestoreDocumentLike } from "../../firestore/types.js";
+import type { FirestoreDeletedDocumentLike, FirestoreDocumentLike } from "../../firestore/types.js";
 import { kinChatMessagesPath, kinDocumentPath } from "./firestorePaths.js";
 
 export interface ListKindroidChatMessagesOptions {
@@ -19,6 +19,7 @@ export interface ListenKindroidChatMessagesOptions {
   pageSize?: number;
   signal?: AbortSignal;
   onDocument: (document: FirestoreDocumentLike) => void | Promise<void>;
+  onDocumentDeleted?: (document: FirestoreDeletedDocumentLike) => void | Promise<void>;
 }
 
 export class KindroidChatsClient {
@@ -58,7 +59,8 @@ export class KindroidChatsClient {
       orderBy: [{ fieldPath: "timestamp", direction: "DESCENDING" }],
       targetLabel: `kin:${options.kinId}:chatMessages`,
       signal: options.signal,
-      onDocument: options.onDocument
+      onDocument: options.onDocument,
+      onDocumentDeleted: options.onDocumentDeleted
     });
   }
 }

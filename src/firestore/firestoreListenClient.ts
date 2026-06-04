@@ -3,7 +3,7 @@ import protobuf from "protobufjs";
 import type { AppConfig } from "../config/types.js";
 import { extractFirebaseAppCheckState, loadBrowserSession, loadFreshFirebaseAuth } from "../auth/firebaseSession.js";
 import type { Logger } from "../util/logger.js";
-import type { FirestoreDocumentLike } from "./types.js";
+import type { FirestoreDeletedDocumentLike, FirestoreDocumentLike } from "./types.js";
 
 export interface ListenCollectionOptions {
   parentPath: string;
@@ -13,6 +13,7 @@ export interface ListenCollectionOptions {
   targetLabel?: string;
   signal?: AbortSignal;
   onDocument: (document: FirestoreDocumentLike) => void | Promise<void>;
+  onDocumentDeleted?: (document: FirestoreDeletedDocumentLike) => void | Promise<void>;
 }
 
 export interface FirestoreListenOrder {
@@ -55,6 +56,8 @@ interface ListenResponse {
   documentChange?: {
     document?: FirestoreListenDocument;
   };
+  documentDelete?: FirestoreDeletedDocument;
+  documentRemove?: FirestoreRemovedDocument;
 }
 
 interface FirestoreListenDocument {
@@ -62,6 +65,16 @@ interface FirestoreListenDocument {
   fields?: Record<string, FirestoreListenValue>;
   createTime?: TimestampLike;
   updateTime?: TimestampLike;
+}
+
+interface FirestoreDeletedDocument {
+  document?: string;
+  readTime?: TimestampLike;
+}
+
+interface FirestoreRemovedDocument {
+  document?: string;
+  readTime?: TimestampLike;
 }
 
 type TimestampLike = string | { seconds?: string | number; nanos?: number };
@@ -301,6 +314,16 @@ export class FirestoreListenClient {
               return;
             }
 
+            const deletedDocument = response.documentDelete ?? response.documentRemove;
+            if (deletedDocument?.document) {
+              const document = firestoreDeletedDocumentLike(deletedDocument);
+              options.state.documentVersions.delete(document.id);
+              if (initialized) {
+                await options.onDocumentDeleted?.(document);
+              }
+              return;
+            }
+
             const listenDocument = response.documentChange?.document;
             if (!listenDocument?.name) {
               return;
@@ -353,6 +376,17 @@ export class FirestoreListenClient {
       call.write(buildListenRequest(database, parent, options));
     });
   }
+}
+
+function firestoreDeletedDocumentLike(
+  document: FirestoreDeletedDocument | FirestoreRemovedDocument
+): FirestoreDeletedDocumentLike {
+  const name = document.document ?? "";
+  return {
+    id: name.split("/").pop() ?? name,
+    name,
+    readTime: timestampIso(document.readTime)
+  };
 }
 
 function createFirestoreClient(): FirestoreGrpcClient {

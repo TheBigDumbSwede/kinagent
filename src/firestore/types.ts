@@ -47,3 +47,9 @@ export interface FirestoreDocumentLike {
   id: string;
   data(): unknown;
 }
+
+export interface FirestoreDeletedDocumentLike {
+  id: string;
+  name: string;
+  readTime?: string;
+}

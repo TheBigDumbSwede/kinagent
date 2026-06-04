@@ -1,6 +1,6 @@
 import type { FirestoreListenClient } from "../../firestore/firestoreListenClient.js";
 import type { FirestoreRestClient } from "../../firestore/firestoreRestClient.js";
-import type { FirestoreDocumentLike } from "../../firestore/types.js";
+import type { FirestoreDeletedDocumentLike, FirestoreDocumentLike } from "../../firestore/types.js";
 import { groupChatMessagesPath, groupDocumentPath, groupPinnedMessagesPath } from "./firestorePaths.js";
 
 export interface ListKindroidGroupChatMessagesOptions {
@@ -19,6 +19,7 @@ export interface ListenKindroidGroupChatMessagesOptions {
   pageSize?: number;
   signal?: AbortSignal;
   onDocument: (document: FirestoreDocumentLike) => void | Promise<void>;
+  onDocumentDeleted?: (document: FirestoreDeletedDocumentLike) => void | Promise<void>;
 }
 
 export interface ListenKindroidGroupPinnedMessagesOptions {
@@ -68,7 +69,8 @@ export class KindroidGroupChatsClient {
       ],
       targetLabel: `group:${options.groupId}:chatMessages`,
       signal: options.signal,
-      onDocument: options.onDocument
+      onDocument: options.onDocument,
+      onDocumentDeleted: options.onDocumentDeleted
     });
   }
 
