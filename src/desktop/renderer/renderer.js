@@ -1,9 +1,18 @@
 import { analyzeSelectedKin, renderKinAnalysisProgress, renderMarkdownReport } from "./analysisPanel.js";
+import { renderAppSettingsTab, saveAppSettings } from "./appSettingsForm.js";
 import { createVoiceAudioPlayer } from "./audioPlayback.js";
 import { exportSelectedChat, renderChatExportProgress } from "./chatExportPanel.js";
-import { formatTime, formatTimelineChange, providerLabel } from "./formatters.js";
+import { formatTime, formatTimelineChange } from "./formatters.js";
 import { createMessageElement, visibleMonitorMessages as filterVisibleMonitorMessages } from "./monitorMessages.js";
 import { createDiffLine, renderSelectedHistoryDiff } from "./timelineDiff.js";
+import {
+  renderKinHermesTab,
+  renderVoiceProviderFields,
+  renderVoiceTab,
+  saveSelectedKinAmbient,
+  saveSelectedKinVoice,
+  syncChatDynamismRangeLabels
+} from "./voiceHermesForms.js";
 
 const state = {
   kins: [],
@@ -158,6 +167,28 @@ const playVoiceAudio = createVoiceAudioPlayer({
   }
 });
 
+function appSettingsContext() {
+  return {
+    state,
+    elements,
+    api: window.kinagent,
+    renderActivity,
+    renderDetailEmpty,
+    loadAppSettings
+  };
+}
+
+function voiceHermesContext() {
+  return {
+    state,
+    elements,
+    api: window.kinagent,
+    renderActivity,
+    renderDetailEmpty,
+    chatDynamismSlider
+  };
+}
+
 elements.loginStartButton.addEventListener("click", () =>
   runAction("Opening login", () => window.kinagent.startLogin())
 );
@@ -263,21 +294,27 @@ elements.settingTabs.addEventListener("click", (event) => {
   state.activeTab = nextTab;
   renderActivity();
 });
-elements.voiceProviderInput.addEventListener("change", renderVoiceProviderFields);
+elements.voiceProviderInput.addEventListener("change", () => {
+  renderVoiceProviderFields(voiceHermesContext());
+});
 elements.appSettingsForm.addEventListener("submit", (event) => {
   event.preventDefault();
-  void saveAppSettings();
+  void saveAppSettings(appSettingsContext());
 });
 elements.voiceForm.addEventListener("submit", (event) => {
   event.preventDefault();
-  void saveSelectedKinVoice();
+  void saveSelectedKinVoice(voiceHermesContext());
 });
 elements.kinHermesForm.addEventListener("submit", (event) => {
   event.preventDefault();
-  void saveSelectedKinAmbient();
+  void saveSelectedKinAmbient(voiceHermesContext());
 });
-elements.chatDynamismMinInput.addEventListener("input", syncChatDynamismRangeLabels);
-elements.chatDynamismMaxInput.addEventListener("input", syncChatDynamismRangeLabels);
+elements.chatDynamismMinInput.addEventListener("input", () => {
+  syncChatDynamismRangeLabels(voiceHermesContext());
+});
+elements.chatDynamismMaxInput.addEventListener("input", () => {
+  syncChatDynamismRangeLabels(voiceHermesContext());
+});
 elements.kinAnalyzeButton.addEventListener("click", () => {
   void analyzeSelectedKin({ state, elements, api: window.kinagent, renderActivity });
 });
@@ -840,7 +877,7 @@ function renderActivity() {
   if (isAppSettings) {
     elements.activityTitle.textContent = "Settings";
     elements.monitorLine.textContent = "Application configuration";
-    renderAppSettingsTab();
+    renderAppSettingsTab(appSettingsContext());
     return;
   }
 
@@ -864,12 +901,12 @@ function renderActivity() {
   }
 
   if (isVoice) {
-    renderVoiceTab(selectedKin);
+    renderVoiceTab(voiceHermesContext(), selectedKin);
     return;
   }
 
   if (isHermes) {
-    renderKinHermesTab(selectedKin);
+    renderKinHermesTab(voiceHermesContext(), selectedKin);
     return;
   }
 
@@ -996,182 +1033,6 @@ function renderDetailContent({ content, history, stats }) {
   }
 }
 
-function renderAppSettingsTab() {
-  if (state.appSettingsLoading) {
-    renderDetailEmpty("Loading settings.");
-    return;
-  }
-
-  if (state.appSettingsError) {
-    renderDetailEmpty(state.appSettingsError);
-    return;
-  }
-
-  if (!state.appSettings?.ok) {
-    void loadAppSettings();
-    renderDetailEmpty("Loading settings.");
-    return;
-  }
-
-  const config = state.appSettings.config || {};
-  elements.kinDetailEmpty.hidden = true;
-  elements.kinDetailContent.hidden = false;
-  elements.kinDetailContent.classList.remove("form-detail-content");
-  elements.kinDetailContent.classList.add("app-settings-content");
-  elements.fieldContent.hidden = true;
-  elements.journalSuggestionPanel.hidden = true;
-  elements.voiceForm.hidden = true;
-  elements.kinHermesForm.hidden = true;
-  elements.kinAnalyzePanel.hidden = true;
-  elements.chatExportPanel.hidden = true;
-  elements.appSettingsForm.hidden = false;
-  elements.timeline.hidden = true;
-  elements.detailStats.replaceChildren();
-
-  const stats = [
-    { label: "Config", value: state.appSettings.configPath || "Unavailable" },
-    { label: "Data", value: state.appSettings.userDataDir || "Unavailable" },
-    { label: "Hermes", value: config.hermes?.enabled ? "Enabled" : "Off" },
-    { label: "Voice", value: config.voice?.enabled ? providerLabel(config.voice?.provider) : "Off" }
-  ];
-  for (const stat of stats) {
-    const item = document.createElement("div");
-    const label = document.createElement("span");
-    label.textContent = stat.label;
-    const value = document.createElement("strong");
-    value.textContent = stat.value;
-    item.append(label, value);
-    elements.detailStats.append(item);
-  }
-
-  populateAppSettingsForm(config);
-}
-
-function populateAppSettingsForm(config) {
-  const bridge = config.bridge || {};
-  const hermes = config.hermes || {};
-  const currentScene = hermes.currentSceneUpdates || {};
-  const journal = hermes.journalSuggestions || {};
-  const voice = config.voice || {};
-  const openai = voice.openai || {};
-  const elevenlabs = voice.elevenlabs || {};
-
-  elements.settingsLogLevelInput.value = bridge.logLevel || "info";
-  elements.settingsDedupeWindowInput.value = String(bridge.dedupeWindowSeconds || 180);
-  elements.settingsPathLine.textContent = state.appSettings.configPath || "";
-
-  elements.settingsHermesEnabledInput.checked = Boolean(hermes.enabled);
-  elements.settingsHermesBaseUrlInput.value = hermes.baseUrl || "";
-  elements.settingsHermesAgentIdInput.value = hermes.agentId || "";
-  elements.settingsHermesApiKeyInput.value = hermes.apiKey || "";
-  elements.settingsHermesCurrentSceneEnabledInput.checked = Boolean(currentScene.enabled);
-  elements.settingsHermesCurrentSceneMaxLengthInput.value = String(currentScene.maxLength || 160);
-  elements.settingsHermesJournalEnabledInput.checked = Boolean(journal.enabled);
-  elements.settingsHermesJournalBypassInput.checked = Boolean(journal.strongEventBypass);
-  elements.settingsHermesJournalThrottleInput.value = String(journal.throttleMessages || 20);
-
-  elements.settingsVoiceEnabledInput.checked = Boolean(voice.enabled);
-  elements.settingsVoiceProviderInput.value = voice.provider || "none";
-  elements.settingsOpenAiApiKeyInput.value = openai.apiKey || "";
-  elements.settingsOpenAiModelInput.value = openai.model || "";
-  elements.settingsOpenAiVoiceInput.value = openai.voice || "";
-  elements.settingsOpenAiInstructionsInput.value = openai.instructions || "";
-  elements.settingsElevenLabsApiKeyInput.value = elevenlabs.apiKey || "";
-  elements.settingsElevenLabsModelInput.value = elevenlabs.model || "";
-  elements.settingsElevenLabsOutputFormatInput.value = elevenlabs.outputFormat || "";
-
-  elements.appSettingsSaveButton.disabled = state.appSettingsSaving;
-  if (state.appSettings.saved) {
-    elements.appSettingsStatusLine.textContent = "Saved. Restart Kinagent for running services to use these settings.";
-  } else {
-    elements.appSettingsStatusLine.textContent = "Changes are written to the desktop config file.";
-  }
-}
-
-function renderVoiceTab(selectedKin) {
-  if (state.voiceLoading) {
-    renderDetailEmpty("Loading voice settings.");
-    return;
-  }
-
-  if (state.voiceError) {
-    renderDetailEmpty(state.voiceError);
-    return;
-  }
-
-  if (!state.selectedKinVoice?.ok) {
-    renderDetailEmpty("No voice settings found for this Kin.");
-    return;
-  }
-
-  const preference = state.selectedKinVoice.preference || {};
-  elements.kinDetailEmpty.hidden = true;
-  elements.kinDetailContent.hidden = false;
-  elements.kinDetailContent.classList.remove("app-settings-content");
-  elements.kinDetailContent.classList.add("form-detail-content");
-  elements.fieldContent.hidden = true;
-  elements.journalSuggestionPanel.hidden = true;
-  elements.appSettingsForm.hidden = true;
-  elements.voiceForm.hidden = false;
-  elements.kinHermesForm.hidden = true;
-  elements.kinAnalyzePanel.hidden = true;
-  elements.chatExportPanel.hidden = true;
-  elements.timeline.hidden = true;
-  elements.voiceEnabledInput.checked = Boolean(preference.enabled);
-  elements.voiceProviderInput.value = preference.provider || "openai";
-  renderOpenAiVoiceOptions(state.selectedKinVoice.openAiVoiceOptions || [], preference.openaiVoice || "marin");
-  elements.elevenLabsVoiceInput.value = preference.elevenLabsVoiceId || "";
-  elements.filterNarrationInput.checked = preference.filterNarrationForTts !== false;
-  elements.narrationDelimiterInput.value = preference.narrationDelimiter || "*";
-  elements.openAiInstructionsInput.value = preference.openaiInstructions || "";
-  elements.voiceSaveButton.disabled = state.voiceSaving;
-  renderVoiceProviderFields();
-  renderVoiceStatusLine();
-  renderVoiceStats(selectedKin, preference);
-}
-
-function renderKinHermesTab(selectedKin) {
-  if (state.ambientLoading) {
-    renderDetailEmpty("Loading Hermes settings.");
-    return;
-  }
-
-  if (state.ambientError) {
-    renderDetailEmpty(state.ambientError);
-    return;
-  }
-
-  if (!state.selectedKinAmbient?.ok) {
-    renderDetailEmpty("No Hermes settings found for this Kin.");
-    return;
-  }
-
-  elements.kinDetailEmpty.hidden = true;
-  elements.kinDetailContent.hidden = false;
-  elements.kinDetailContent.classList.remove("app-settings-content");
-  elements.kinDetailContent.classList.add("form-detail-content");
-  elements.fieldContent.hidden = true;
-  elements.journalSuggestionPanel.hidden = true;
-  elements.appSettingsForm.hidden = true;
-  elements.voiceForm.hidden = true;
-  elements.kinHermesForm.hidden = false;
-  elements.kinAnalyzePanel.hidden = true;
-  elements.chatExportPanel.hidden = true;
-  elements.timeline.hidden = true;
-  elements.ambientContextEnabledInput.checked = state.selectedKinAmbient.enabled !== false;
-  const chatDynamism = state.selectedKinAmbient.chatDynamism || {};
-  elements.chatDynamismCurrentValue.textContent = chatDynamismCurrentLabel(
-    state.selectedKinAmbient.currentChatDynamism
-  );
-  elements.chatDynamismEnabledInput.checked = Boolean(chatDynamism.enabled);
-  elements.chatDynamismMinInput.value = String(chatDynamism.min ?? chatDynamismSlider.practicalMin);
-  elements.chatDynamismMaxInput.value = String(chatDynamism.max ?? chatDynamismSlider.practicalMax);
-  syncChatDynamismRangeLabels();
-  elements.kinHermesSaveButton.disabled = state.ambientSaving;
-  elements.kinHermesStatusLine.textContent = hermesStatusLine(state.selectedKinAmbient);
-  renderKinHermesStats(selectedKin, state.selectedKinAmbient);
-}
-
 function renderKinAnalyzeTab(selectedKin) {
   elements.kinDetailEmpty.hidden = true;
   elements.kinDetailContent.hidden = false;
@@ -1232,28 +1093,6 @@ function renderGroupExportTab(selectedGroup) {
   renderGroupActionStats(selectedGroup, "Export", "Pending");
 }
 
-function renderKinHermesStats(selectedKin, preference) {
-  const current = preference.currentChatDynamism || {};
-  const chatDynamism = preference.chatDynamism || {};
-  const stats = [
-    { label: "Kin", value: selectedKin?.name || state.selectedKinId || "Unknown" },
-    { label: "Ambient", value: preference.enabled ? "Enabled" : "Off" },
-    { label: "Dynamism", value: current.display || "Unknown" },
-    { label: "Drift", value: chatDynamism.enabled ? `${chatDynamism.min} - ${chatDynamism.max}` : "Off" }
-  ];
-
-  elements.detailStats.replaceChildren();
-  for (const stat of stats) {
-    const item = document.createElement("div");
-    const label = document.createElement("span");
-    label.textContent = stat.label;
-    const value = document.createElement("strong");
-    value.textContent = stat.value;
-    item.append(label, value);
-    elements.detailStats.append(item);
-  }
-}
-
 function renderKinActionStats(selectedKin, action, status) {
   const stats = [
     { label: "Kin", value: selectedKin?.name || state.selectedKinId || "Unknown" },
@@ -1292,238 +1131,6 @@ function renderGroupActionStats(selectedGroup, action, status) {
     item.append(label, value);
     elements.detailStats.append(item);
   }
-}
-
-function renderVoiceStats(selectedKin, preference) {
-  const providers = state.selectedKinVoice.configuredProviders || {};
-  const stats = [
-    { label: "Kin", value: selectedKin?.name || state.selectedKinId || "Unknown" },
-    { label: "Voice", value: preference.enabled ? "Enabled" : "Off" },
-    { label: "Provider", value: providerLabel(preference.provider) },
-    {
-      label: "Ready",
-      value: state.selectedKinVoice.globalEnabled && providers[preference.provider] ? "Yes" : "No"
-    }
-  ];
-
-  elements.detailStats.replaceChildren();
-  for (const stat of stats) {
-    const item = document.createElement("div");
-    const label = document.createElement("span");
-    label.textContent = stat.label;
-    const value = document.createElement("strong");
-    value.textContent = stat.value;
-    item.append(label, value);
-    elements.detailStats.append(item);
-  }
-}
-
-function renderOpenAiVoiceOptions(options, selectedVoice) {
-  const values = options.length > 0 ? options : [selectedVoice || "marin"];
-  elements.openAiVoiceInput.replaceChildren();
-  for (const voice of values) {
-    const option = document.createElement("option");
-    option.value = voice;
-    option.textContent = voice;
-    elements.openAiVoiceInput.append(option);
-  }
-  elements.openAiVoiceInput.value = selectedVoice || values[0] || "marin";
-}
-
-function renderVoiceProviderFields() {
-  const provider = elements.voiceProviderInput.value;
-  elements.openAiVoiceLabel.hidden = provider !== "openai";
-  elements.openAiInstructionsInput.closest("label").hidden = provider !== "openai";
-  elements.elevenLabsVoiceLabel.hidden = provider !== "elevenlabs";
-  renderVoiceStatusLine();
-}
-
-function renderVoiceStatusLine() {
-  if (!state.selectedKinVoice?.ok) {
-    elements.voiceStatusLine.textContent = "";
-    return;
-  }
-
-  const provider = elements.voiceProviderInput.value;
-  const providers = state.selectedKinVoice.configuredProviders || {};
-  if (!state.selectedKinVoice.globalEnabled) {
-    elements.voiceStatusLine.textContent = "Voice is off globally. This Kin setting is saved but will not play yet.";
-    return;
-  }
-
-  if (!providers[provider]) {
-    elements.voiceStatusLine.textContent =
-      provider === "openai" ? "OpenAI is missing an API key." : "ElevenLabs is missing an API key.";
-    return;
-  }
-
-  if (provider === "elevenlabs" && !elements.elevenLabsVoiceInput.value.trim()) {
-    elements.voiceStatusLine.textContent = "ElevenLabs requires a voice ID for this Kin.";
-    return;
-  }
-
-  elements.voiceStatusLine.textContent = "Voice settings are ready for this Kin.";
-}
-
-async function saveAppSettings() {
-  state.appSettingsSaving = true;
-  state.appSettingsError = null;
-  elements.appSettingsStatusLine.textContent = "Saving settings.";
-  elements.appSettingsSaveButton.disabled = true;
-
-  try {
-    state.appSettings = await window.kinagent.saveSettings(readAppSettingsForm());
-    elements.monitorLine.textContent = "Settings saved.";
-  } catch (error) {
-    state.appSettingsError = error.message || String(error);
-  } finally {
-    state.appSettingsSaving = false;
-    renderActivity();
-  }
-}
-
-function readAppSettingsForm() {
-  return {
-    logLevel: elements.settingsLogLevelInput.value,
-    dedupeWindowSeconds: numberInputValue(elements.settingsDedupeWindowInput),
-    hermesEnabled: elements.settingsHermesEnabledInput.checked,
-    hermesBaseUrl: elements.settingsHermesBaseUrlInput.value,
-    hermesAgentId: elements.settingsHermesAgentIdInput.value,
-    hermesApiKey: elements.settingsHermesApiKeyInput.value,
-    hermesCurrentSceneEnabled: elements.settingsHermesCurrentSceneEnabledInput.checked,
-    hermesCurrentSceneMaxLength: numberInputValue(elements.settingsHermesCurrentSceneMaxLengthInput),
-    hermesJournalSuggestionsEnabled: elements.settingsHermesJournalEnabledInput.checked,
-    hermesJournalStrongEventBypass: elements.settingsHermesJournalBypassInput.checked,
-    hermesJournalThrottleMessages: numberInputValue(elements.settingsHermesJournalThrottleInput),
-    voiceEnabled: elements.settingsVoiceEnabledInput.checked,
-    voiceProvider: elements.settingsVoiceProviderInput.value,
-    openAiApiKey: elements.settingsOpenAiApiKeyInput.value,
-    openAiModel: elements.settingsOpenAiModelInput.value,
-    openAiVoice: elements.settingsOpenAiVoiceInput.value,
-    openAiInstructions: elements.settingsOpenAiInstructionsInput.value,
-    elevenLabsApiKey: elements.settingsElevenLabsApiKeyInput.value,
-    elevenLabsModel: elements.settingsElevenLabsModelInput.value,
-    elevenLabsOutputFormat: elements.settingsElevenLabsOutputFormatInput.value
-  };
-}
-
-function numberInputValue(input) {
-  return Number(input.value);
-}
-
-async function saveSelectedKinVoice() {
-  if (!state.selectedKinId) {
-    return;
-  }
-
-  const preference = {
-    enabled: elements.voiceEnabledInput.checked,
-    provider: elements.voiceProviderInput.value,
-    openaiVoice: elements.openAiVoiceInput.value,
-    openaiInstructions: elements.openAiInstructionsInput.value,
-    elevenLabsVoiceId: elements.elevenLabsVoiceInput.value,
-    filterNarrationForTts: elements.filterNarrationInput.checked,
-    narrationDelimiter: elements.narrationDelimiterInput.value
-  };
-
-  state.voiceSaving = true;
-  renderActivity();
-  try {
-    state.selectedKinVoice = await window.kinagent.setKinVoicePreference({
-      kinId: state.selectedKinId,
-      preference
-    });
-    state.voiceError = null;
-    elements.monitorLine.textContent = "Voice settings saved.";
-  } catch (error) {
-    state.voiceError = error.message || String(error);
-  } finally {
-    state.voiceSaving = false;
-    renderActivity();
-  }
-}
-
-async function saveSelectedKinAmbient() {
-  if (!state.selectedKinId) {
-    return;
-  }
-
-  const enabled = elements.ambientContextEnabledInput.checked;
-  const chatDynamism = readChatDynamismPreferenceForm();
-
-  state.ambientSaving = true;
-  renderActivity();
-  try {
-    state.selectedKinAmbient = await window.kinagent.setKinAmbientPreference({
-      kinId: state.selectedKinId,
-      enabled,
-      chatDynamism
-    });
-    state.subscriptions = state.subscriptions.map((subscription) =>
-      subscription.kin?.aiId === state.selectedKinId
-        ? {
-            ...subscription,
-            ambientContextEnabled: state.selectedKinAmbient.enabled,
-            chatDynamism: state.selectedKinAmbient.chatDynamism
-          }
-        : subscription
-    );
-    state.ambientError = null;
-    elements.monitorLine.textContent = "Hermes settings saved.";
-  } catch (error) {
-    state.ambientError = error.message || String(error);
-  } finally {
-    state.ambientSaving = false;
-    renderActivity();
-  }
-}
-
-function readChatDynamismPreferenceForm() {
-  const min = Number(elements.chatDynamismMinInput.value);
-  const max = Number(elements.chatDynamismMaxInput.value);
-  return {
-    enabled: elements.chatDynamismEnabledInput.checked,
-    min: Math.min(min, max),
-    max: Math.max(min, max)
-  };
-}
-
-function syncChatDynamismRangeLabels() {
-  const min = Number(elements.chatDynamismMinInput.value);
-  const max = Number(elements.chatDynamismMaxInput.value);
-  const lower = Math.min(min, max);
-  const upper = Math.max(min, max);
-  elements.chatDynamismMinValue.textContent = lower.toFixed(2);
-  elements.chatDynamismMaxValue.textContent = upper.toFixed(2);
-
-  const sliderMin = Number(elements.chatDynamismMinInput.min || chatDynamismSlider.hardMin);
-  const sliderMax = Number(elements.chatDynamismMinInput.max || chatDynamismSlider.hardMax);
-  const span = sliderMax - sliderMin || 1;
-  const start = ((lower - sliderMin) / span) * 100;
-  const end = ((upper - sliderMin) / span) * 100;
-  const softLow = ((chatDynamismSlider.practicalMin - sliderMin) / span) * 100;
-  const softHigh = ((chatDynamismSlider.practicalMax - sliderMin) / span) * 100;
-  elements.chatDynamismRangeControl.style.setProperty("--range-start", `${start}%`);
-  elements.chatDynamismRangeControl.style.setProperty("--range-end", `${end}%`);
-  elements.chatDynamismRangeControl.style.setProperty("--soft-low", `${softLow}%`);
-  elements.chatDynamismRangeControl.style.setProperty("--soft-high", `${softHigh}%`);
-}
-
-function chatDynamismCurrentLabel(value) {
-  if (!value) {
-    return "Unknown";
-  }
-
-  const base = value.display || (typeof value.numeric === "number" ? value.numeric.toFixed(2) : "Unknown");
-  return typeof value.numeric === "number" ? `${base} (${value.numeric.toFixed(2)})` : base;
-}
-
-function hermesStatusLine(preference) {
-  const ambient = preference.enabled ? "Ambient context is allowed" : "Ambient context is disabled";
-  const chatDynamism = preference.chatDynamism?.enabled
-    ? `Chat Dynamism drift suggestions are allowed from ${preference.chatDynamism.min} to ${preference.chatDynamism.max}.`
-    : "Chat Dynamism drift suggestions are disabled.";
-  return `${ambient}. ${chatDynamism}`;
 }
 
 function resetKinActionPlaceholders() {
