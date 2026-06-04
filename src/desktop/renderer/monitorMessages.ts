@@ -21,6 +21,41 @@ export interface MonitorMessageFilter {
   activeTab?: string | null;
 }
 
+export interface MonitorSubscription {
+  enabled?: boolean;
+  running?: boolean;
+  kin?: {
+    aiId?: string | null;
+  };
+  group?: {
+    groupId?: string | null;
+  };
+}
+
+export interface MonitorEntity {
+  aiId?: string | null;
+  groupId?: string | null;
+}
+
+export interface MonitorPanelState extends MonitorMessageFilter {
+  monitorMessages: MonitorMessage[];
+  subscriptions: MonitorSubscription[];
+  groupSubscriptions: MonitorSubscription[];
+}
+
+export interface MonitorPanelElements {
+  monitorLine: HTMLElement;
+  messageList: HTMLElement;
+}
+
+export interface MonitorPanelContext {
+  state: MonitorPanelState;
+  elements: MonitorPanelElements;
+  selectedKin: MonitorEntity | null;
+  selectedGroup: MonitorEntity | null;
+  maxMonitorMessages: number;
+}
+
 export function visibleMonitorMessages(
   messages: MonitorMessage[],
   { selectedGroupId, selectedKinId, activeTab }: MonitorMessageFilter
@@ -34,6 +69,88 @@ export function visibleMonitorMessages(
   }
 
   return messages;
+}
+
+export function renderMonitorState(context: MonitorPanelContext): void {
+  const { state, elements } = context;
+  if ((state.activeTab || "monitor") !== "monitor") {
+    return;
+  }
+
+  if (context.selectedGroup) {
+    const subscription = state.groupSubscriptions.find(
+      (item) => item.group?.groupId === context.selectedGroup?.groupId
+    );
+    const visibleCount = currentVisibleMonitorMessages(state).length;
+    elements.monitorLine.textContent = [
+      subscription?.running
+        ? "Group subscription live"
+        : subscription?.enabled
+          ? "Group subscription queued"
+          : "Group off",
+      messageCountLabel(visibleCount)
+    ].join(" · ");
+    return;
+  }
+
+  if (context.selectedKin) {
+    const subscription = state.subscriptions.find((item) => item.kin?.aiId === context.selectedKin?.aiId);
+    const visibleCount = currentVisibleMonitorMessages(state).length;
+    elements.monitorLine.textContent = [
+      subscription?.running ? "Kin subscription live" : subscription?.enabled ? "Kin subscription queued" : "Kin off",
+      messageCountLabel(visibleCount)
+    ].join(" · ");
+    return;
+  }
+
+  const runningCount = state.subscriptions.filter((subscription) => subscription.running).length;
+  const runningGroupCount = state.groupSubscriptions.filter((subscription) => subscription.running).length;
+  const totalRunning = runningCount + runningGroupCount;
+  elements.monitorLine.textContent = totalRunning > 0 ? `${totalRunning} subscriptions live` : "No live subscriptions";
+}
+
+export function handleMonitorLine(
+  context: MonitorPanelContext,
+  payload: MonitorMessage & { message?: string; line?: string }
+): void {
+  if (payload.type === "kindroid.chat.message" || payload.type === "kindroid.hermes_context") {
+    addMonitorMessage(context, payload);
+    return;
+  }
+
+  if (payload.message) {
+    context.elements.monitorLine.textContent = payload.message;
+    return;
+  }
+
+  if (payload.line) {
+    context.elements.monitorLine.textContent = payload.line;
+  }
+}
+
+export function addMonitorMessage(context: MonitorPanelContext, message: MonitorMessage): void {
+  context.state.monitorMessages.unshift(message);
+  context.state.monitorMessages = context.state.monitorMessages.slice(0, context.maxMonitorMessages);
+  renderMessageList(context);
+  renderMonitorState(context);
+}
+
+export function renderMessageList(context: Pick<MonitorPanelContext, "state" | "elements">): void {
+  context.elements.messageList.replaceChildren();
+  for (const message of currentVisibleMonitorMessages(context.state)) {
+    context.elements.messageList.append(createMessageElement(message));
+  }
+}
+
+export function currentVisibleMonitorMessages(state: MonitorPanelState): MonitorMessage[] {
+  return visibleMonitorMessages(state.monitorMessages, state);
+}
+
+export function clearVisibleMonitorMessages(context: MonitorPanelContext): void {
+  const visible = new Set(currentVisibleMonitorMessages(context.state));
+  context.state.monitorMessages = context.state.monitorMessages.filter((message) => !visible.has(message));
+  renderMessageList(context);
+  renderMonitorState(context);
 }
 
 export function createMessageElement(message: MonitorMessage): HTMLElement {
@@ -68,4 +185,8 @@ export function createMessageElement(message: MonitorMessage): HTMLElement {
   }
   item.append(text);
   return item;
+}
+
+function messageCountLabel(count: number): string {
+  return `${count} message${count === 1 ? "" : "s"} shown`;
 }

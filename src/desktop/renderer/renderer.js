@@ -14,7 +14,12 @@ import {
   renderJournalTabBadge,
   upsertJournalSuggestion
 } from "./journalSuggestionsPanel.js";
-import { createMessageElement, visibleMonitorMessages as filterVisibleMonitorMessages } from "./monitorMessages.js";
+import {
+  clearVisibleMonitorMessages,
+  handleMonitorLine,
+  renderMessageList,
+  renderMonitorState
+} from "./monitorMessages.js";
 import {
   markGroupSubscriptionRunning,
   markKinSubscriptionRunning,
@@ -290,6 +295,16 @@ function actionPanelContext() {
   };
 }
 
+function monitorPanelContext() {
+  return {
+    state,
+    elements,
+    selectedKin: currentSelectedKin(),
+    selectedGroup: currentSelectedGroup(),
+    maxMonitorMessages
+  };
+}
+
 elements.loginStartButton.addEventListener("click", () =>
   runAction("Opening login", () => window.kinagent.startLogin())
 );
@@ -323,7 +338,7 @@ elements.refreshGroupsButton.addEventListener("click", () =>
   })
 );
 elements.clearButton.addEventListener("click", () => {
-  clearVisibleMonitorMessages();
+  clearVisibleMonitorMessages(monitorPanelContext());
 });
 elements.detailTabs.addEventListener("click", (event) => {
   handleDetailTabsClick(tabNavigationContext(), event);
@@ -373,7 +388,7 @@ window.kinagent.onEvent((message) => {
   }
 
   if (message.channel === "monitor-line") {
-    handleMonitorLine(message.payload);
+    handleMonitorLine(monitorPanelContext(), message.payload);
     return;
   }
 
@@ -413,14 +428,14 @@ window.kinagent.onEvent((message) => {
   if (message.channel === "monitor-started") {
     markKinSubscriptionRunning(subscriptionListContext(), message.payload?.kinId, true);
     updateMonitorRunning();
-    renderMonitorState();
+    renderMonitorState(monitorPanelContext());
     return;
   }
 
   if (message.channel === "monitor-stopped" || message.channel === "monitor-exit") {
     markKinSubscriptionRunning(subscriptionListContext(), message.payload?.kinId, false);
     updateMonitorRunning();
-    renderMonitorState();
+    renderMonitorState(monitorPanelContext());
     return;
   }
 
@@ -434,14 +449,14 @@ window.kinagent.onEvent((message) => {
   if (message.channel === "group-monitor-started") {
     markGroupSubscriptionRunning(subscriptionListContext(), message.payload?.groupId, true);
     updateMonitorRunning();
-    renderMonitorState();
+    renderMonitorState(monitorPanelContext());
     return;
   }
 
   if (message.channel === "group-monitor-stopped" || message.channel === "group-monitor-exit") {
     markGroupSubscriptionRunning(subscriptionListContext(), message.payload?.groupId, false);
     updateMonitorRunning();
-    renderMonitorState();
+    renderMonitorState(monitorPanelContext());
     return;
   }
 
@@ -472,7 +487,7 @@ window.kinagent.onEvent((message) => {
     clearMissingSelectedKin();
     updateMonitorRunning();
     renderKinSubscriptions(subscriptionListContext());
-    renderMonitorState();
+    renderMonitorState(monitorPanelContext());
     renderActivity();
     return;
   }
@@ -483,7 +498,7 @@ window.kinagent.onEvent((message) => {
     clearMissingSelectedGroup();
     updateMonitorRunning();
     renderGroupSubscriptions(subscriptionListContext());
-    renderMonitorState();
+    renderMonitorState(monitorPanelContext());
     return;
   }
 
@@ -526,7 +541,7 @@ function renderStatus(status) {
   clearMissingSelectedGroup();
   renderKinSubscriptions(subscriptionListContext());
   renderGroupSubscriptions(subscriptionListContext());
-  renderMonitorState();
+  renderMonitorState(monitorPanelContext());
   renderActivity();
 }
 
@@ -540,43 +555,6 @@ function refreshErrorLine(error, fallback) {
 
 function isMissingSessionError(error) {
   return typeof error === "string" && error.includes("No Kindroid browser session found");
-}
-
-function renderMonitorState() {
-  if ((state.activeTab || "monitor") !== "monitor") {
-    return;
-  }
-
-  const selectedGroup = currentSelectedGroup();
-  if (selectedGroup) {
-    const subscription = state.groupSubscriptions.find((item) => item.group?.groupId === selectedGroup.groupId);
-    const visibleCount = visibleMonitorMessages().length;
-    elements.monitorLine.textContent = [
-      subscription?.running
-        ? "Group subscription live"
-        : subscription?.enabled
-          ? "Group subscription queued"
-          : "Group off",
-      `${visibleCount} message${visibleCount === 1 ? "" : "s"} shown`
-    ].join(" · ");
-    return;
-  }
-
-  const selectedKin = state.activeTab === "monitor" ? currentSelectedKin() : null;
-  if (selectedKin) {
-    const subscription = state.subscriptions.find((item) => item.kin?.aiId === selectedKin.aiId);
-    const visibleCount = visibleMonitorMessages().length;
-    elements.monitorLine.textContent = [
-      subscription?.running ? "Kin subscription live" : subscription?.enabled ? "Kin subscription queued" : "Kin off",
-      `${visibleCount} message${visibleCount === 1 ? "" : "s"} shown`
-    ].join(" · ");
-    return;
-  }
-
-  const runningCount = state.subscriptions.filter((subscription) => subscription.running).length;
-  const runningGroupCount = state.groupSubscriptions.filter((subscription) => subscription.running).length;
-  const totalRunning = runningCount + runningGroupCount;
-  elements.monitorLine.textContent = totalRunning > 0 ? `${totalRunning} subscriptions live` : "No live subscriptions";
 }
 
 async function selectKin(kinId) {
@@ -638,7 +616,7 @@ function selectGroup(groupId) {
   resetKinActionPlaceholders();
   renderKinSubscriptions(subscriptionListContext());
   renderGroupSubscriptions(subscriptionListContext());
-  renderMonitorState();
+  renderMonitorState(monitorPanelContext());
   renderActivity();
 }
 
@@ -708,8 +686,8 @@ function renderActivity() {
       : selectedKin
         ? `${selectedKin.name || "Kin"} · Monitor`
         : "Incoming Messages";
-    renderMessageList();
-    renderMonitorState();
+    renderMessageList(monitorPanelContext());
+    renderMonitorState(monitorPanelContext());
     return;
   }
 
@@ -914,47 +892,6 @@ function withTimeout(promise, timeoutMs, message) {
   return Promise.race([promise, timeout]).finally(() => {
     window.clearTimeout(timeoutId);
   });
-}
-
-function handleMonitorLine(payload) {
-  if (payload.type === "kindroid.chat.message" || payload.type === "kindroid.hermes_context") {
-    addMonitorMessage(payload);
-    return;
-  }
-
-  if (payload.message) {
-    elements.monitorLine.textContent = payload.message;
-    return;
-  }
-
-  if (payload.line) {
-    elements.monitorLine.textContent = payload.line;
-  }
-}
-
-function addMonitorMessage(message) {
-  state.monitorMessages.unshift(message);
-  state.monitorMessages = state.monitorMessages.slice(0, maxMonitorMessages);
-  renderMessageList();
-  renderMonitorState();
-}
-
-function renderMessageList() {
-  elements.messageList.replaceChildren();
-  for (const message of visibleMonitorMessages()) {
-    elements.messageList.append(createMessageElement(message));
-  }
-}
-
-function visibleMonitorMessages() {
-  return filterVisibleMonitorMessages(state.monitorMessages, state);
-}
-
-function clearVisibleMonitorMessages() {
-  const visible = new Set(visibleMonitorMessages());
-  state.monitorMessages = state.monitorMessages.filter((message) => !visible.has(message));
-  renderMessageList();
-  renderMonitorState();
 }
 
 async function runAction(label, action) {
