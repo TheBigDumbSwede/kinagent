@@ -3,6 +3,12 @@ import { renderAppSettingsTab, saveAppSettings } from "./appSettingsForm.js";
 import { createVoiceAudioPlayer } from "./audioPlayback.js";
 import { exportSelectedChat, renderChatExportProgress } from "./chatExportPanel.js";
 import { formatTime, formatTimelineChange } from "./formatters.js";
+import {
+  journalSuggestionNotice,
+  renderJournalSuggestions,
+  renderJournalTabBadge,
+  upsertJournalSuggestion
+} from "./journalSuggestionsPanel.js";
 import { createMessageElement, visibleMonitorMessages as filterVisibleMonitorMessages } from "./monitorMessages.js";
 import {
   markGroupSubscriptionRunning,
@@ -220,6 +226,19 @@ function subscriptionListContext() {
   };
 }
 
+function journalSuggestionsContext() {
+  return {
+    state,
+    elements,
+    onAcceptSuggestion: (id) => {
+      void acceptJournalSuggestion(id);
+    },
+    onDismissSuggestion: (id) => {
+      void dismissJournalSuggestion(id);
+    }
+  };
+}
+
 elements.loginStartButton.addEventListener("click", () =>
   runAction("Opening login", () => window.kinagent.startLogin())
 );
@@ -374,8 +393,8 @@ window.kinagent.onEvent((message) => {
   }
 
   if (message.channel === "journal-suggestion-created") {
-    upsertJournalSuggestion(message.payload);
-    renderJournalSuggestionNotice(message.payload);
+    upsertJournalSuggestion(state, message.payload);
+    elements.monitorLine.textContent = journalSuggestionNotice(state, message.payload);
     renderActivity();
     return;
   }
@@ -689,7 +708,7 @@ function renderActivity() {
   const isAppSettings = activeMode === "app-settings";
   const kinModes = ["settings", "journal", "hermes", "voice", "analyze", "export"];
 
-  renderJournalTabBadge();
+  renderJournalTabBadge(journalSuggestionsContext());
   for (const button of elements.detailTabs.querySelectorAll("[data-mode]")) {
     if (button.dataset.mode === "settings") {
       button.hidden = Boolean(state.selectedGroupId);
@@ -842,7 +861,7 @@ function renderDetailContent({ content, history, stats }) {
   const selectedEntry = selectedEntryIndex >= 0 ? history[selectedEntryIndex] : null;
   const previousEntry = selectedEntryIndex >= 0 ? history[selectedEntryIndex + 1] : null;
   renderFieldContent(content, selectedEntry, previousEntry);
-  renderJournalSuggestions();
+  renderJournalSuggestions(journalSuggestionsContext());
 
   elements.detailStats.replaceChildren();
   const visibleStats = selectedEntry
@@ -1032,181 +1051,6 @@ function renderFieldContent(content, selectedEntry, previousEntry) {
   }
 }
 
-function renderJournalSuggestions() {
-  const panel = elements.journalSuggestionPanel;
-  panel.replaceChildren();
-  const suggestions = selectedKinJournalSuggestions();
-  panel.hidden = state.activeTab !== "journal" || suggestions.length === 0;
-  if (panel.hidden) {
-    return;
-  }
-
-  if (state.journalError) {
-    const error = document.createElement("p");
-    error.className = "panel-note";
-    error.textContent = state.journalError;
-    panel.append(error);
-  }
-
-  for (const suggestion of suggestions) {
-    panel.append(createJournalSuggestionElement(suggestion));
-  }
-}
-
-function createJournalSuggestionElement(suggestion) {
-  const item = document.createElement("article");
-  const action = suggestionAction(suggestion);
-  item.className = `journal-suggestion ${action}`;
-
-  const header = document.createElement("header");
-  const heading = document.createElement("div");
-  heading.className = "journal-suggestion-heading";
-  const title = document.createElement("strong");
-  title.textContent = suggestion.title || (suggestion.strongEvent ? "Strong journal suggestion" : "Journal suggestion");
-  const meta = document.createElement("div");
-  meta.className = "journal-suggestion-meta";
-  appendSuggestionBadge(meta, action === "delete" ? "Delete review" : "Create review");
-  if (action === "create") {
-    const bucketLabel = categoryLabel(suggestion.category);
-    const detailLabel = categoryDetailLabel(suggestion.categoryDetail);
-    appendSuggestionBadge(meta, bucketLabel);
-    if (detailLabel && detailLabel !== bucketLabel) {
-      appendSuggestionBadge(meta, detailLabel);
-    }
-  }
-  if (suggestion.strongEvent) {
-    appendSuggestionBadge(meta, "Strong event");
-  }
-  heading.append(title, meta);
-  const date = document.createElement("span");
-  date.textContent = formatTime(suggestion.createdAt);
-  header.append(heading, date);
-
-  const entry = document.createElement("p");
-  entry.textContent =
-    action === "delete"
-      ? suggestion.targetJournalEntry || suggestion.targetJournalTitle || "Selected journal entry will be deleted."
-      : suggestion.entry || "";
-
-  const details = document.createElement("dl");
-  if (action === "delete") {
-    appendSuggestionDetail(details, "Target", suggestion.targetJournalTitle || suggestion.targetJournalEntryId);
-  }
-  appendSuggestionDetail(details, "Reason", suggestion.durabilityReason);
-  appendSuggestionListDetail(details, "Evidence", suggestion.evidence || []);
-  if (action === "create") {
-    appendSuggestionListDetail(details, "Keyphrases", suggestion.keyphrases || []);
-  }
-
-  const actions = document.createElement("div");
-  actions.className = "journal-suggestion-actions";
-
-  const accept = document.createElement("button");
-  accept.type = "button";
-  accept.textContent =
-    state.journalSavingId === suggestion.id
-      ? action === "delete"
-        ? "Deleting"
-        : "Accepting"
-      : action === "delete"
-        ? "Delete"
-        : "Accept";
-  accept.disabled = Boolean(state.journalSavingId);
-  accept.addEventListener("click", () => {
-    void acceptJournalSuggestion(suggestion.id);
-  });
-
-  const dismiss = document.createElement("button");
-  dismiss.type = "button";
-  dismiss.className = "secondary";
-  dismiss.textContent = "Dismiss";
-  dismiss.disabled = Boolean(state.journalSavingId);
-  dismiss.addEventListener("click", () => {
-    void dismissJournalSuggestion(suggestion.id);
-  });
-
-  actions.append(accept, dismiss);
-  item.append(header, entry, details, actions);
-  return item;
-}
-
-function appendSuggestionBadge(container, label) {
-  if (!label) {
-    return;
-  }
-
-  const badge = document.createElement("span");
-  badge.className = "journal-suggestion-badge";
-  badge.textContent = label;
-  container.append(badge);
-}
-
-function appendSuggestionDetail(list, label, value) {
-  if (!value) {
-    return;
-  }
-
-  const term = document.createElement("dt");
-  term.textContent = label;
-  const detail = document.createElement("dd");
-  detail.textContent = value;
-  list.append(term, detail);
-}
-
-function appendSuggestionListDetail(list, label, values) {
-  const visibleValues = values.map((value) => String(value).trim()).filter(Boolean);
-  if (visibleValues.length === 0) {
-    return;
-  }
-
-  const term = document.createElement("dt");
-  term.textContent = label;
-  const detail = document.createElement("dd");
-  const valueList = document.createElement("ul");
-  for (const value of visibleValues) {
-    const item = document.createElement("li");
-    item.textContent = value;
-    valueList.append(item);
-  }
-  detail.append(valueList);
-  list.append(term, detail);
-}
-
-function categoryLabel(category) {
-  const labels = {
-    relationship_milestone: "Relationship milestone",
-    world_capsule: "World capsule",
-    behavior_callback: "Behavior callback",
-    personal_fact: "Personal fact",
-    resolved_conflict: "Resolved conflict",
-    backstory_hook: "Backstory hook",
-    important_decision: "Important decision",
-    recurring_pattern: "Recurring pattern",
-    other_durable_event: "Durable event"
-  };
-  return labels[category] || "";
-}
-
-function categoryDetailLabel(detail) {
-  return typeof detail === "string" ? detail.trim() : "";
-}
-
-function renderJournalTabBadge() {
-  const button = elements.kinDetailTabs.querySelector('[data-mode="journal"]');
-  if (!button) {
-    return;
-  }
-
-  const count = pendingJournalSuggestionCount();
-  button.replaceChildren(document.createTextNode("Journal"));
-  if (count > 0) {
-    const badge = document.createElement("span");
-    badge.className = "tab-badge";
-    badge.textContent = String(count);
-    button.append(badge);
-  }
-}
-
 async function acceptJournalSuggestion(id) {
   state.journalSavingId = id;
   state.journalError = null;
@@ -1239,38 +1083,6 @@ async function dismissJournalSuggestion(id) {
     state.journalError = error.message || String(error);
   }
   renderActivity();
-}
-
-function selectedKinJournalSuggestions() {
-  if (!state.selectedKinId) {
-    return [];
-  }
-
-  return state.journalSuggestions.filter((suggestion) => suggestion.aiId === state.selectedKinId);
-}
-
-function suggestionAction(suggestion) {
-  return suggestion?.action === "delete" ? "delete" : "create";
-}
-
-function pendingJournalSuggestionCount() {
-  return state.selectedKinId ? selectedKinJournalSuggestions().length : state.journalSuggestions.length;
-}
-
-function upsertJournalSuggestion(suggestion) {
-  if (!suggestion?.id) {
-    return;
-  }
-
-  state.journalSuggestions = [
-    suggestion,
-    ...state.journalSuggestions.filter((current) => current.id !== suggestion.id)
-  ];
-}
-
-function renderJournalSuggestionNotice(suggestion) {
-  const selectedKin = state.kins.find((kin) => kin.aiId === suggestion?.aiId);
-  elements.monitorLine.textContent = `Journal suggestion ready for ${selectedKin?.name || suggestion?.aiId || "Kin"}.`;
 }
 
 async function focusJournalSuggestion(suggestion) {

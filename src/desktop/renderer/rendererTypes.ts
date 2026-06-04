@@ -101,6 +101,24 @@ export interface GroupSubscriptionSummary {
   running?: boolean;
 }
 
+export interface JournalSuggestionSummary {
+  id?: string | null;
+  aiId?: string | null;
+  action?: "create" | "delete" | string | null;
+  title?: string | null;
+  strongEvent?: boolean;
+  category?: string | null;
+  categoryDetail?: string | null;
+  createdAt?: string | null;
+  targetJournalEntry?: string | null;
+  targetJournalTitle?: string | null;
+  targetJournalEntryId?: string | null;
+  durabilityReason?: string | null;
+  evidence?: unknown[];
+  keyphrases?: unknown[];
+  entry?: string | null;
+}
+
 export interface ChatDynamismValue {
   display?: string | null;
   numeric?: number | null;
