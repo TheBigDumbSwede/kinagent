@@ -55,7 +55,7 @@ The main bridge is the Hermes journal suggestion workflow:
 - [src/journal/journalSuggestionStore.ts](src/journal/journalSuggestionStore.ts) stores pending suggestions and applies pacing rules.
 - [src/runtime/bridgeRuntime.ts](src/runtime/bridgeRuntime.ts) wires suggestions into the desktop/runtime event stream and accepts reviewed suggestions.
 - [src/kindroid/kindroidClient.ts](src/kindroid/kindroidClient.ts) performs the observed Kindroid journal-create request only after the suggestion is accepted.
-- [src/desktop/renderer/renderer.js](src/desktop/renderer/renderer.js) presents suggestions for review in the desktop app.
+- [src/desktop/renderer/renderer.ts](src/desktop/renderer/renderer.ts) presents suggestions for review in the desktop app.
 
 Journal suggestions are review-only. The runtime may propose a triggerable journal capsule, but it must not silently write durable Kin memory without user acceptance.
 
