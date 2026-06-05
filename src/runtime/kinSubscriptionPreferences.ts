@@ -7,6 +7,7 @@ export interface KinSubscriptionPreferences {
   disabledKinIds: Set<string>;
   ambientDisabledKinIds: Set<string>;
   chatDynamism: Map<string, KinChatDynamismPreference>;
+  soundscape: Map<string, KinSoundscapePreference>;
 }
 
 export interface KinChatDynamismPreference {
@@ -15,12 +16,17 @@ export interface KinChatDynamismPreference {
   max: number;
 }
 
+export interface KinSoundscapePreference {
+  enabled: boolean;
+}
+
 export function loadKinSubscriptionPreferences(config: AppConfig): KinSubscriptionPreferences {
   try {
     const parsed = JSON.parse(fs.readFileSync(kinSubscriptionPreferencesPath(config), "utf8")) as {
       disabledKinIds?: unknown;
       ambientDisabledKinIds?: unknown;
       chatDynamism?: unknown;
+      soundscape?: unknown;
     };
     const disabled = Array.isArray(parsed.disabledKinIds)
       ? parsed.disabledKinIds.filter((kinId): kinId is string => typeof kinId === "string" && kinId.length > 0)
@@ -31,10 +37,16 @@ export function loadKinSubscriptionPreferences(config: AppConfig): KinSubscripti
     return {
       disabledKinIds: new Set(disabled),
       ambientDisabledKinIds: new Set(ambientDisabled),
-      chatDynamism: parseChatDynamismPreferences(parsed.chatDynamism)
+      chatDynamism: parseChatDynamismPreferences(parsed.chatDynamism),
+      soundscape: parseSoundscapePreferences(parsed.soundscape)
     };
   } catch {
-    return { disabledKinIds: new Set(), ambientDisabledKinIds: new Set(), chatDynamism: new Map() };
+    return {
+      disabledKinIds: new Set(),
+      ambientDisabledKinIds: new Set(),
+      chatDynamism: new Map(),
+      soundscape: new Map()
+    };
   }
 }
 
@@ -51,6 +63,11 @@ export function saveKinSubscriptionPreferences(config: AppConfig, preferences: K
           [...preferences.chatDynamism.entries()]
             .sort(([left], [right]) => left.localeCompare(right))
             .map(([kinId, preference]) => [kinId, normalizeChatDynamismPreference(preference)])
+        ),
+        soundscape: Object.fromEntries(
+          [...preferences.soundscape.entries()]
+            .sort(([left], [right]) => left.localeCompare(right))
+            .map(([kinId, preference]) => [kinId, normalizeSoundscapePreference(preference)])
         )
       },
       null,
@@ -82,6 +99,22 @@ function parseChatDynamismPreferences(value: unknown): Map<string, KinChatDynami
   return new Map(entries);
 }
 
+function parseSoundscapePreferences(value: unknown): Map<string, KinSoundscapePreference> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return new Map();
+  }
+
+  const entries = Object.entries(value as Record<string, unknown>).flatMap(([kinId, raw]) => {
+    if (!kinId || !raw || typeof raw !== "object" || Array.isArray(raw)) {
+      return [];
+    }
+    const record = raw as Record<string, unknown>;
+    return [[kinId, normalizeSoundscapePreference({ enabled: record.enabled === true })] as const];
+  });
+
+  return new Map(entries);
+}
+
 export function normalizeChatDynamismPreference(
   preference: Partial<KinChatDynamismPreference> = {}
 ): KinChatDynamismPreference {
@@ -93,6 +126,14 @@ export function normalizeChatDynamismPreference(
     enabled: preference.enabled === true,
     min: Number(sortedMin.toFixed(2)),
     max: Number(sortedMax.toFixed(2))
+  };
+}
+
+export function normalizeSoundscapePreference(
+  preference: Partial<KinSoundscapePreference> = {}
+): KinSoundscapePreference {
+  return {
+    enabled: preference.enabled === true
   };
 }
 

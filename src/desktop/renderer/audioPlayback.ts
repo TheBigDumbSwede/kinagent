@@ -6,10 +6,12 @@ export interface VoiceAudioPayload {
 
 export interface VoiceAudioPlayerOptions {
   onError: (error: unknown) => void;
+  onPlaybackScheduled?: (durationMs: number) => void;
 }
 
 export function createVoiceAudioPlayer({
-  onError
+  onError,
+  onPlaybackScheduled
 }: VoiceAudioPlayerOptions): (payload?: VoiceAudioPayload) => Promise<void> {
   const voiceAudio: {
     context: AudioContext | null;
@@ -42,6 +44,7 @@ export function createVoiceAudioPlayer({
       const startAt = Math.max(now + 0.02, voiceAudio.nextStartTime + boundaryGapSeconds);
       source.start(startAt);
       voiceAudio.nextStartTime = startAt + decoded.duration;
+      onPlaybackScheduled?.(Math.ceil(Math.max(0, voiceAudio.nextStartTime - now) * 1000));
       source.onended = () => {
         if (context.currentTime >= voiceAudio.nextStartTime - 0.05) {
           voiceAudio.nextStartTime = 0;

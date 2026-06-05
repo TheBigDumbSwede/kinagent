@@ -25,6 +25,7 @@ describe("subscription preferences", () => {
     expect(preferences.disabledKinIds).toEqual(new Set());
     expect(preferences.ambientDisabledKinIds).toEqual(new Set());
     expect(preferences.chatDynamism).toEqual(new Map());
+    expect(preferences.soundscape).toEqual(new Map());
     expect(fs.existsSync(kinSubscriptionPreferencesPath(config))).toBe(false);
   });
 
@@ -34,13 +35,15 @@ describe("subscription preferences", () => {
     saveKinSubscriptionPreferences(config, {
       disabledKinIds: new Set(["kin-b", "kin-a"]),
       ambientDisabledKinIds: new Set(["kin-c"]),
-      chatDynamism: new Map([["kin-a", { enabled: true, min: 0.5, max: 1.1 }]])
+      chatDynamism: new Map([["kin-a", { enabled: true, min: 0.5, max: 1.1 }]]),
+      soundscape: new Map([["kin-b", { enabled: true }]])
     });
     const preferences = loadKinSubscriptionPreferences(config);
 
     expect(preferences.disabledKinIds).toEqual(new Set(["kin-a", "kin-b"]));
     expect(preferences.ambientDisabledKinIds).toEqual(new Set(["kin-c"]));
     expect(preferences.chatDynamism).toEqual(new Map([["kin-a", { enabled: true, min: 0.6, max: 1.1 }]]));
+    expect(preferences.soundscape).toEqual(new Map([["kin-b", { enabled: true }]]));
     expect(JSON.parse(fs.readFileSync(kinSubscriptionPreferencesPath(config), "utf8"))).toEqual({
       disabledKinIds: ["kin-a", "kin-b"],
       ambientDisabledKinIds: ["kin-c"],
@@ -49,6 +52,11 @@ describe("subscription preferences", () => {
           enabled: true,
           min: 0.6,
           max: 1.1
+        }
+      },
+      soundscape: {
+        "kin-b": {
+          enabled: true
         }
       }
     });
@@ -71,6 +79,23 @@ describe("subscription preferences", () => {
         enabled: true,
         min: 0.85,
         max: 1.35
+      }
+    });
+  });
+
+  it("reloads per-Kin soundscape enablement from the settings file", () => {
+    const config = testConfig();
+    const supervisor = testKinSupervisor(config);
+
+    expect(supervisor.kinSoundscapePreference("kin-a")).toEqual({ enabled: false });
+
+    supervisor.setKinSoundscapePreference("kin-a", { enabled: true });
+    const reloaded = testKinSupervisor(config);
+
+    expect(reloaded.kinSoundscapePreference("kin-a")).toEqual({ enabled: true });
+    expect(JSON.parse(fs.readFileSync(kinSubscriptionPreferencesPath(config), "utf8")).soundscape).toEqual({
+      "kin-a": {
+        enabled: true
       }
     });
   });

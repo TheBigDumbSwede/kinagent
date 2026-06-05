@@ -12,6 +12,8 @@ describe("Hermes action registry", () => {
     expect(hermesActionRegistryEntries.flatMap((entry) => entry.actionTypes)).toEqual([
       "update_current_scene",
       "update_group_current_scene",
+      "update_soundscape",
+      "update_group_soundscape",
       "send_ambient_context_turn",
       "propose_journal_entry",
       "delete_journal_entry",
@@ -47,6 +49,24 @@ describe("Hermes action registry", () => {
     expect(prompt).toContain("current conversation and current setting");
     expect(prompt).toContain("Do not use send_ambient_context_turn for group chats");
     expect(prompt).toContain("Do not use send_ambient_context_turn as a substitute for other registered actions");
+  });
+
+  it("registers soundscape actions when local soundscapes are enabled", () => {
+    const registry = createHermesActionRegistry({
+      config: testConfig(),
+      logger: testLogger,
+      kindroidClient: testSceneUpdater,
+      options: {
+        onSoundscapeUpdated: () => undefined,
+        isSoundscapeEnabled: () => true
+      }
+    });
+
+    const prompt = registry.handlers.flatMap((handler) => handler.promptLines()).join("\n");
+    expect(registry.handlers).toHaveLength(2);
+    expect(prompt).toContain("update_soundscape");
+    expect(prompt).toContain("update_group_soundscape");
+    expect(prompt).toContain("control-plane metadata");
   });
 
   it("registers journal suggestion actions when storage is available", () => {

@@ -43,6 +43,8 @@ import {
   saveSelectedKinVoice,
   syncChatDynamismRangeLabels
 } from "./voiceHermesForms.js";
+import { SoundscapeController } from "./SoundscapeController.js";
+import { silentSoundscapeState, type SoundscapeState } from "../../soundscape/SoundscapeState.js";
 import type {
   AppSettingsResult,
   AppSettingsFormValue,
@@ -64,6 +66,15 @@ import type {
   KinVoicePreferenceResult
 } from "./rendererTypes.js";
 import type { MonitorMessage } from "./monitorMessages.js";
+
+interface ScopedSoundscapeUpdate {
+  scope: "kin" | "group";
+  kinId?: string;
+  groupId?: string;
+  documentId?: string;
+  reason?: string;
+  state?: SoundscapeState;
+}
 
 interface CapturedKinResult extends CapturedKinSummary {
   fields?: CapturedFieldSummary[];
@@ -108,6 +119,8 @@ interface RendererState {
   appSettingsLoading: boolean;
   appSettingsSaving: boolean;
   appSettingsError: string | null;
+  soundscapeUpdates: Record<string, ScopedSoundscapeUpdate>;
+  activeSoundscapeKey: string | null;
   kinAnalysisRunning: boolean;
   kinAnalysisJobId: string | null;
   kinAnalysisReport: string;
@@ -197,6 +210,9 @@ interface RendererElements {
   openAiInstructionsInput: HTMLTextAreaElement;
   voiceStatusLine: HTMLElement;
   voiceSaveButton: HTMLButtonElement;
+  soundscapeEnabledInput: HTMLInputElement;
+  soundscapeStatusLine: HTMLElement;
+  soundscapeLayerList: HTMLElement;
   timelineList: HTMLElement;
   timeline: HTMLElement;
   monitorLine: HTMLElement;
@@ -331,6 +347,8 @@ const state: RendererState = {
   appSettingsLoading: false,
   appSettingsSaving: false,
   appSettingsError: null,
+  soundscapeUpdates: {},
+  activeSoundscapeKey: null,
   kinAnalysisRunning: false,
   kinAnalysisJobId: null,
   kinAnalysisReport: "",
@@ -430,6 +448,9 @@ const elements: RendererElements = {
   openAiInstructionsInput: query<HTMLTextAreaElement>("#openAiInstructionsInput"),
   voiceStatusLine: query<HTMLElement>("#voiceStatusLine"),
   voiceSaveButton: query<HTMLButtonElement>("#voiceSaveButton"),
+  soundscapeEnabledInput: query<HTMLInputElement>("#soundscapeEnabledInput"),
+  soundscapeStatusLine: query<HTMLElement>("#soundscapeStatusLine"),
+  soundscapeLayerList: query<HTMLElement>("#soundscapeLayerList"),
   timelineList: query<HTMLElement>("#timelineList"),
   timeline: query<HTMLElement>(".timeline"),
   monitorLine: query<HTMLElement>("#monitorLine"),
@@ -444,9 +465,20 @@ const elements: RendererElements = {
   clearButton: query<HTMLButtonElement>("#clearButton")
 };
 
+const soundscapeController = new SoundscapeController({
+  onStatus(message: string) {
+    if (state.activeTab === "voice") {
+      elements.monitorLine.textContent = message;
+    }
+  }
+});
+
 const playVoiceAudio = createVoiceAudioPlayer({
   onError(error: unknown) {
     elements.monitorLine.textContent = `Voice playback failed: ${errorMessage(error)}`;
+  },
+  onPlaybackScheduled(durationMs: number) {
+    soundscapeController.duckFor(durationMs + 300);
   }
 });
 
@@ -483,7 +515,20 @@ function voiceHermesContext() {
     api: window.kinagent,
     renderActivity,
     renderDetailEmpty,
-    chatDynamismSlider
+    chatDynamismSlider,
+    onSoundscapePreferenceChanged: (kinId: string, preference: { enabled: boolean }) => {
+      state.subscriptions = state.subscriptions.map((subscription) =>
+        subscription.kin?.aiId === kinId ? { ...subscription, soundscape: preference } : subscription
+      );
+      if (!preference.enabled && state.activeSoundscapeKey === `kin:${kinId}`) {
+        delete state.soundscapeUpdates[`kin:${kinId}`];
+      }
+      void applyActiveSoundscape();
+      renderSoundscapeStatus();
+    },
+    renderSoundscapeLayers: (container: HTMLElement, kinId: string) => {
+      renderSoundscapeLayerList(container, state.soundscapeUpdates[`kin:${kinId}`]?.state?.layers ?? []);
+    }
   };
 }
 
@@ -623,6 +668,9 @@ elements.voiceForm.addEventListener("submit", (event) => {
   event.preventDefault();
   void saveSelectedKinVoice(voiceHermesContext());
 });
+elements.soundscapeEnabledInput.addEventListener("change", () => {
+  soundscapeController.markUserInteractionReady();
+});
 elements.kinHermesForm.addEventListener("submit", (event) => {
   event.preventDefault();
   void saveSelectedKinAmbient(voiceHermesContext());
@@ -642,6 +690,20 @@ elements.chatExportRangeButton.addEventListener("click", () => {
 elements.chatExportAllButton.addEventListener("click", () => {
   void exportSelectedChat({ state, elements, api: window.kinagent, renderActivity }, true);
 });
+document.addEventListener(
+  "pointerdown",
+  () => {
+    soundscapeController.markUserInteractionReady();
+  },
+  { once: true }
+);
+document.addEventListener(
+  "keydown",
+  () => {
+    soundscapeController.markUserInteractionReady();
+  },
+  { once: true }
+);
 
 window.kinagent.onEvent((message) => {
   if (message.channel === "runtime-startup-error") {
@@ -651,7 +713,9 @@ window.kinagent.onEvent((message) => {
   }
 
   if (message.channel === "monitor-line") {
-    handleMonitorLine(monitorPanelContext(), message.payload as MonitorMessage & { message?: string; line?: string });
+    const payload = message.payload as MonitorMessage & { message?: string; line?: string };
+    activateSoundscapeFromPayload(payload);
+    handleMonitorLine(monitorPanelContext(), payload);
     return;
   }
 
@@ -665,6 +729,11 @@ window.kinagent.onEvent((message) => {
     upsertJournalSuggestion(state, suggestion);
     elements.monitorLine.textContent = journalSuggestionNotice(state, suggestion);
     renderActivity();
+    return;
+  }
+
+  if (message.channel === "soundscape-updated") {
+    handleSoundscapeUpdate(message.payload as ScopedSoundscapeUpdate | undefined);
     return;
   }
 
@@ -690,6 +759,7 @@ window.kinagent.onEvent((message) => {
   }
 
   if (message.channel === "monitor-started") {
+    activateSoundscapeFromPayload(message.payload);
     markKinSubscriptionRunning(subscriptionListContext(), message.payload?.kinId, true);
     updateMonitorRunning();
     renderMonitorState(monitorPanelContext());
@@ -711,6 +781,7 @@ window.kinagent.onEvent((message) => {
   }
 
   if (message.channel === "group-monitor-started") {
+    activateSoundscapeFromPayload(message.payload);
     markGroupSubscriptionRunning(subscriptionListContext(), message.payload?.groupId, true);
     updateMonitorRunning();
     renderMonitorState(monitorPanelContext());
@@ -1202,4 +1273,98 @@ function updateMonitorRunning() {
   state.monitorRunning =
     state.subscriptions.some((subscription) => subscription.running) ||
     state.groupSubscriptions.some((subscription) => subscription.running);
+}
+
+function handleSoundscapeUpdate(update: ScopedSoundscapeUpdate | undefined): void {
+  const key = soundscapeKeyForUpdate(update);
+  if (!key || !update?.state) {
+    return;
+  }
+
+  if (!isSoundscapeEnabledForKey(key)) {
+    return;
+  }
+
+  state.soundscapeUpdates[key] = update;
+  if (state.activeSoundscapeKey === key) {
+    void applyActiveSoundscape();
+  }
+  renderSoundscapeStatus();
+}
+
+function activateSoundscapeFromPayload(payload: { groupId?: unknown; kinId?: unknown } | undefined): void {
+  const key = soundscapeKeyFromPayload(payload);
+  if (!key || state.activeSoundscapeKey === key) {
+    return;
+  }
+
+  state.activeSoundscapeKey = key;
+  void applyActiveSoundscape();
+  renderSoundscapeStatus();
+}
+
+async function applyActiveSoundscape(): Promise<void> {
+  if (!state.activeSoundscapeKey || !isSoundscapeEnabledForKey(state.activeSoundscapeKey)) {
+    await soundscapeController.update(silentSoundscapeState);
+    return;
+  }
+
+  const update = state.soundscapeUpdates[state.activeSoundscapeKey];
+  await soundscapeController.update(update?.state ?? silentSoundscapeState);
+}
+
+function renderSoundscapeStatus(): void {
+  if (state.activeTab !== "voice" || !state.selectedKinId) {
+    return;
+  }
+
+  const key = `kin:${state.selectedKinId}`;
+  renderSoundscapeLayerList(elements.soundscapeLayerList, state.soundscapeUpdates[key]?.state?.layers ?? []);
+}
+
+function renderSoundscapeLayerList(container: HTMLElement, layers: Array<{ type: string; volume: number }>): void {
+  container.replaceChildren();
+  if (layers.length === 0) {
+    const item = document.createElement("li");
+    item.textContent = "silent";
+    container.append(item);
+    return;
+  }
+
+  for (const layer of layers) {
+    const item = document.createElement("li");
+    item.textContent = `${layer.type} ${Math.round(layer.volume * 100)}%`;
+    container.append(item);
+  }
+}
+
+function isSoundscapeEnabledForKey(key: string): boolean {
+  const [scope, id] = key.split(":", 2);
+  if (scope === "group") {
+    return true;
+  }
+
+  return Boolean(state.subscriptions.find((subscription) => subscription.kin?.aiId === id)?.soundscape?.enabled);
+}
+
+function soundscapeKeyFromPayload(payload: { groupId?: unknown; kinId?: unknown } | undefined): string | null {
+  const groupId = typeof payload?.groupId === "string" && payload.groupId ? payload.groupId : null;
+  if (groupId) {
+    return `group:${groupId}`;
+  }
+
+  const kinId = typeof payload?.kinId === "string" && payload.kinId ? payload.kinId : null;
+  return kinId ? `kin:${kinId}` : null;
+}
+
+function soundscapeKeyForUpdate(update: ScopedSoundscapeUpdate | undefined): string | null {
+  if (update?.scope === "group" && update.groupId) {
+    return `group:${update.groupId}`;
+  }
+
+  if (update?.scope === "kin" && update.kinId) {
+    return `kin:${update.kinId}`;
+  }
+
+  return null;
 }

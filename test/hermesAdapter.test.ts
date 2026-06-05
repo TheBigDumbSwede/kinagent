@@ -132,6 +132,198 @@ describe("HermesChatAdapter", () => {
     expect(kindroid.updateGroupCurrentScene).not.toHaveBeenCalled();
   });
 
+  it("lets Hermes emit a local soundscape update for direct Kin chat", async () => {
+    const onSoundscapeUpdated = vi.fn();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  actions: [
+                    {
+                      type: "update_soundscape",
+                      ai_id: "kin-1",
+                      reason: "The storm moved into the motel room scene.",
+                      soundscape: {
+                        enabled: true,
+                        environment: "stormy motel room",
+                        mood: "uneasy",
+                        intensity: 0.42,
+                        transition: "fade",
+                        layers: [
+                          { type: "rain", volume: 0.3, density: 0.7 },
+                          { type: "roomTone", volume: 0.12 },
+                          { type: "lowDrone", volume: 0.08, pitch: 72 }
+                        ]
+                      }
+                    }
+                  ]
+                })
+              }
+            }
+          ]
+        })
+      )
+    );
+
+    const adapter = new HermesChatAdapter(testConfig(), logger, testKindroidUpdater(), {
+      onSoundscapeUpdated,
+      isSoundscapeEnabled: () => true
+    });
+    await adapter.handleChatChanged({
+      type: "kindroid.chat.changed",
+      kinId: "kin-1",
+      documentId: "doc-1",
+      timestamp: "2026-06-01T12:00:00.000Z",
+      text: "Rain lashes the motel window as the lights flicker.",
+      sender: "user",
+      role: null,
+      source: "firestore"
+    });
+
+    expect(onSoundscapeUpdated).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scope: "kin",
+        kinId: "kin-1",
+        documentId: "doc-1",
+        reason: "The storm moved into the motel room scene.",
+        state: expect.objectContaining({
+          environment: "stormy motel room",
+          mood: "uneasy",
+          intensity: 0.42,
+          layers: expect.arrayContaining([expect.objectContaining({ type: "rain", volume: 0.3 })])
+        })
+      })
+    );
+  });
+
+  it("ignores local soundscape actions when disabled for the source Kin", async () => {
+    const onSoundscapeUpdated = vi.fn();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  actions: [
+                    {
+                      type: "update_soundscape",
+                      ai_id: "kin-1",
+                      soundscape: {
+                        enabled: true,
+                        environment: "rainy street",
+                        mood: "uneasy",
+                        layers: [{ type: "rain", volume: 0.3 }]
+                      }
+                    }
+                  ]
+                })
+              }
+            }
+          ]
+        })
+      )
+    );
+
+    const adapter = new HermesChatAdapter(testConfig(), logger, testKindroidUpdater(), {
+      onSoundscapeUpdated,
+      isSoundscapeEnabled: () => false
+    });
+    await adapter.handleChatChanged({
+      type: "kindroid.chat.changed",
+      kinId: "kin-1",
+      documentId: "doc-1",
+      timestamp: "2026-06-01T12:00:00.000Z",
+      text: "Rain starts on the street outside.",
+      sender: "user",
+      role: null,
+      source: "firestore"
+    });
+
+    expect(onSoundscapeUpdated).not.toHaveBeenCalled();
+  });
+
+  it("prewarms soundscape without executing non-soundscape actions", async () => {
+    const kindroid = testKindroidUpdater();
+    const onSoundscapeUpdated = vi.fn();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  actions: [
+                    {
+                      type: "update_current_scene",
+                      ai_id: "kin-1",
+                      current_scene: "Inside an abandoned hydro station during a thunderstorm."
+                    },
+                    {
+                      type: "update_soundscape",
+                      ai_id: "kin-1",
+                      reason: "Prewarm from recent storm and turbine context.",
+                      soundscape: {
+                        enabled: true,
+                        environment: "abandoned hydro station in a thunderstorm",
+                        mood: "tense",
+                        intensity: 0.5,
+                        transition: "fade",
+                        layers: [
+                          { type: "rain", volume: 0.28, density: 0.75 },
+                          { type: "hum", volume: 0.18 }
+                        ]
+                      }
+                    }
+                  ]
+                })
+              }
+            }
+          ]
+        })
+      )
+    );
+
+    const adapter = new HermesChatAdapter(testConfig(), logger, kindroid, {
+      onSoundscapeUpdated,
+      isSoundscapeEnabled: () => true
+    });
+    await adapter.prewarmSoundscape({
+      scope: "kin",
+      kinId: "kin-1",
+      documentId: "soundscape-prewarm:kin-1",
+      timestamp: "2026-06-01T12:00:00.000Z",
+      text: "SOUNDSCAPE_PREWARM_REQUEST\nRecent messages mention rain, turbines, and warning lights.",
+      soundscapeContext: {
+        enabledForSource: true,
+        prewarm: true,
+        sourceScope: "direct",
+        sourceKinId: "kin-1",
+        mutation: "local-renderer-only"
+      }
+    });
+
+    expect(kindroid.updateCurrentScene).not.toHaveBeenCalled();
+    expect(kindroid.updateGroupCurrentScene).not.toHaveBeenCalled();
+    expect(onSoundscapeUpdated).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scope: "kin",
+        kinId: "kin-1",
+        documentId: "soundscape-prewarm:kin-1",
+        state: expect.objectContaining({
+          environment: "abandoned hydro station in a thunderstorm",
+          mood: "tense"
+        })
+      })
+    );
+  });
+
   it("lets Hermes send an ambient context turn for direct Kin chat", async () => {
     const kindroid = testKindroidClient();
     const dedupeStore = new InMemoryDedupeStore(60_000);
@@ -441,6 +633,73 @@ describe("HermesChatAdapter", () => {
         groupId: "group-1",
         currentSceneLength: 38,
         truncated: false
+      })
+    );
+  });
+
+  it("lets Hermes emit a local soundscape update for group chat", async () => {
+    const onSoundscapeUpdated = vi.fn();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  actions: [
+                    {
+                      type: "update_group_soundscape",
+                      group_id: "group-1",
+                      reason: "The group moved into the engine bay.",
+                      soundscape: {
+                        enabled: true,
+                        environment: "ship engine bay",
+                        mood: "tense",
+                        intensity: 0.5,
+                        transition: "swell",
+                        layers: [
+                          { type: "hum", volume: 0.28, pitch: 58 },
+                          { type: "static", volume: 0.12, density: 0.45 }
+                        ]
+                      }
+                    }
+                  ]
+                })
+              }
+            }
+          ]
+        })
+      )
+    );
+
+    const adapter = new HermesChatAdapter(testConfig(), logger, testKindroidUpdater(), {
+      onSoundscapeUpdated,
+      isSoundscapeEnabled: () => true
+    });
+    await adapter.handleChatChanged({
+      type: "kindroid.group_chat.changed",
+      groupId: "group-1",
+      aiId: "kin-1",
+      documentId: "doc-1",
+      timestamp: "2026-06-01T12:00:00.000Z",
+      text: "The crew spills into the engine bay as warning lights strobe.",
+      sender: "user",
+      role: null,
+      source: "firestore"
+    });
+
+    expect(onSoundscapeUpdated).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scope: "group",
+        groupId: "group-1",
+        documentId: "doc-1",
+        reason: "The group moved into the engine bay.",
+        state: expect.objectContaining({
+          environment: "ship engine bay",
+          mood: "tense",
+          transition: "swell"
+        })
       })
     );
   });

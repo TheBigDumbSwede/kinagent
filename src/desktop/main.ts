@@ -17,7 +17,7 @@ import {
   type KinChatExportResult
 } from "../chatExport/chatExport.js";
 import { analyzeKinDesign, type KinAnalysisProgress } from "../kinAnalysis/kinAnalysis.js";
-import { BridgeRuntime, type BridgeRuntimeEvent } from "../runtime/bridgeRuntime.js";
+import { BridgeRuntime, type BridgeRuntimeEvent, type KinSoundscapePreference } from "../runtime/bridgeRuntime.js";
 import type { JournalSuggestion } from "../journal/journalSuggestionStore.js";
 import { createLogger, type Logger } from "../util/logger.js";
 import {
@@ -257,7 +257,7 @@ function registerIpcHandlers(): void {
   );
   ipcMain.handle(
     "voice:set-kin-preference",
-    async (_event, input: { kinId?: string; preference?: Partial<KinVoicePreference> } = {}) =>
+    async (_event, input: { kinId?: string; preference?: Partial<KinAudioPreference> } = {}) =>
       setKinVoicePreference(input.kinId ?? "", input.preference ?? {})
   );
   ipcMain.handle("ambient:get-kin-preference", async (_event, input: { kinId?: string } = {}) =>
@@ -465,7 +465,7 @@ async function setGroupSubscriptionEnabled(input: { groupId: string; enabled: bo
 
 function getKinVoicePreference(kinId: string) {
   if (!kinId) {
-    throw new Error("Select a Kin before editing voice.");
+    throw new Error("Select a Kin before editing audio.");
   }
 
   return {
@@ -473,29 +473,39 @@ function getKinVoicePreference(kinId: string) {
     globalEnabled: config.voice.enabled,
     configuredProviders: voiceProvidersConfigured(config),
     openAiVoiceOptions,
-    preference: loadKinVoicePreference(config, kinId)
+    preference: loadKinVoicePreference(config, kinId),
+    soundscape: requireRuntime().getKinSoundscapePreference(kinId)
   };
 }
 
-function setKinVoicePreference(kinId: string, preference: Partial<KinVoicePreference>) {
+interface KinAudioPreference extends KinVoicePreference {
+  soundscape?: Partial<KinSoundscapePreference>;
+}
+
+function setKinVoicePreference(kinId: string, preference: Partial<KinAudioPreference>) {
   if (!kinId) {
-    throw new Error("Select a Kin before editing voice.");
+    throw new Error("Select a Kin before editing audio.");
   }
 
   const saved = saveKinVoicePreference(config, kinId, preference);
-  logger.info("Saved Kin voice preference.", {
+  const savedSoundscape = preference.soundscape
+    ? requireRuntime().setKinSoundscapePreference(kinId, preference.soundscape)
+    : requireRuntime().getKinSoundscapePreference(kinId);
+  logger.info("Saved Kin audio preference.", {
     kinId,
-    enabled: saved.enabled,
+    voiceEnabled: saved.enabled,
     provider: saved.provider,
     openaiVoice: saved.openaiVoice,
-    elevenLabsVoiceConfigured: Boolean(saved.elevenLabsVoiceId)
+    elevenLabsVoiceConfigured: Boolean(saved.elevenLabsVoiceId),
+    kinSoundscapeEnabled: savedSoundscape.enabled
   });
   return {
     ok: true,
     globalEnabled: config.voice.enabled,
     configuredProviders: voiceProvidersConfigured(config),
     openAiVoiceOptions,
-    preference: saved
+    preference: saved,
+    soundscape: savedSoundscape
   };
 }
 

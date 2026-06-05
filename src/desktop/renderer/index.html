@@ -95,7 +95,7 @@
           </button>
           <button class="detail-tab" type="button" data-mode="journal" role="tab" aria-selected="false">Journal</button>
           <button class="detail-tab" type="button" data-mode="hermes" role="tab" aria-selected="false">Hermes</button>
-          <button class="detail-tab" type="button" data-mode="voice" role="tab" aria-selected="false">Voice</button>
+          <button class="detail-tab" type="button" data-mode="voice" role="tab" aria-selected="false">Audio</button>
           <button class="detail-tab" type="button" data-mode="analyze" role="tab" aria-selected="false">Analyze</button>
           <button class="detail-tab" type="button" data-mode="export" role="tab" aria-selected="false">Export</button>
         </div>
@@ -268,42 +268,57 @@
                   </div>
                 </form>
                 <form id="voiceForm" class="voice-form" hidden>
-                  <label class="checkbox-label">
-                    <input id="voiceEnabledInput" type="checkbox" />
-                    <span>Enable voice for this Kin</span>
-                  </label>
-                  <label class="checkbox-label">
-                    <input id="filterNarrationInput" type="checkbox" />
-                    <span>Strip narration from speech</span>
-                  </label>
-                  <div class="voice-grid">
+                  <section class="settings-section">
+                    <h2>Voice</h2>
+                    <label class="checkbox-label">
+                      <input id="voiceEnabledInput" type="checkbox" />
+                      <span>Enable voice for this Kin</span>
+                    </label>
+                    <label class="checkbox-label">
+                      <input id="filterNarrationInput" type="checkbox" />
+                      <span>Strip narration from speech</span>
+                    </label>
+                    <div class="voice-grid">
+                      <label>
+                        Provider
+                        <select id="voiceProviderInput">
+                          <option value="openai">OpenAI</option>
+                          <option value="elevenlabs">ElevenLabs</option>
+                        </select>
+                      </label>
+                      <label id="openAiVoiceLabel">
+                        OpenAI voice
+                        <select id="openAiVoiceInput"></select>
+                      </label>
+                      <label id="elevenLabsVoiceLabel">
+                        ElevenLabs voice ID
+                        <input id="elevenLabsVoiceInput" type="text" autocomplete="off" />
+                      </label>
+                      <label>
+                        Narration delimiter
+                        <input id="narrationDelimiterInput" type="text" maxlength="8" autocomplete="off" />
+                      </label>
+                    </div>
                     <label>
-                      Provider
-                      <select id="voiceProviderInput">
-                        <option value="openai">OpenAI</option>
-                        <option value="elevenlabs">ElevenLabs</option>
-                      </select>
+                      OpenAI voice instructions
+                      <textarea id="openAiInstructionsInput" rows="5"></textarea>
                     </label>
-                    <label id="openAiVoiceLabel">
-                      OpenAI voice
-                      <select id="openAiVoiceInput"></select>
+                    <p id="voiceStatusLine" class="panel-note"></p>
+                  </section>
+                  <section class="settings-section">
+                    <h2>Soundscape</h2>
+                    <label class="checkbox-label">
+                      <input id="soundscapeEnabledInput" type="checkbox" />
+                      <span>Allow Hermes soundscape for this Kin</span>
                     </label>
-                    <label id="elevenLabsVoiceLabel">
-                      ElevenLabs voice ID
-                      <input id="elevenLabsVoiceInput" type="text" autocomplete="off" />
-                    </label>
-                    <label>
-                      Narration delimiter
-                      <input id="narrationDelimiterInput" type="text" maxlength="8" autocomplete="off" />
-                    </label>
-                  </div>
-                  <label>
-                    OpenAI voice instructions
-                    <textarea id="openAiInstructionsInput" rows="5"></textarea>
-                  </label>
-                  <p id="voiceStatusLine" class="panel-note"></p>
+                    <p id="soundscapeStatusLine" class="panel-note"></p>
+                    <div>
+                      <h3 class="subsection-heading">Current Layers</h3>
+                      <ul id="soundscapeLayerList" class="soundscape-layer-list"></ul>
+                    </div>
+                  </section>
                   <div class="button-row narrow">
-                    <button id="voiceSaveButton" type="submit">Save Voice</button>
+                    <button id="voiceSaveButton" type="submit">Save Audio</button>
                   </div>
                 </form>
                 <form id="kinHermesForm" class="kin-hermes-form" hidden>

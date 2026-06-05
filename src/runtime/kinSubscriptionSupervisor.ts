@@ -5,8 +5,10 @@ import type { Logger } from "../util/logger.js";
 import {
   loadKinSubscriptionPreferences,
   normalizeChatDynamismPreference,
+  normalizeSoundscapePreference,
   saveKinSubscriptionPreferences,
-  type KinChatDynamismPreference
+  type KinChatDynamismPreference,
+  type KinSoundscapePreference
 } from "./kinSubscriptionPreferences.js";
 import { type MonitorStopReason, SubscriptionSupervisor, type SubscriptionStatus } from "./subscriptionSupervisor.js";
 
@@ -18,6 +20,7 @@ export interface KinSubscriptionStatus {
   running: boolean;
   ambientContextEnabled: boolean;
   chatDynamism: KinChatDynamismPreference;
+  soundscape: KinSoundscapePreference;
 }
 
 export type KinRefreshState =
@@ -44,6 +47,7 @@ export class KinSubscriptionSupervisor {
   private readonly disabledKinIds: Set<string>;
   private readonly ambientDisabledKinIds: Set<string>;
   private readonly chatDynamismPreferences: Map<string, KinChatDynamismPreference>;
+  private readonly soundscapePreferences: Map<string, KinSoundscapePreference>;
   private readonly config: AppConfig;
 
   constructor(options: KinSubscriptionSupervisorOptions) {
@@ -52,6 +56,7 @@ export class KinSubscriptionSupervisor {
     this.disabledKinIds = preferences.disabledKinIds;
     this.ambientDisabledKinIds = preferences.ambientDisabledKinIds;
     this.chatDynamismPreferences = preferences.chatDynamism;
+    this.soundscapePreferences = preferences.soundscape;
     this.inner = new SubscriptionSupervisor({
       refreshMs: options.refreshMs,
       pageSize: options.pageSize,
@@ -73,7 +78,8 @@ export class KinSubscriptionSupervisor {
         saveKinSubscriptionPreferences(options.config, {
           disabledKinIds,
           ambientDisabledKinIds: this.ambientDisabledKinIds,
-          chatDynamism: this.chatDynamismPreferences
+          chatDynamism: this.chatDynamismPreferences,
+          soundscape: this.soundscapePreferences
         });
       },
       startResource: options.startKin,
@@ -120,7 +126,8 @@ export class KinSubscriptionSupervisor {
     saveKinSubscriptionPreferences(this.config, {
       disabledKinIds: this.disabledKinIds,
       ambientDisabledKinIds: this.ambientDisabledKinIds,
-      chatDynamism: this.chatDynamismPreferences
+      chatDynamism: this.chatDynamismPreferences,
+      soundscape: this.soundscapePreferences
     });
   }
 
@@ -141,13 +148,34 @@ export class KinSubscriptionSupervisor {
     saveKinSubscriptionPreferences(this.config, {
       disabledKinIds: this.disabledKinIds,
       ambientDisabledKinIds: this.ambientDisabledKinIds,
-      chatDynamism: this.chatDynamismPreferences
+      chatDynamism: this.chatDynamismPreferences,
+      soundscape: this.soundscapePreferences
     });
     return saved;
   }
 
   kinChatDynamismPreference(kinId: string): KinChatDynamismPreference {
     return normalizeChatDynamismPreference(this.chatDynamismPreferences.get(kinId));
+  }
+
+  setKinSoundscapePreference(kinId: string, preference: Partial<KinSoundscapePreference>): KinSoundscapePreference {
+    if (!kinId) {
+      throw new Error("Missing Kin id.");
+    }
+
+    const saved = normalizeSoundscapePreference(preference);
+    this.soundscapePreferences.set(kinId, saved);
+    saveKinSubscriptionPreferences(this.config, {
+      disabledKinIds: this.disabledKinIds,
+      ambientDisabledKinIds: this.ambientDisabledKinIds,
+      chatDynamism: this.chatDynamismPreferences,
+      soundscape: this.soundscapePreferences
+    });
+    return saved;
+  }
+
+  kinSoundscapePreference(kinId: string): KinSoundscapePreference {
+    return normalizeSoundscapePreference(this.soundscapePreferences.get(kinId));
   }
 
   stopAll(reason: KinMonitorStopReason = "manual"): void {
@@ -172,7 +200,8 @@ export class KinSubscriptionSupervisor {
       enabled: status.enabled,
       running: status.running,
       ambientContextEnabled: this.isKinAmbientContextEnabled(status.resource.aiId),
-      chatDynamism: this.kinChatDynamismPreference(status.resource.aiId)
+      chatDynamism: this.kinChatDynamismPreference(status.resource.aiId),
+      soundscape: this.kinSoundscapePreference(status.resource.aiId)
     }));
   }
 }

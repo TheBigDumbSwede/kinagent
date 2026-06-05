@@ -114,7 +114,7 @@ export function tabLabelFor(context: Pick<TabNavigationContext, "state" | "eleme
   }
 
   if (tab === "voice") {
-    return "Voice";
+    return "Audio";
   }
 
   if (tab === "analyze") {
@@ -168,7 +168,7 @@ export function subtitleForDetailMode(mode: string): string {
   }
 
   if (mode === "voice") {
-    return "Voice configuration";
+    return "Audio configuration";
   }
 
   if (mode === "hermes") {

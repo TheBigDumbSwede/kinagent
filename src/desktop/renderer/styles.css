@@ -126,6 +126,13 @@ h2 {
   line-height: 1.2;
 }
 
+.subsection-heading {
+  margin: 0 0 8px;
+  color: #4d6174;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
 .brand p,
 .activity-header p {
   color: #63788c;
@@ -622,6 +629,24 @@ h2 {
 
 .settings-grid.three {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.soundscape-layer-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.soundscape-layer-list li {
+  border: 1px solid #d7e0e8;
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #26384a;
+  padding: 4px 8px;
+  font-size: 12px;
 }
 
 .voice-grid {

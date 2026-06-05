@@ -91,6 +91,7 @@ export interface KinSubscriptionSummary {
   running?: boolean;
   ambientContextEnabled?: boolean;
   chatDynamism?: unknown;
+  soundscape?: KinSoundscapePreference;
 }
 
 export type SubscriptionSummary = KinSubscriptionSummary;
@@ -172,6 +173,10 @@ export interface KinChatDynamismPreference {
   max: number;
 }
 
+export interface KinSoundscapePreference {
+  enabled: boolean;
+}
+
 export interface KinAmbientPreferenceResult {
   ok?: boolean;
   enabled?: boolean;
@@ -187,6 +192,7 @@ export interface KinVoicePreference {
   elevenLabsVoiceId?: string;
   filterNarrationForTts?: boolean;
   narrationDelimiter?: string;
+  soundscape?: KinSoundscapePreference;
 }
 
 export interface KinVoicePreferenceResult {
@@ -195,6 +201,7 @@ export interface KinVoicePreferenceResult {
   configuredProviders?: Record<string, boolean>;
   openAiVoiceOptions?: string[];
   preference?: KinVoicePreference;
+  soundscape?: KinSoundscapePreference;
 }
 
 export interface AppSettingsFormValue {

@@ -21,6 +21,11 @@ import {
   type KindroidSceneUpdater
 } from "./currentSceneActionHandler.js";
 import { JournalSuggestionActionHandler } from "./journalSuggestionActionHandler.js";
+import {
+  SoundscapeActionHandler,
+  type ScopedSoundscapeUpdate,
+  type SoundscapePreference
+} from "./soundscapeActionHandler.js";
 
 export interface HermesActionRegistryOptions {
   journalSuggestions?: JournalSuggestionStore;
@@ -33,6 +38,8 @@ export interface HermesActionRegistryOptions {
   dedupeStore?: DedupeStore;
   onAmbientContextSent?: (event: AmbientContextSentEvent) => void;
   isAmbientContextEnabled?: AmbientContextPreference;
+  onSoundscapeUpdated?: (update: ScopedSoundscapeUpdate) => void;
+  isSoundscapeEnabled?: SoundscapePreference;
 }
 
 export interface HermesActionRegistry {
@@ -55,6 +62,13 @@ export const hermesActionRegistryEntries: HermesActionRegistryEntry[] = [
     enabledWhen: "hermes.enabled and hermes.currentSceneUpdates.enabled are true",
     execution: "immediate",
     scope: "Updates Kindroid current_scene for the same direct Kin or group chat."
+  },
+  {
+    actionTypes: ["update_soundscape", "update_group_soundscape"],
+    handler: "SoundscapeActionHandler",
+    enabledWhen: "a desktop soundscape callback is provided and the source Kin's Audio soundscape setting is enabled",
+    execution: "immediate",
+    scope: "Emits local desktop procedural soundscape metadata for the same direct Kin or group chat."
   },
   {
     actionTypes: ["send_ambient_context_turn"],
@@ -105,6 +119,10 @@ export function createHermesActionRegistry(input: {
         options.isAmbientContextEnabled
       )
     );
+  }
+
+  if (options.onSoundscapeUpdated) {
+    handlers.push(new SoundscapeActionHandler(input.logger, options.onSoundscapeUpdated, options.isSoundscapeEnabled));
   }
 
   if (options.journalSuggestions) {

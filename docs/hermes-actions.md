@@ -19,6 +19,7 @@ The active registry is built by `createHermesActionRegistry(...)`.
 | Action types                                         | Handler                          | Execution | Scope                                                                                                  |
 | ---------------------------------------------------- | -------------------------------- | --------- | ------------------------------------------------------------------------------------------------------ |
 | `update_current_scene`, `update_group_current_scene` | `CurrentSceneActionHandler`      | Immediate | Updates Kindroid `current_scene` for the same direct Kin or group chat.                                |
+| `update_soundscape`, `update_group_soundscape`       | `SoundscapeActionHandler`        | Immediate | Emits local procedural soundscape metadata for the same direct Kin or group chat.                      |
 | `send_ambient_context_turn`                          | `AmbientContextActionHandler`    | Immediate | Sends a direct Kin ambient visible message with hidden `internet_response` context.                    |
 | `propose_journal_entry`, `delete_journal_entry`      | `JournalSuggestionActionHandler` | Reviewed  | Creates pending desktop review items. Kindroid journals are changed only after user acceptance.        |
 | `propose_chat_dynamism_adjustment`                   | `ChatDynamismActionHandler`      | Reviewed  | Creates pending direct-Kin Chat Dynamism suggestions. No Kindroid mutation is performed automatically. |
@@ -53,6 +54,66 @@ Guardrails:
 - Do not use it for routine conversation, greetings, emotional tone, preferences, memories, or speculation.
 - The handler rejects mismatched `ai_id` or `group_id`.
 - The handler trims and applies the configured `currentSceneUpdates.maxLength`.
+
+## Soundscape Updates
+
+Soundscape updates are local desktop metadata only. Hermes may describe the ambience Kinagent should synthesize, but the
+renderer owns the Web Audio graph and no Kindroid state or chat text is changed.
+
+Direct Kin request:
+
+```json
+{
+  "type": "update_soundscape",
+  "ai_id": "<same direct chat ai_id>",
+  "reason": "<short reason>",
+  "soundscape": {
+    "enabled": true,
+    "environment": "rainy motel room",
+    "mood": "uneasy",
+    "intensity": 0.35,
+    "transition": "fade",
+    "layers": [
+      { "type": "rain", "volume": 0.25, "density": 0.7 },
+      { "type": "roomTone", "volume": 0.12 },
+      { "type": "lowDrone", "volume": 0.08, "pitch": 72 }
+    ]
+  }
+}
+```
+
+Group request:
+
+```json
+{
+  "type": "update_group_soundscape",
+  "group_id": "<same group_id>",
+  "reason": "<short reason>",
+  "soundscape": {
+    "enabled": true,
+    "environment": "ship engine bay",
+    "mood": "tense",
+    "intensity": 0.5,
+    "transition": "swell",
+    "layers": [
+      { "type": "hum", "volume": 0.25, "pitch": 58 },
+      { "type": "static", "volume": 0.1, "density": 0.4 }
+    ]
+  }
+}
+```
+
+Guardrails:
+
+- Requires the source Kin's Manage > Audio > Soundscape setting to be enabled. Group soundscape updates are gated by
+  the Kin that produced the group event until group-level audio settings exist.
+- The handler rejects mismatched `ai_id` or `group_id`.
+- Use this only when venue, weather, machinery, environmental texture, tension, or a major scene event materially changes.
+- Do not update on every turn.
+- Allowed layer types are `rain`, `wind`, `roomTone`, `lowDrone`, `hum`, `tensionPulse`, and `static`.
+- Keep layer volumes conservative. The renderer applies an additional low master volume.
+- This action must not include Kin-visible text, soundtrack instructions, Foley requests, or durable memory content.
+- It does not call Kindroid and does not write `current_scene`.
 
 ## Journal Suggestions
 

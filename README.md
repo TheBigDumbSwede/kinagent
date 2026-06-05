@@ -23,6 +23,7 @@ Working in this first milestone:
 - Kindroid outbound `POST https://api.kindroid.ai/v1/send-message` client using the documented `kn_` API-key flow when configured.
 - SQLite-backed outbound dedupe for recent bridge-originated messages.
 - Hermes chat adapter for the local Cadence Hermes gateway, including a narrow `current_scene` action executor.
+- Experimental desktop-only procedural soundscape controls using local Web Audio synthesis.
 
 Not complete yet:
 
@@ -260,10 +261,30 @@ voice:
 Store provider API keys in `.env`, for example `KINAGENT_OPENAI_API_KEY`.
 For ElevenLabs, set `voice.provider: "elevenlabs"` in `config.yaml` and
 `KINAGENT_ELEVENLABS_API_KEY` in `.env`; the ElevenLabs voice ID is set per
-Kin from that Kin's Manage > Voice tab. Voice output is off by default in
+Kin from that Kin's Manage > Audio tab. Voice output is off by default in
 `config.example.yaml`, runs only in the desktop app, skips startup catch-up
 messages, and only speaks new AI messages from enabled monitors whose per-Kin
 voice is enabled.
+
+Allow experimental Hermes-generated procedural soundscapes from a Kin's Manage > Audio tab with `Allow Hermes
+soundscape for this Kin`.
+
+The soundscape is local renderer audio only. It uses Web Audio oscillators, noise buffers, filters, and gain ramps for
+low-volume ambience; it does not bundle music tracks and does not call external music or generative audio APIs. Hermes
+may emit local `update_soundscape` or `update_group_soundscape` metadata for a monitored Kin or group when venue,
+weather, machinery, environmental texture, tension, or a major scene event materially changes. Direct chat soundscapes
+are gated by that Kin's Audio setting. Group soundscapes are gated by the source Kin that produced the group event. The
+desktop renderer caches that state by Kin or group and plays the most recently active monitored source. Browser autoplay
+policy still applies, so audio starts only after a user interaction with the desktop UI. If voice sidecar playback is
+active, the soundscape ducks while spoken audio is scheduled.
+
+Manual test: enable procedural ambience from the Kin's Audio tab, monitor that Kin or a group event from that Kin with
+Hermes enabled, and send a scene message that materially establishes or changes the environment. The Audio tab should
+show generated layers after Hermes returns an update. Switching monitored activity to another Kin or group should switch
+to that source's cached soundscape, or silence until Hermes generates one.
+
+TODO for a later sound pass: sample-based or generated event cues could be added for discrete scene moments, but this
+prototype deliberately avoids door creaks, voice murmurs, footsteps, and Foley.
 
 Use a non-default config file:
 
@@ -373,6 +394,19 @@ hermes:
       min: 0.8
       max: 1.4
       maxDelta: 0.2
+
+voice:
+  enabled: false
+  provider: "none"
+  openai:
+    apiKey: ""
+    model: "gpt-4o-mini-tts"
+    voice: "marin"
+    instructions: ""
+  elevenlabs:
+    apiKey: ""
+    model: "eleven_flash_v2_5"
+    outputFormat: "mp3_44100_128"
 ```
 
 Environment variables can override the main scalar settings; see `.env.example`.

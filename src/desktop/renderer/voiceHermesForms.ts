@@ -4,6 +4,7 @@ import type {
   KinagentApi,
   KinAmbientPreferenceResult,
   KinChatDynamismPreference,
+  KinSoundscapePreference,
   KinSummary,
   KinVoicePreference,
   KinVoicePreferenceResult,
@@ -53,6 +54,9 @@ export interface VoiceHermesElements {
   openAiInstructionsInput: HTMLInputElement | HTMLTextAreaElement;
   voiceStatusLine: HTMLElement;
   voiceSaveButton: HTMLButtonElement;
+  soundscapeEnabledInput: HTMLInputElement;
+  soundscapeStatusLine: HTMLElement;
+  soundscapeLayerList: HTMLElement;
   ambientContextEnabledInput: HTMLInputElement;
   chatDynamismCurrentValue: HTMLElement;
   chatDynamismRangeControl: HTMLElement;
@@ -73,12 +77,14 @@ export interface VoiceHermesContext {
   renderActivity: () => void;
   renderDetailEmpty: (message: string) => void;
   chatDynamismSlider: ChatDynamismSlider;
+  onSoundscapePreferenceChanged?: (kinId: string, preference: KinSoundscapePreference) => void;
+  renderSoundscapeLayers?: (container: HTMLElement, kinId: string) => void;
 }
 
 export function renderVoiceTab(context: VoiceHermesContext, selectedKin: KinSummary | null): void {
   const { state, elements, renderDetailEmpty } = context;
   if (state.voiceLoading) {
-    renderDetailEmpty("Loading voice settings.");
+    renderDetailEmpty("Loading audio settings.");
     return;
   }
 
@@ -88,7 +94,7 @@ export function renderVoiceTab(context: VoiceHermesContext, selectedKin: KinSumm
   }
 
   if (!state.selectedKinVoice?.ok) {
-    renderDetailEmpty("No voice settings found for this Kin.");
+    renderDetailEmpty("No audio settings found for this Kin.");
     return;
   }
 
@@ -106,8 +112,11 @@ export function renderVoiceTab(context: VoiceHermesContext, selectedKin: KinSumm
   elements.narrationDelimiterInput.value = preference.narrationDelimiter || "*";
   elements.openAiInstructionsInput.value = preference.openaiInstructions || "";
   elements.voiceSaveButton.disabled = state.voiceSaving;
+  elements.soundscapeEnabledInput.checked = Boolean(state.selectedKinVoice.soundscape?.enabled);
   renderVoiceProviderFields(context);
   renderVoiceStatusLine(context);
+  renderSoundscapeStatusLine(context);
+  context.renderSoundscapeLayers?.(elements.soundscapeLayerList, state.selectedKinId || "");
   renderVoiceStats(context, selectedKin, preference);
 }
 
@@ -168,7 +177,10 @@ export async function saveSelectedKinVoice(context: VoiceHermesContext): Promise
     openaiInstructions: elements.openAiInstructionsInput.value,
     elevenLabsVoiceId: elements.elevenLabsVoiceInput.value,
     filterNarrationForTts: elements.filterNarrationInput.checked,
-    narrationDelimiter: elements.narrationDelimiterInput.value
+    narrationDelimiter: elements.narrationDelimiterInput.value,
+    soundscape: {
+      enabled: elements.soundscapeEnabledInput.checked
+    }
   };
 
   state.voiceSaving = true;
@@ -178,8 +190,12 @@ export async function saveSelectedKinVoice(context: VoiceHermesContext): Promise
       kinId: state.selectedKinId,
       preference
     });
+    context.onSoundscapePreferenceChanged?.(
+      state.selectedKinId,
+      state.selectedKinVoice.soundscape || { enabled: false }
+    );
     state.voiceError = null;
-    elements.monitorLine.textContent = "Voice settings saved.";
+    elements.monitorLine.textContent = "Audio settings saved.";
   } catch (error) {
     state.voiceError = errorMessage(error);
   } finally {
@@ -287,6 +303,7 @@ function renderVoiceStats(
   renderStats(context.elements.detailStats, [
     { label: "Kin", value: selectedKin?.name || context.state.selectedKinId || "Unknown" },
     { label: "Voice", value: preference.enabled ? "Enabled" : "Off" },
+    { label: "Soundscape", value: context.state.selectedKinVoice?.soundscape?.enabled ? "Enabled" : "Off" },
     { label: "Provider", value: providerLabel(provider) },
     {
       label: "Ready",
@@ -333,6 +350,14 @@ function renderVoiceStatusLine(context: VoiceHermesContext): void {
   }
 
   elements.voiceStatusLine.textContent = "Voice settings are ready for this Kin.";
+}
+
+function renderSoundscapeStatusLine(context: VoiceHermesContext): void {
+  const { state, elements } = context;
+  const enabled = Boolean(state.selectedKinVoice?.soundscape?.enabled);
+  elements.soundscapeStatusLine.textContent = enabled
+    ? "Hermes may generate local ambience when this Kin is active."
+    : "Hermes soundscape is disabled for this Kin.";
 }
 
 function readChatDynamismPreferenceForm(elements: VoiceHermesElements): KinChatDynamismPreference {

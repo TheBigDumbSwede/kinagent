@@ -10,8 +10,9 @@ import { FirestoreRestClient } from "../firestore/firestoreRestClient.js";
 import { KindroidLiveMonitor } from "../firestore/liveMonitor.js";
 import { isRecentOutboundEcho } from "../firestore/messageDedupe.js";
 import { mapKindroidMessage } from "../firestore/messageMapper.js";
-import type { KindroidChatNotification } from "../firestore/types.js";
+import type { FirestoreDocumentLike, KindroidChatNotification, NormalizedKindroidMessage } from "../firestore/types.js";
 import { createHermesAdapter } from "../hermes/hermesAdapter.js";
+import type { ScopedSoundscapeUpdate } from "../hermes/soundscapeActionHandler.js";
 import type { HermesAdapter } from "../hermes/types.js";
 import {
   defaultChatDynamismBounds,
@@ -54,6 +55,7 @@ export type BridgeRuntimeEvent =
   | { channel: "journal-suggestion-created"; payload: JournalSuggestion }
   | { channel: "journal-suggestions-updated"; payload: JournalSuggestion[] }
   | { channel: "chat-dynamism-suggestion-created"; payload: ChatDynamismSuggestion }
+  | { channel: "soundscape-updated"; payload: ScopedSoundscapeUpdate }
   | { channel: "identity-capture-completed"; payload: CaptureKindroidStateResult }
   | { channel: "identity-capture-failed"; payload: { error: string } };
 
@@ -73,6 +75,9 @@ export class BridgeRuntime {
   private readonly sessionKeepAlive: KindroidSessionKeepAlive;
   private readonly kinSubscriptionSupervisor: KinSubscriptionSupervisor;
   private readonly groupSubscriptionSupervisor: GroupSubscriptionSupervisor;
+  private readonly soundscapePrewarmAttempts = new Map<string, number>();
+  private readonly soundscapePrewarmInFlight = new Set<string>();
+  private readonly soundscapeReadySources = new Set<string>();
   private started = false;
   private startupCaptureStarted = false;
 
@@ -119,12 +124,18 @@ export class BridgeRuntime {
       onChatDynamismSuggestionCreated: (suggestion) => {
         this.emit({ channel: "chat-dynamism-suggestion-created", payload: suggestion });
       },
+      onSoundscapeUpdated: (update) => {
+        this.markSoundscapeReady(update);
+        this.emit({ channel: "soundscape-updated", payload: update });
+      },
+      isSoundscapeEnabled: (notification) => this.isSoundscapeEnabled(notification),
       isChatDynamismEnabled: (aiId) => this.kinSubscriptionSupervisor.kinChatDynamismPreference(aiId).enabled,
       chatDynamismRange: (aiId) => {
         const preference = this.kinSubscriptionSupervisor.kinChatDynamismPreference(aiId);
         return { min: preference.min, max: preference.max };
       },
-      chatDynamismContextProvider: async (notification) => this.chatDynamismContext(notification)
+      chatDynamismContextProvider: async (notification) => this.chatDynamismContext(notification),
+      soundscapeContextProvider: async (notification) => this.soundscapeContext(notification)
     });
     this.voice = new VoiceRuntime({
       config: options.config,
@@ -158,6 +169,7 @@ export class BridgeRuntime {
       },
       onMonitorStarted: (kin) => {
         this.emit({ channel: "monitor-started", payload: { kinId: kin.aiId, kinName: kin.name } });
+        void this.prewarmKinSoundscape(kin, "monitor-started");
       },
       onMonitorStopped: (kinId, reason) => {
         this.emit({ channel: "monitor-stopped", payload: { kinId, reason } });
@@ -285,6 +297,32 @@ export class BridgeRuntime {
     }
 
     return this.kinSubscriptionSupervisor.kinChatDynamismPreference(kinId);
+  }
+
+  setKinSoundscapePreference(kinId: string, preference: Partial<KinSoundscapePreference>): KinSoundscapePreference {
+    const saved = this.kinSubscriptionSupervisor.setKinSoundscapePreference(kinId, preference);
+    const key = `kin:${kinId}`;
+    if (!saved.enabled) {
+      this.soundscapePrewarmAttempts.delete(key);
+      this.soundscapePrewarmInFlight.delete(key);
+      this.soundscapeReadySources.delete(key);
+      return saved;
+    }
+
+    const status = this.kinSubscriptionSupervisor.statuses().find((subscription) => subscription.kin.aiId === kinId);
+    if (status) {
+      this.soundscapePrewarmAttempts.delete(key);
+      void this.prewarmKinSoundscape(status.kin, "preference-enabled");
+    }
+    return saved;
+  }
+
+  getKinSoundscapePreference(kinId: string): KinSoundscapePreference {
+    if (!kinId) {
+      throw new Error("Select a Kin before editing soundscape.");
+    }
+
+    return this.kinSubscriptionSupervisor.kinSoundscapePreference(kinId);
   }
 
   async setGroupEnabled(groupId: string, enabled: boolean): Promise<void> {
@@ -447,6 +485,7 @@ export class BridgeRuntime {
         }
 
         this.emit({ channel: "monitor-line", payload: { ...message, kinName: kin.name } });
+        void this.prewarmKinSoundscape(kin, "activity");
         this.voice.enqueue({
           id: message.id,
           kinId: kin.aiId,
@@ -537,6 +576,7 @@ export class BridgeRuntime {
             source: "firestore"
           }
         });
+        void this.prewarmGroupSoundscape(group, notification, "activity");
         this.voice.enqueue({
           id: message.id,
           kinId: aiId,
@@ -719,6 +759,189 @@ export class BridgeRuntime {
     return this.kinSubscriptionSupervisor.statuses().find((status) => status.kin.aiId === aiId)?.kin.name || aiId;
   }
 
+  private async prewarmKinSoundscape(kin: KindroidKin, reason: string): Promise<void> {
+    const key = `kin:${kin.aiId}`;
+    if (!this.beginSoundscapePrewarm(key, this.kinSubscriptionSupervisor.kinSoundscapePreference(kin.aiId).enabled)) {
+      return;
+    }
+
+    try {
+      const messages = await this.loadRecentKinMessages(kin.aiId, 18);
+      const text = buildSoundscapePrewarmText({
+        scope: "direct",
+        displayName: kin.name,
+        messages
+      });
+      if (!text) {
+        this.options.logger.debug("Skipping soundscape prewarm because no readable recent messages were found.", {
+          scope: "kin",
+          kinId: kin.aiId,
+          reason
+        });
+        return;
+      }
+
+      this.options.logger.info("Starting Hermes soundscape prewarm.", {
+        scope: "kin",
+        kinId: kin.aiId,
+        kinName: kin.name,
+        reason,
+        messageCount: messages.length
+      });
+      await this.hermes.prewarmSoundscape?.({
+        scope: "kin",
+        kinId: kin.aiId,
+        documentId: `soundscape-prewarm:${kin.aiId}:${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        text,
+        soundscapeContext: {
+          enabledForSource: true,
+          prewarm: true,
+          sourceScope: "direct",
+          sourceKinId: kin.aiId,
+          mutation: "local-renderer-only"
+        }
+      });
+    } catch (error) {
+      this.options.logger.warn("Hermes soundscape prewarm setup failed.", {
+        scope: "kin",
+        kinId: kin.aiId,
+        reason,
+        error: error instanceof Error ? error.message : String(error)
+      });
+    } finally {
+      this.soundscapePrewarmInFlight.delete(key);
+    }
+  }
+
+  private async prewarmGroupSoundscape(
+    group: KindroidGroup,
+    notification: KindroidChatNotification,
+    reason: string
+  ): Promise<void> {
+    if (notification.type !== "kindroid.group_chat.changed") {
+      return;
+    }
+
+    const key = `group:${group.groupId}`;
+    if (!this.beginSoundscapePrewarm(key, true)) {
+      return;
+    }
+
+    try {
+      const messages = await this.loadRecentGroupMessages(group.groupId, 18);
+      const sourceKinId = mostRecentSoundscapeEnabledKinId(
+        messages,
+        (kinId) => this.kinSubscriptionSupervisor.kinSoundscapePreference(kinId).enabled
+      );
+      if (!sourceKinId) {
+        this.options.logger.debug(
+          "Skipping group soundscape prewarm because no recent source Kin has soundscape enabled.",
+          {
+            groupId: group.groupId,
+            reason
+          }
+        );
+        return;
+      }
+
+      const text = buildSoundscapePrewarmText({
+        scope: "group",
+        displayName: group.name,
+        messages
+      });
+      if (!text) {
+        this.options.logger.debug("Skipping group soundscape prewarm because no readable recent messages were found.", {
+          groupId: group.groupId,
+          reason
+        });
+        return;
+      }
+
+      this.options.logger.info("Starting Hermes group soundscape prewarm.", {
+        groupId: group.groupId,
+        groupName: group.name,
+        sourceKinId,
+        reason,
+        messageCount: messages.length
+      });
+      await this.hermes.prewarmSoundscape?.({
+        scope: "group",
+        groupId: group.groupId,
+        aiId: sourceKinId,
+        documentId: `soundscape-prewarm:${group.groupId}:${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        text,
+        soundscapeContext: {
+          enabledForSource: true,
+          prewarm: true,
+          sourceScope: "group",
+          sourceKinId,
+          groupId: group.groupId,
+          mutation: "local-renderer-only"
+        }
+      });
+    } catch (error) {
+      this.options.logger.warn("Hermes group soundscape prewarm setup failed.", {
+        groupId: group.groupId,
+        reason,
+        error: error instanceof Error ? error.message : String(error)
+      });
+    } finally {
+      this.soundscapePrewarmInFlight.delete(key);
+    }
+  }
+
+  private beginSoundscapePrewarm(key: string, enabled: boolean): boolean {
+    if (!enabled || this.soundscapeReadySources.has(key) || this.soundscapePrewarmInFlight.has(key)) {
+      return false;
+    }
+
+    const attempts = this.soundscapePrewarmAttempts.get(key) ?? 0;
+    if (attempts >= 2) {
+      return false;
+    }
+
+    this.soundscapePrewarmAttempts.set(key, attempts + 1);
+    this.soundscapePrewarmInFlight.add(key);
+    return true;
+  }
+
+  private markSoundscapeReady(update: ScopedSoundscapeUpdate): void {
+    if (update.scope === "kin" && update.kinId) {
+      this.soundscapeReadySources.add(`kin:${update.kinId}`);
+      return;
+    }
+    if (update.scope === "group" && update.groupId) {
+      this.soundscapeReadySources.add(`group:${update.groupId}`);
+    }
+  }
+
+  private async loadRecentKinMessages(kinId: string, limit: number): Promise<NormalizedKindroidMessage[]> {
+    const client = new KindroidApiClient(this.options.config, this.options.logger);
+    const decryptionKey = this.resolveDecryptionKey();
+    const documents = await client.chats.listRecentMessages({ kinId, limit });
+    return sortChronological(
+      documents
+        .map((document) => mapKindroidMessage(document, kinId, { decryptionKey }))
+        .filter((message) => isReadablePrewarmMessage(message))
+    );
+  }
+
+  private async loadRecentGroupMessages(groupId: string, limit: number): Promise<NormalizedKindroidMessage[]> {
+    const client = new KindroidApiClient(this.options.config, this.options.logger);
+    const decryptionKey = this.resolveDecryptionKey();
+    const documents = await client.groupChats.listRecentMessages({ groupId, limit });
+    return sortChronological(
+      documents
+        .map((document) => {
+          const aiId = groupDocumentAiId(document) || groupId;
+          return mapKindroidMessage(document, aiId, { decryptionKey });
+        })
+        .filter((message) => isReadablePrewarmMessage(message))
+    );
+  }
+
   private async chatDynamismContext(notification: KindroidChatNotification): Promise<unknown> {
     if (notification.type !== "kindroid.chat.changed") {
       return undefined;
@@ -758,6 +981,34 @@ export class BridgeRuntime {
       reasoningEffort: status?.kin.reasoningEffort,
       llmFlair: status?.kin.llmFlair,
       mutation: "reviewed-suggestion-only"
+    };
+  }
+
+  private isSoundscapeEnabled(notification: KindroidChatNotification): boolean {
+    const sourceKinId =
+      notification.type === "kindroid.chat.changed"
+        ? notification.kinId
+        : this.kinSubscriptionSupervisor.statuses().some((status) => status.kin.aiId === notification.aiId)
+          ? notification.aiId
+          : "";
+    return sourceKinId ? this.kinSubscriptionSupervisor.kinSoundscapePreference(sourceKinId).enabled : false;
+  }
+
+  private async soundscapeContext(notification: KindroidChatNotification): Promise<unknown> {
+    const sourceKinId =
+      notification.type === "kindroid.chat.changed"
+        ? notification.kinId
+        : this.kinSubscriptionSupervisor.statuses().some((status) => status.kin.aiId === notification.aiId)
+          ? notification.aiId
+          : null;
+    const preference = sourceKinId ? this.kinSubscriptionSupervisor.kinSoundscapePreference(sourceKinId) : null;
+
+    return {
+      enabledForSource: Boolean(preference?.enabled),
+      sourceScope: notification.type === "kindroid.chat.changed" ? "direct" : "group",
+      sourceKinId,
+      groupId: notification.type === "kindroid.group_chat.changed" ? notification.groupId : undefined,
+      mutation: "local-renderer-only"
     };
   }
 
@@ -868,9 +1119,78 @@ export interface KinChatDynamismPreference {
   max: number;
 }
 
+export interface KinSoundscapePreference {
+  enabled: boolean;
+}
+
 export type BridgeSessionSummary =
   | (ReturnType<typeof summarizeSessionAuth> & { available: true })
   | { available: false; error: string };
+
+function buildSoundscapePrewarmText(input: {
+  scope: "direct" | "group";
+  displayName: string;
+  messages: NormalizedKindroidMessage[];
+}): string | null {
+  const readableMessages = input.messages.filter((message) => isReadablePrewarmMessage(message)).slice(-14);
+  if (readableMessages.length === 0) {
+    return null;
+  }
+
+  return [
+    "SOUNDSCAPE_PREWARM_REQUEST",
+    `Build an initial local soundscape for this ${input.scope} chat before waiting for a future scene-change turn.`,
+    `Source: ${input.displayName}.`,
+    "Infer the current venue, room tone, weather, machinery, crowd, vehicle, outdoor texture, and tension from recent context.",
+    "Return update_soundscape or update_group_soundscape when a plausible ambience can be inferred. Use conservative volume and intensity. Return no non-soundscape actions.",
+    "Recent messages, oldest to newest:",
+    ...readableMessages.map((message) => `${prewarmMessagePrefix(message)} ${truncatePrewarmText(message.text ?? "")}`)
+  ].join("\n");
+}
+
+function prewarmMessagePrefix(message: NormalizedKindroidMessage): string {
+  const timestamp = message.timestamp ? message.timestamp : "unknown-time";
+  const speaker = message.sender || message.role || message.kinId || "unknown";
+  return `[${timestamp}] ${speaker}:`;
+}
+
+function truncatePrewarmText(value: string): string {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  return normalized.length > 360 ? `${normalized.slice(0, 357)}...` : normalized;
+}
+
+function sortChronological(messages: NormalizedKindroidMessage[]): NormalizedKindroidMessage[] {
+  return [...messages].sort((left, right) => timestampMs(left.timestamp) - timestampMs(right.timestamp));
+}
+
+function timestampMs(value: string | null): number {
+  if (!value) {
+    return 0;
+  }
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function isReadablePrewarmMessage(message: NormalizedKindroidMessage): boolean {
+  return Boolean(message.text?.trim()) && !(message.textEncrypted && !message.textDecrypted);
+}
+
+function groupDocumentAiId(document: FirestoreDocumentLike): string | null {
+  const data = document.data();
+  return data && typeof data === "object" && "ai_id" in data && typeof data.ai_id === "string" ? data.ai_id : null;
+}
+
+function mostRecentSoundscapeEnabledKinId(
+  messages: NormalizedKindroidMessage[],
+  isEnabled: (kinId: string) => boolean
+): string | null {
+  for (const message of [...messages].reverse()) {
+    if (message.kinId && isEnabled(message.kinId)) {
+      return message.kinId;
+    }
+  }
+  return null;
+}
 
 function fieldString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
