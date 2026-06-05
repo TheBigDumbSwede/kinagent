@@ -4,8 +4,6 @@ import path from "node:path";
 const projectRoot = process.cwd();
 const rendererSource = path.join(projectRoot, "src", "desktop", "renderer");
 const rendererTarget = path.join(projectRoot, "dist", "desktop", "renderer");
-const preloadSource = path.join(projectRoot, "src", "desktop", "preload.cjs");
-const preloadTarget = path.join(projectRoot, "dist", "desktop", "preload.cjs");
 const assetsSource = path.join(projectRoot, "assets");
 const assetsTarget = path.join(projectRoot, "dist", "desktop", "assets");
 
@@ -40,8 +38,6 @@ for (const entry of fs.readdirSync(rendererSource, { withFileTypes: true })) {
 
   fs.copyFileSync(path.join(rendererSource, entry.name), path.join(rendererTarget, entry.name));
 }
-
-fs.copyFileSync(preloadSource, preloadTarget);
 
 for (const entry of fs.readdirSync(assetsSource, { withFileTypes: true })) {
   if (!entry.isFile()) {
