@@ -6,12 +6,12 @@ import { runInstrumentedKindroidLogin } from "./auth/instrumentedLogin.js";
 import { runKindroidLogin } from "./auth/playwrightLogin.js";
 import { KindroidClient } from "./kindroid/kindroidClient.js";
 import { KindroidApiClient } from "./kindroid/client/index.js";
+import { loadRecentKindroidChatHistoryMessages } from "./kindroid/chatHistory.js";
 import { registerAmbientContextCommand } from "./cli/ambientContextCommand.js";
 import { registerChatDynamismCommand } from "./cli/chatDynamismCommand.js";
 import { registerInternetResponseExperimentCommand } from "./cli/internetResponseExperimentCommand.js";
 import { KindroidChatListener } from "./firestore/chatListener.js";
 import { KindroidLiveMonitor } from "./firestore/liveMonitor.js";
-import { mapKindroidMessage } from "./firestore/messageMapper.js";
 import { createHermesAdapter } from "./hermes/hermesAdapter.js";
 import { BridgeRuntime } from "./runtime/bridgeRuntime.js";
 import { createDedupeStore } from "./state/sqliteStore.js";
@@ -137,30 +137,21 @@ program
 
 program
   .command("probe-chat")
-  .description("Read recent Firestore chat documents for one Kin and print normalized JSON.")
+  .description("Read recent Kindroid chat messages through /v1/get-chat-messages and print normalized JSON.")
   .requiredOption("--kin <ai_id>", "Kindroid AI/Kin id")
-  .option("--limit <count>", "Maximum documents to read", "5")
-  .option("--decrypt", "Attempt to decrypt !enc: message text using the saved Firebase UID")
-  .option("--include-raw", "Include full raw Firestore document payloads")
+  .option("--limit <count>", "Maximum messages to read", "5")
+  .option("--decrypt", "Deprecated no-op; /get-chat-messages returns readable message text")
+  .option("--include-raw", "Include full raw Kindroid API message payloads")
   .action(async (options: { kin: string; limit: string; decrypt?: boolean; includeRaw?: boolean }) => {
     const { config, logger } = loadRuntime();
-    const client = new KindroidApiClient(config, logger);
     const limit = Number(options.limit);
     if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
       throw new Error("--limit must be an integer from 1 to 100.");
     }
 
-    const session = options.decrypt ? loadBrowserSession(config.bridge.sessionDir) : null;
-    const decryptionKey = options.decrypt ? config.kindroid.uid || session?.firebaseAuth?.uid : undefined;
-    if (options.decrypt && !decryptionKey) {
-      throw new Error("Cannot decrypt without a Firebase UID. Run npm run session-info to verify the saved session.");
-    }
-
-    const documents = await client.chats.listRecentMessages({ kinId: options.kin, limit });
-    const messages = documents.map((document) => {
-      const message = mapKindroidMessage(document, options.kin, { decryptionKey });
-      return options.includeRaw ? message : { ...message, raw: undefined };
-    });
+    const messages = (
+      await loadRecentKindroidChatHistoryMessages(config, logger, { scope: "kin", id: options.kin, limit })
+    ).map((message) => (options.includeRaw ? message : { ...message, raw: undefined }));
     process.stdout.write(`${JSON.stringify({ count: messages.length, messages }, null, 2)}\n`);
   });
 

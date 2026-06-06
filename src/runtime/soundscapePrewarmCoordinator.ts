@@ -1,10 +1,9 @@
-import { loadBrowserSession } from "../auth/firebaseSession.js";
 import type { AppConfig } from "../config/types.js";
-import { mapKindroidMessage } from "../firestore/messageMapper.js";
-import type { FirestoreDocumentLike, KindroidChatNotification, NormalizedKindroidMessage } from "../firestore/types.js";
+import type { KindroidChatNotification, NormalizedKindroidMessage } from "../firestore/types.js";
 import type { ScopedSoundscapeUpdate } from "../hermes/soundscapeActionHandler.js";
 import type { HermesAdapter } from "../hermes/types.js";
-import { KindroidApiClient, type KindroidGroup, type KindroidKin } from "../kindroid/client/index.js";
+import { type KindroidGroup, type KindroidKin } from "../kindroid/client/index.js";
+import { loadRecentKindroidChatHistoryMessages } from "../kindroid/chatHistory.js";
 import type { Logger } from "../util/logger.js";
 
 interface SoundscapePrewarmCoordinatorOptions {
@@ -206,28 +205,21 @@ export class SoundscapePrewarmCoordinator {
   }
 
   private async loadRecentKinMessages(kinId: string, limit: number): Promise<NormalizedKindroidMessage[]> {
-    const client = new KindroidApiClient(this.options.config, this.options.logger);
-    const decryptionKey = this.resolveDecryptionKey();
-    const documents = await client.chats.listRecentMessages({ kinId, limit });
-    return sortChronological(
-      documents
-        .map((document) => mapKindroidMessage(document, kinId, { decryptionKey }))
-        .filter((message) => isReadablePrewarmMessage(message))
-    );
+    const messages = await loadRecentKindroidChatHistoryMessages(this.options.config, this.options.logger, {
+      scope: "kin",
+      id: kinId,
+      limit
+    });
+    return sortChronological(messages.filter((message) => isReadablePrewarmMessage(message)));
   }
 
   private async loadRecentGroupMessages(groupId: string, limit: number): Promise<NormalizedKindroidMessage[]> {
-    const client = new KindroidApiClient(this.options.config, this.options.logger);
-    const decryptionKey = this.resolveDecryptionKey();
-    const documents = await client.groupChats.listRecentMessages({ groupId, limit });
-    return sortChronological(
-      documents
-        .map((document) => {
-          const aiId = groupDocumentAiId(document) || groupId;
-          return mapKindroidMessage(document, aiId, { decryptionKey });
-        })
-        .filter((message) => isReadablePrewarmMessage(message))
-    );
+    const messages = await loadRecentKindroidChatHistoryMessages(this.options.config, this.options.logger, {
+      scope: "group",
+      id: groupId,
+      limit
+    });
+    return sortChronological(messages.filter((message) => isReadablePrewarmMessage(message)));
   }
 
   private sourceKinId(notification: KindroidChatNotification): string | null {
@@ -236,22 +228,6 @@ export class SoundscapePrewarmCoordinator {
     }
 
     return notification.aiId && this.options.isKnownKin(notification.aiId) ? notification.aiId : null;
-  }
-
-  private resolveDecryptionKey(): string {
-    if (this.options.config.kindroid.uid) {
-      return this.options.config.kindroid.uid;
-    }
-
-    const session = loadBrowserSession(this.options.config.bridge.sessionDir);
-    const uid = session.firebaseAuth?.uid;
-    if (!uid) {
-      throw new Error(
-        "Cannot decrypt live messages without a Firebase UID. Run npm run session-info to verify the saved session."
-      );
-    }
-
-    return uid;
   }
 }
 
@@ -301,11 +277,6 @@ function timestampMs(value: string | null): number {
 
 function isReadablePrewarmMessage(message: NormalizedKindroidMessage): boolean {
   return Boolean(message.text?.trim()) && !(message.textEncrypted && !message.textDecrypted);
-}
-
-function groupDocumentAiId(document: FirestoreDocumentLike): string | null {
-  const data = document.data();
-  return data && typeof data === "object" && "ai_id" in data && typeof data.ai_id === "string" ? data.ai_id : null;
 }
 
 function mostRecentSoundscapeEnabledKinId(

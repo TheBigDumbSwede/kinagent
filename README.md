@@ -18,7 +18,7 @@ Working in this first milestone:
 - Server-side Kin discovery from Firestore REST using the saved authenticated session.
 - Best-effort extraction of Firebase browser auth state from saved Playwright storage.
 - Firestore realtime listen stream for `ChatMessages` using the saved Firebase browser auth state, with gRPC keepalive and reconnect backoff.
-- Optional Firestore chat text decryption in `probe-chat` using the saved Firebase UID as the Kindroid AES passphrase.
+- Recent-message probing and chat transcript export through Kindroid's documented `/v1/get-chat-messages` API.
 - Live plaintext monitor for new incoming Firestore chat messages.
 - Kindroid outbound client using the documented `kn_` API-key flow when configured, including direct sends, group sends,
   public chat-history export, current-scene updates, and low-level chat break/rewind helpers.
@@ -31,7 +31,9 @@ Not complete yet:
 - Installer/signing/start-with-Windows packaging.
 - Broader Hermes tool/action coverage beyond the current-scene proof of concept.
 
-The listener command uses Firestore's gRPC Listen API, not timer polling. It emits lightweight `kindroid.chat.changed` notifications; `probe-chat --decrypt` can verify readable message recovery separately, and `monitor-live` can print new decrypted messages as they arrive.
+The listener command uses Firestore's gRPC Listen API, not timer polling. It emits lightweight `kindroid.chat.changed`
+notifications; historical recent-message probes use Kindroid's documented `/v1/get-chat-messages` API, and
+`monitor-live` can print new decrypted Firestore messages as they arrive.
 
 ## Architecture
 
@@ -59,6 +61,12 @@ Desktop
   -> KindroidClient
   -> GET /v1/get-chat-messages
   -> local Markdown transcript
+
+Soundscape prewarm and probes:
+Runtime or CLI
+  -> KindroidClient
+  -> GET /v1/get-chat-messages
+  -> bounded recent-message context
 ```
 
 Kindroid domain access is organized behind `KindroidApiClient` resource modules:
@@ -87,7 +95,8 @@ Kinagent uses the documented API shape for:
 
 - `POST https://api.kindroid.ai/v1/send-message`, using blocking text responses with `stream: false`.
 - `POST https://api.kindroid.ai/v1/chat-break`, as a low-level client helper only.
-- `GET https://api.kindroid.ai/v1/get-chat-messages` for direct Kin and group chat transcript export.
+- `GET https://api.kindroid.ai/v1/get-chat-messages` for direct Kin and group chat transcript export, recent-message
+  probes, and soundscape prewarm context.
 - `POST https://api.kindroid.ai/v1/rewind-messages`, as a low-level client helper only.
 - `POST https://api.kindroid.ai/v1/groupchats-user-message`, including the documented `message`/`audio_url` one-of payload
   shape. Current Kinagent callers send text messages.
@@ -219,19 +228,20 @@ Example event:
 }
 ```
 
-Probe Firestore chat access and print recent normalized messages:
+Probe Kindroid's documented chat-history API and print recent normalized messages:
 
 ```powershell
 npm run probe-chat -- --kin "<ai_id>" --limit 5
 ```
 
-Attempt to decrypt `!enc:` chat text with the saved Firebase UID:
+The legacy `--decrypt` flag is accepted for old scripts but no longer changes behavior; `/v1/get-chat-messages`
+returns readable message text.
 
 ```powershell
 npm run probe-chat -- --kin "<ai_id>" --limit 5 --decrypt
 ```
 
-Include the full raw Firestore document payload when inspecting schema changes:
+Include the full raw Kindroid API message payload when inspecting schema changes:
 
 ```powershell
 npm run probe-chat -- --kin "<ai_id>" --limit 1 --include-raw

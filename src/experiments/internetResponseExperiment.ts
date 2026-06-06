@@ -1,10 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
-import { loadBrowserSession } from "../auth/firebaseSession.js";
 import type { AppConfig } from "../config/types.js";
-import { mapKindroidMessage } from "../firestore/messageMapper.js";
 import type { NormalizedKindroidMessage } from "../firestore/types.js";
-import { KindroidApiClient } from "../kindroid/client/index.js";
+import { loadRecentKindroidChatHistoryMessages } from "../kindroid/chatHistory.js";
 import { KindroidClient } from "../kindroid/kindroidClient.js";
 import { buildSendGroupMessagePayload, buildSendMessagePayload } from "../kindroid/payloads.js";
 import { recordDiagnosticSuppression, type DiagnosticSuppressionRecord } from "../state/diagnosticSuppressionStore.js";
@@ -337,14 +335,11 @@ async function observeRecentMessages(
     await sleep(options.observeSeconds * 1000);
   }
 
-  const apiClient = new KindroidApiClient(config, logger);
-  const session = loadBrowserSession(config.bridge.sessionDir);
-  const decryptionKey = config.kindroid.uid || session.firebaseAuth?.uid;
-  const documents =
-    options.target.type === "group"
-      ? await apiClient.groupChats.listRecentMessages({ groupId: options.target.id, limit: recentMessageLimit })
-      : await apiClient.chats.listRecentMessages({ kinId: options.target.id, limit: recentMessageLimit });
-  const messages = documents.map((document) => mapKindroidMessage(document, options.target.id, { decryptionKey }));
+  const messages = await loadRecentKindroidChatHistoryMessages(config, logger, {
+    scope: options.target.type,
+    id: options.target.id,
+    limit: recentMessageLimit
+  });
   const experimentVisibleMessageObserved = messages.some((message) =>
     Boolean(message.text?.includes(options.visibleMessages.at(-1) ?? ""))
   );

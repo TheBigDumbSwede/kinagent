@@ -48,11 +48,11 @@ Useful options:
 - `--trigger-group-response`: after a group user-message send, also call the observed group get-turn and AI-response
   endpoints. Use this only for headless diagnostics when the Kindroid UI is not also advancing the group turn.
 - `--delay-ms <number>`: delay between the control and experiment messages. Defaults to `15000`.
-- `--observe-seconds <number>`: wait before fetching recent decrypted messages. Defaults to `60`.
+- `--observe-seconds <number>`: wait before fetching recent messages through `/v1/get-chat-messages`. Defaults to `60`.
 - `--request-id <id>`: use a specific request id for the experiment message.
 - `--expect <text>`: track an expected canary or fact in recent messages. Can be repeated.
 - `--allow-empty-message`: allow a blank or omitted visible message for this diagnostic.
-- `--verbose-chat`: include more decrypted recent chat text in the report. Default output is intentionally narrow.
+- `--verbose-chat`: include more recent chat text in the report. Default output is intentionally narrow.
 
 The command always adds a unique `KINAGENT-IR-*` canary to the supplied `internet_response` text. This keeps the
 experiment measurable even if the supplied text is vague. `--expect` is useful when your supplied context already has a
@@ -96,5 +96,5 @@ Do not use secrets, tokens, private session data, or sensitive personal content 
 field is hidden in the Kindroid UI, it may still be stored server-side by Kindroid.
 
 The command redacts common auth tokens and does not print the full `internet_response` value in dry-run previews. Default
-chat observation prints only bounded snippets around relevant recent messages. Use `--verbose-chat` only when you are
-comfortable displaying more decrypted chat text locally.
+chat observation prints only bounded snippets around relevant recent messages from `/v1/get-chat-messages`. Use
+`--verbose-chat` only when you are comfortable displaying more chat text locally.

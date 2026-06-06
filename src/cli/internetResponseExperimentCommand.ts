@@ -22,7 +22,7 @@ export function registerInternetResponseExperimentCommand(program: Command, load
     )
     .option("--delay-ms <number>", "Delay between control and experiment sends", "15000")
     .option("--observe-seconds <number>", "Seconds to wait before fetching recent messages", "60")
-    .option("--verbose-chat", "Include more decrypted recent chat text in the observation report")
+    .option("--verbose-chat", "Include more recent chat text in the observation report")
     .action(
       async (options: {
         kin?: string;

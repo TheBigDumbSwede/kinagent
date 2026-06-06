@@ -118,6 +118,8 @@ export interface GetKindroidChatMessagesInput {
 
 export interface KindroidChatHistoryMessage {
   id?: string;
+  ai_id?: string;
+  aiId?: string;
   sender?: string;
   sender_type?: string;
   display_name?: string;
