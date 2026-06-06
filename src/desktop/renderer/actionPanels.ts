@@ -68,7 +68,7 @@ export function renderGroupExportTab(context: ActionPanelContext, selectedGroup:
 function showActionPanel(elements: ActionPanelElements, panel: "analyze" | "export"): void {
   elements.kinDetailEmpty.hidden = true;
   elements.kinDetailContent.hidden = false;
-  elements.kinDetailContent.classList.remove("app-settings-content");
+  elements.kinDetailContent.classList.remove("app-settings-content", "scene-detail-content");
   elements.kinDetailContent.classList.add("form-detail-content");
   elements.fieldContent.hidden = true;
   elements.journalSuggestionPanel.hidden = true;

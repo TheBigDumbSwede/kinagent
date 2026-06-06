@@ -78,7 +78,7 @@ export function renderAppSettingsTab(context: AppSettingsContext): void {
   const config = state.appSettings.config || {};
   elements.kinDetailEmpty.hidden = true;
   elements.kinDetailContent.hidden = false;
-  elements.kinDetailContent.classList.remove("form-detail-content");
+  elements.kinDetailContent.classList.remove("form-detail-content", "scene-detail-content");
   elements.kinDetailContent.classList.add("app-settings-content");
   elements.fieldContent.hidden = true;
   elements.journalSuggestionPanel.hidden = true;

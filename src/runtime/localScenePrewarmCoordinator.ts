@@ -3,21 +3,31 @@ import type { KindroidChatNotification, NormalizedKindroidMessage } from "../fir
 import type { LocalSceneState } from "../localScene/localSceneStore.js";
 import type { HermesAdapter } from "../hermes/types.js";
 import { type KindroidGroup, type KindroidKin } from "../kindroid/client/index.js";
-import { loadRecentKindroidChatHistoryMessages } from "../kindroid/chatHistory.js";
+import { loadRecentKindroidChatHistoryWindow } from "../kindroid/chatHistory.js";
 import type { Logger } from "../util/logger.js";
-import { PrewarmStateStore, type PrewarmTrigger } from "./prewarmStateStore.js";
+import {
+  PrewarmStateStore,
+  type PrewarmSourceKey,
+  type PrewarmSourceState,
+  type PrewarmTrigger
+} from "./prewarmStateStore.js";
 
 interface LocalScenePrewarmCoordinatorOptions {
   config: AppConfig;
   logger: Logger;
   hermes: HermesAdapter;
   prewarmState: PrewarmStateStore;
+  onPrewarmStateChanged?: (state: PrewarmSourceState) => void;
 }
+
+const recentChatHistoryPageBudget = 2;
+const catchupRetryDelayMs = process.env.NODE_ENV === "test" ? 1_000 : 45_000;
 
 export class LocalScenePrewarmCoordinator {
   private readonly attempts = new Map<string, number>();
   private readonly inFlight = new Set<string>();
   private readonly readySources = new Set<string>();
+  private readonly catchupTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   constructor(private readonly options: LocalScenePrewarmCoordinatorOptions) {}
 
@@ -63,6 +73,10 @@ export class LocalScenePrewarmCoordinator {
 
     try {
       const messages = await this.loadRecentKinMessages(kin.aiId, 18);
+      if (!messages) {
+        this.scheduleKinCatchup(kin);
+        return;
+      }
       const latestMessage = mostRecentMessage(messages);
       const text = buildLocalScenePrewarmText({
         scope: "direct",
@@ -133,6 +147,10 @@ export class LocalScenePrewarmCoordinator {
 
     try {
       const messages = await this.loadRecentGroupMessages(group.groupId, 18);
+      if (!messages) {
+        this.scheduleGroupCatchup(group);
+        return;
+      }
       const latestMessage = mostRecentMessage(messages);
       const latestSpeakerKinId = notification?.aiId || mostRecentKinId(messages);
       const text = buildLocalScenePrewarmText({
@@ -219,22 +237,65 @@ export class LocalScenePrewarmCoordinator {
     return true;
   }
 
-  private async loadRecentKinMessages(kinId: string, limit: number): Promise<NormalizedKindroidMessage[]> {
-    const messages = await loadRecentKindroidChatHistoryMessages(this.options.config, this.options.logger, {
-      scope: "kin",
-      id: kinId,
-      limit
-    });
-    return sortChronological(messages.filter((message) => isReadablePrewarmMessage(message)));
+  private async loadRecentKinMessages(kinId: string, limit: number): Promise<NormalizedKindroidMessage[] | null> {
+    return this.loadRecentMessages({ scope: "kin", id: kinId }, limit);
   }
 
-  private async loadRecentGroupMessages(groupId: string, limit: number): Promise<NormalizedKindroidMessage[]> {
-    const messages = await loadRecentKindroidChatHistoryMessages(this.options.config, this.options.logger, {
-      scope: "group",
-      id: groupId,
-      limit
+  private async loadRecentGroupMessages(groupId: string, limit: number): Promise<NormalizedKindroidMessage[] | null> {
+    return this.loadRecentMessages({ scope: "group", id: groupId }, limit);
+  }
+
+  private async loadRecentMessages(
+    source: PrewarmSourceKey,
+    limit: number
+  ): Promise<NormalizedKindroidMessage[] | null> {
+    const result = await loadRecentKindroidChatHistoryWindow(this.options.config, this.options.logger, {
+      ...source,
+      limit,
+      maxPages: recentChatHistoryPageBudget,
+      startAfterTimestamp: this.options.prewarmState.chatHistoryStartAfter(source)
     });
-    return sortChronological(messages.filter((message) => isReadablePrewarmMessage(message)));
+    if (!result.complete) {
+      if (typeof result.nextStartAfterTimestamp === "number") {
+        const state = this.options.prewarmState.markChatHistoryCursor(source, result.nextStartAfterTimestamp);
+        this.options.onPrewarmStateChanged?.(state);
+      }
+      this.options.logger.info("Deferred local scene prewarm while recent chat history catches up.", {
+        scope: source.scope,
+        id: source.id,
+        pageCount: result.pageCount,
+        nextStartAfterTimestamp: result.nextStartAfterTimestamp,
+        status: result.status
+      });
+      return null;
+    }
+
+    const state = this.options.prewarmState.clearChatHistoryCursor(source);
+    this.options.onPrewarmStateChanged?.(state);
+    return sortChronological(result.messages.filter((message) => isReadablePrewarmMessage(message)));
+  }
+
+  private scheduleKinCatchup(kin: KindroidKin): void {
+    this.scheduleCatchup(`kin:${kin.aiId}`, () => this.prewarmKin(kin, "chat-history-catchup", { force: true }));
+  }
+
+  private scheduleGroupCatchup(group: KindroidGroup): void {
+    this.scheduleCatchup(`group:${group.groupId}`, () =>
+      this.prewarmGroup(group, null, "chat-history-catchup", { force: true })
+    );
+  }
+
+  private scheduleCatchup(key: string, run: () => Promise<void>): void {
+    if (this.catchupTimers.has(key)) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      this.catchupTimers.delete(key);
+      void run();
+    }, catchupRetryDelayMs);
+    unrefTimer(timer);
+    this.catchupTimers.set(key, timer);
   }
 }
 
@@ -299,4 +360,10 @@ function mostRecentKinId(messages: NormalizedKindroidMessage[]): string | null {
 function mostRecentMessage(messages: NormalizedKindroidMessage[]): PrewarmTrigger | undefined {
   const message = messages[messages.length - 1];
   return message ? { documentId: message.id, timestamp: message.timestamp } : undefined;
+}
+
+function unrefTimer(timer: ReturnType<typeof setTimeout>): void {
+  if (typeof timer === "object" && timer && "unref" in timer && typeof timer.unref === "function") {
+    timer.unref();
+  }
 }

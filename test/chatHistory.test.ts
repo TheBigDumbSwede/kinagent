@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AppConfig } from "../src/config/types.js";
 import {
   loadAllKindroidChatHistoryMessages,
+  loadRecentKindroidChatHistoryWindow,
   loadRecentKindroidChatHistoryMessages,
   normalizeKindroidChatHistoryMessage
 } from "../src/kindroid/chatHistory.js";
@@ -60,11 +61,11 @@ describe("Kindroid chat history API normalization", () => {
     });
   });
 
-  it("loads one recent public API page without Firestore document reads", async () => {
+  it("loads recent public API messages without Firestore document reads", async () => {
     const fetchMock = vi.fn(async (_input: string | URL, _init?: RequestInit) =>
       Response.json({
         messages: [{ id: "message-1", sender_type: "user", timestamp: 1_780_000_000_000, message: "Hello." }],
-        pagination: { hasMore: false, lastTimestamp: 1_780_000_000_000, limit: 18 }
+        pagination: { hasMore: false, lastTimestamp: 1_780_000_000_000, limit: 100 }
       })
     );
     vi.stubGlobal("fetch", fetchMock);
@@ -74,8 +75,70 @@ describe("Kindroid chat history API normalization", () => {
     ).resolves.toHaveLength(1);
 
     expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
-      "https://api.kindroid.ai/v1/get-chat-messages?ai_id=kin-1&limit=18"
+      "https://api.kindroid.ai/v1/get-chat-messages?ai_id=kin-1&limit=100"
     );
+  });
+
+  it("paginates recent public API reads and returns the newest requested window", async () => {
+    const fetchMock = vi
+      .fn(async (_input: string | URL, _init?: RequestInit) => Response.json({ messages: [] }))
+      .mockResolvedValueOnce(
+        Response.json({
+          messages: [
+            { id: "message-1", sender_type: "user", timestamp: 1_780_000_000_000, message: "First." },
+            { id: "message-2", sender_type: "ai", timestamp: 1_780_000_001_000, message: "Second." }
+          ],
+          pagination: { hasMore: true, lastTimestamp: 1_780_000_001_000, limit: 100 }
+        })
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          messages: [
+            { id: "message-3", sender_type: "user", timestamp: 1_780_000_002_000, message: "Third." },
+            { id: "message-4", sender_type: "ai", timestamp: 1_780_000_003_000, message: "Fourth." }
+          ],
+          pagination: { hasMore: false, lastTimestamp: 1_780_000_003_000, limit: 100 }
+        })
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      loadRecentKindroidChatHistoryMessages(testConfig(), testLogger, { scope: "kin", id: "kin-1", limit: 2 })
+    ).resolves.toEqual([
+      expect.objectContaining({ id: "message-3", text: "Third." }),
+      expect.objectContaining({ id: "message-4", text: "Fourth." })
+    ]);
+
+    expect(String(fetchMock.mock.calls[1]?.[0])).toBe(
+      "https://api.kindroid.ai/v1/get-chat-messages?ai_id=kin-1&limit=100&start_after_timestamp=1780000001000"
+    );
+  });
+
+  it("reports incomplete recent public API reads when the page budget is exhausted", async () => {
+    const fetchMock = vi.fn(async (_input: string | URL, _init?: RequestInit) =>
+      Response.json({
+        messages: [
+          { id: "message-1", sender_type: "user", timestamp: 1_780_000_000_000, message: "First." },
+          { id: "message-2", sender_type: "ai", timestamp: 1_780_000_001_000, message: "Second." }
+        ],
+        pagination: { hasMore: true, lastTimestamp: 1_780_000_001_000, limit: 100 }
+      })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      loadRecentKindroidChatHistoryWindow(testConfig(), testLogger, {
+        scope: "kin",
+        id: "kin-1",
+        limit: 2,
+        maxPages: 1
+      })
+    ).resolves.toMatchObject({
+      complete: false,
+      nextStartAfterTimestamp: 1_780_000_001_000,
+      pageCount: 1,
+      messages: [expect.objectContaining({ id: "message-1" }), expect.objectContaining({ id: "message-2" })]
+    });
   });
 
   it("paginates full public API chat history exports", async () => {

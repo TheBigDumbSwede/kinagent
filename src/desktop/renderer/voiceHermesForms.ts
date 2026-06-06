@@ -271,7 +271,7 @@ export function syncChatDynamismRangeLabels(context: VoiceHermesContext): void {
 function showFormPanel(elements: VoiceHermesElements, panel: "voice" | "hermes"): void {
   elements.kinDetailEmpty.hidden = true;
   elements.kinDetailContent.hidden = false;
-  elements.kinDetailContent.classList.remove("app-settings-content");
+  elements.kinDetailContent.classList.remove("app-settings-content", "scene-detail-content");
   elements.kinDetailContent.classList.add("form-detail-content");
   elements.fieldContent.hidden = true;
   elements.journalSuggestionPanel.hidden = true;

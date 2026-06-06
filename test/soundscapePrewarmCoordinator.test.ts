@@ -33,7 +33,7 @@ describe("SoundscapePrewarmCoordinator", () => {
             message: "The neon sign buzzes over the empty parking lot."
           }
         ],
-        pagination: { hasMore: false, lastTimestamp: 1_780_000_001_000, limit: 18 }
+        pagination: { hasMore: false, lastTimestamp: 1_780_000_001_000, limit: 100 }
       })
     );
     vi.stubGlobal("fetch", fetchMock);
@@ -45,7 +45,7 @@ describe("SoundscapePrewarmCoordinator", () => {
     await coordinator(hermes).prewarmKin(kin("kin-1", "Alexis"), "test");
 
     expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
-      "https://api.kindroid.ai/v1/get-chat-messages?ai_id=kin-1&limit=18"
+      "https://api.kindroid.ai/v1/get-chat-messages?ai_id=kin-1&limit=100"
     );
     expect(hermes.prewarmSoundscape).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -80,7 +80,7 @@ describe("SoundscapePrewarmCoordinator", () => {
             message: "The elevator dings and the lobby speakers crackle."
           }
         ],
-        pagination: { hasMore: false, lastTimestamp: 1_780_000_001_000, limit: 18 }
+        pagination: { hasMore: false, lastTimestamp: 1_780_000_001_000, limit: 100 }
       })
     );
     vi.stubGlobal("fetch", fetchMock);
@@ -106,7 +106,7 @@ describe("SoundscapePrewarmCoordinator", () => {
     );
 
     expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
-      "https://api.kindroid.ai/v1/get-chat-messages?group_id=group-1&limit=18"
+      "https://api.kindroid.ai/v1/get-chat-messages?group_id=group-1&limit=100"
     );
     expect(hermes.prewarmSoundscape).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -158,7 +158,7 @@ describe("SoundscapePrewarmCoordinator", () => {
             message: "The lobby speakers crackle."
           }
         ],
-        pagination: { hasMore: false, lastTimestamp: 1_780_000_001_000, limit: 18 }
+        pagination: { hasMore: false, lastTimestamp: 1_780_000_001_000, limit: 100 }
       })
     );
     vi.stubGlobal("fetch", fetchMock);
@@ -210,7 +210,7 @@ describe("SoundscapePrewarmCoordinator", () => {
             message: "Rain taps the glass."
           }
         ],
-        pagination: { hasMore: false, lastTimestamp: 1_780_000_000_000, limit: 18 }
+        pagination: { hasMore: false, lastTimestamp: 1_780_000_000_000, limit: 100 }
       })
     );
     vi.stubGlobal("fetch", fetchMock);

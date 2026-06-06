@@ -44,6 +44,7 @@ import {
   saveSelectedKinVoice,
   syncChatDynamismRangeLabels
 } from "./voiceHermesForms.js";
+import { renderPreviouslyOnPanel as renderPreviouslyOnPanelContent } from "./previouslyOnPanel.js";
 import { SoundscapeController } from "./SoundscapeController.js";
 import { shouldDeactivateActiveSoundscape, soundscapeKeyFromPayload } from "./SoundscapeActivation.js";
 import { describeSoundscapeLayerSample } from "./SoundscapeSampleSelection.js";
@@ -72,6 +73,7 @@ import type {
   KinSubscriptionSummary,
   KinVoicePreferenceResult,
   LocalSceneStateSummary,
+  PrewarmSourceSummary,
   PreviouslyOnBriefSummary
 } from "./rendererTypes.js";
 import type { MonitorMessage } from "./monitorMessages.js";
@@ -119,6 +121,7 @@ interface RendererState {
   journalSuggestions: JournalSuggestionSummary[];
   localScenes: LocalSceneStateSummary[];
   previouslyOnBriefs: PreviouslyOnBriefSummary[];
+  prewarmStates: PrewarmSourceSummary[];
   localSceneForceSaving: boolean;
   previouslyOnForceSaving: boolean;
   journalSavingId: string | null;
@@ -272,6 +275,7 @@ interface DesktopStatus {
   localScenes?: LocalSceneStateSummary[];
   previouslyOn?: PreviouslyOnBriefSummary[];
   soundscapes?: ScopedSoundscapeUpdate[];
+  prewarmStates?: PrewarmSourceSummary[];
   monitorRunning?: boolean;
   session?: {
     available?: boolean;
@@ -397,6 +401,7 @@ const state: RendererState = {
   journalSuggestions: [],
   localScenes: [],
   previouslyOnBriefs: [],
+  prewarmStates: [],
   localSceneForceSaving: false,
   previouslyOnForceSaving: false,
   journalSavingId: null,
@@ -868,6 +873,12 @@ window.kinagent.onEvent((message) => {
     return;
   }
 
+  if (message.channel === "prewarm-state-updated") {
+    upsertPrewarmState(message.payload as PrewarmSourceSummary | undefined);
+    renderActivity();
+    return;
+  }
+
   if (message.channel === "journal-suggestions-updated") {
     state.journalSuggestions = Array.isArray(message.payload) ? (message.payload as JournalSuggestionSummary[]) : [];
     renderActivity();
@@ -1000,6 +1011,7 @@ function renderStatus(status: DesktopStatus): void {
   state.journalSuggestions = status.journalSuggestions || [];
   state.localScenes = status.localScenes || [];
   state.previouslyOnBriefs = status.previouslyOn || [];
+  state.prewarmStates = status.prewarmStates || [];
   state.soundscapeUpdates = soundscapeUpdatesFromList(status.soundscapes || []);
   state.monitorRunning = Boolean(status.monitorRunning);
   state.sessionAvailable = Boolean(status.session?.available);
@@ -1390,7 +1402,7 @@ function renderGroupAudioTab(selectedGroup: GroupSummary): void {
   const preference = state.selectedGroupSoundscape?.soundscape || { enabled: false };
   elements.kinDetailEmpty.hidden = true;
   elements.kinDetailContent.hidden = false;
-  elements.kinDetailContent.classList.remove("app-settings-content");
+  elements.kinDetailContent.classList.remove("app-settings-content", "scene-detail-content");
   elements.kinDetailContent.classList.add("form-detail-content");
   elements.fieldContent.hidden = true;
   elements.journalSuggestionPanel.hidden = true;
@@ -1425,13 +1437,30 @@ function renderGroupAudioTab(selectedGroup: GroupSummary): void {
 function renderLocalSceneTab(scope: "kin" | "group", selectedEntity: KinSummary | GroupSummary | null): void {
   const scene = currentLocalScene(scope);
   const brief = currentPreviouslyOnBrief(scope);
-  renderCapturedDetailContent(capturedDetailContext(), {
-    content: scene ? localSceneContent(scene) : "No local scene metadata has been captured yet.",
-    history: [],
+  renderLocalSceneContent(scene ? localSceneContent(scene) : "No local scene metadata has been captured yet.", {
     stats: localSceneStats(scope, selectedEntity, scene)
   });
   renderPreviouslyOnPanel(scope, selectedEntity, brief);
   renderLocalSceneForceButton(scope, selectedEntity);
+}
+
+function renderLocalSceneContent(content: string, input: { stats: Array<{ label: string; value: string }> }): void {
+  elements.kinDetailEmpty.hidden = true;
+  elements.kinDetailContent.hidden = false;
+  elements.kinDetailContent.classList.remove("app-settings-content", "form-detail-content");
+  elements.kinDetailContent.classList.add("scene-detail-content");
+  elements.fieldContent.hidden = false;
+  elements.journalSuggestionPanel.hidden = true;
+  elements.appSettingsForm.hidden = true;
+  elements.voiceForm.hidden = true;
+  elements.groupAudioPanel.hidden = true;
+  elements.kinHermesForm.hidden = true;
+  elements.kinAnalyzePanel.hidden = true;
+  elements.chatExportPanel.hidden = true;
+  elements.timeline.hidden = true;
+  elements.fieldContent.replaceChildren();
+  elements.fieldContent.textContent = content;
+  renderDetailStats(input.stats);
 }
 
 function renderPreviouslyOnPanel(
@@ -1443,85 +1472,18 @@ function renderPreviouslyOnPanel(
     return;
   }
 
-  elements.previouslyOnPanel.hidden = false;
-  elements.previouslyOnPanel.replaceChildren();
-
-  const header = document.createElement("header");
-  const title = document.createElement("h3");
-  title.textContent =
-    `Previously On ${selectedEntity.name || (scope === "group" ? state.selectedGroupId : state.selectedKinId) || ""}`.trim();
-  const refreshButton = document.createElement("button");
-  refreshButton.type = "button";
-  refreshButton.className = "secondary compact";
-  refreshButton.textContent = state.previouslyOnForceSaving ? "Refreshing" : "Refresh Recap";
-  refreshButton.disabled = state.previouslyOnForceSaving;
-  refreshButton.addEventListener("click", () => {
-    void forceSelectedPreviouslyOnPrewarm(scope);
+  renderPreviouslyOnPanelContent({
+    container: elements.previouslyOnPanel,
+    title:
+      `Previously On ${selectedEntity.name || (scope === "group" ? state.selectedGroupId : state.selectedKinId) || ""}`.trim(),
+    brief,
+    catchup: currentPrewarmState(scope),
+    refreshSaving: state.previouslyOnForceSaving,
+    formatTimestamp: formatSceneTimestamp,
+    onRefresh: () => {
+      void forceSelectedPreviouslyOnPrewarm(scope);
+    }
   });
-  header.append(title, refreshButton);
-  elements.previouslyOnPanel.append(header);
-
-  if (!brief) {
-    const empty = document.createElement("p");
-    empty.className = "panel-note";
-    empty.textContent = "No continuity recap has been generated for this source yet.";
-    elements.previouslyOnPanel.append(empty);
-    return;
-  }
-
-  if (brief.recap) {
-    const recap = document.createElement("p");
-    recap.className = "previously-on-recap";
-    recap.textContent = brief.recap;
-    elements.previouslyOnPanel.append(recap);
-  }
-
-  appendBriefList("Known facts", stringItems(brief.facts));
-  appendBriefLine("Inferred tone", brief.inferredTone);
-  appendBriefList("Open threads", stringItems(brief.unresolvedThreads));
-  appendBriefLine("Suggested opening frame", brief.suggestedOpeningFrame);
-
-  const meta = document.createElement("p");
-  meta.className = "previously-on-meta";
-  meta.textContent = [
-    brief.updatedAt ? `Updated ${formatSceneTimestamp(brief.updatedAt)}` : null,
-    brief.confidence ? `Confidence ${brief.confidence}` : null
-  ]
-    .filter(Boolean)
-    .join(" · ");
-  if (meta.textContent) {
-    elements.previouslyOnPanel.append(meta);
-  }
-
-  function appendBriefLine(label: string, value: string | null | undefined): void {
-    if (!value) {
-      return;
-    }
-    const row = document.createElement("p");
-    row.className = "previously-on-line";
-    const strong = document.createElement("strong");
-    strong.textContent = `${label}: `;
-    row.append(strong, value);
-    elements.previouslyOnPanel.append(row);
-  }
-
-  function appendBriefList(label: string, values: string[]): void {
-    if (values.length === 0) {
-      return;
-    }
-    const group = document.createElement("div");
-    group.className = "previously-on-list";
-    const heading = document.createElement("strong");
-    heading.textContent = label;
-    const list = document.createElement("ul");
-    for (const value of values) {
-      const item = document.createElement("li");
-      item.textContent = value;
-      list.append(item);
-    }
-    group.append(heading, list);
-    elements.previouslyOnPanel.append(group);
-  }
 }
 
 function renderLocalSceneForceButton(scope: "kin" | "group", selectedEntity: KinSummary | GroupSummary | null): void {
@@ -1776,6 +1738,15 @@ function currentPreviouslyOnBrief(scope: "kin" | "group"): PreviouslyOnBriefSumm
   return state.previouslyOnBriefs.find((brief) => brief.scope === "kin" && brief.kinId === state.selectedKinId) || null;
 }
 
+function currentPrewarmState(scope: "kin" | "group"): PrewarmSourceSummary | null {
+  const id = scope === "group" ? state.selectedGroupId : state.selectedKinId;
+  if (!id) {
+    return null;
+  }
+
+  return state.prewarmStates.find((prewarm) => prewarm.sourceKey === `${scope}:${id}`) || null;
+}
+
 function upsertLocalScene(scene: LocalSceneStateSummary | null | undefined): void {
   if (!scene?.scope) {
     return;
@@ -1800,8 +1771,12 @@ function upsertPreviouslyOnBrief(brief: PreviouslyOnBriefSummary | null | undefi
   state.previouslyOnBriefs = [brief, ...state.previouslyOnBriefs.filter((current) => !sameSource(current))];
 }
 
-function stringItems(values: unknown[] | null | undefined): string[] {
-  return (values ?? []).filter((value): value is string => typeof value === "string" && Boolean(value.trim()));
+function upsertPrewarmState(prewarm: PrewarmSourceSummary | null | undefined): void {
+  if (!prewarm?.sourceKey) {
+    return;
+  }
+
+  state.prewarmStates = [prewarm, ...state.prewarmStates.filter((current) => current.sourceKey !== prewarm.sourceKey)];
 }
 
 function localSceneContent(scene: LocalSceneStateSummary): string {

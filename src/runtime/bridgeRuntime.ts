@@ -36,7 +36,7 @@ import {
   type KinSubscriptionStatus
 } from "./kinSubscriptionSupervisor.js";
 import { LocalScenePrewarmCoordinator } from "./localScenePrewarmCoordinator.js";
-import { PrewarmStateStore, prewarmTriggerFromNotification } from "./prewarmStateStore.js";
+import { PrewarmStateStore, prewarmTriggerFromNotification, type PrewarmSourceState } from "./prewarmStateStore.js";
 import { PreviouslyOnPrewarmCoordinator } from "./previouslyOnPrewarmCoordinator.js";
 import { SoundscapePrewarmCoordinator } from "./soundscapePrewarmCoordinator.js";
 import { VoiceRuntime, voiceProviderConfigured } from "../voice/voiceRuntime.js";
@@ -65,6 +65,7 @@ export type BridgeRuntimeEvent =
   | { channel: "local-scene-updated"; payload: LocalSceneState }
   | { channel: "previously-on-updated"; payload: PreviouslyOnBrief }
   | { channel: "soundscape-updated"; payload: ScopedSoundscapeUpdate }
+  | { channel: "prewarm-state-updated"; payload: PrewarmSourceState }
   | { channel: "identity-capture-completed"; payload: CaptureKindroidStateResult }
   | { channel: "identity-capture-failed"; payload: { error: string } };
 
@@ -91,6 +92,7 @@ export class BridgeRuntime {
   private readonly localScenePrewarm: LocalScenePrewarmCoordinator;
   private readonly previouslyOnPrewarm: PreviouslyOnPrewarmCoordinator;
   private readonly soundscapePrewarm: SoundscapePrewarmCoordinator;
+  private readonly resumedChatHistoryCatchups = new Set<string>();
   private started = false;
   private startupCaptureStarted = false;
 
@@ -169,19 +171,22 @@ export class BridgeRuntime {
       config: options.config,
       logger: options.logger,
       hermes: this.hermes,
-      prewarmState: this.prewarmState
+      prewarmState: this.prewarmState,
+      onPrewarmStateChanged: (state) => this.emit({ channel: "prewarm-state-updated", payload: state })
     });
     this.previouslyOnPrewarm = new PreviouslyOnPrewarmCoordinator({
       config: options.config,
       logger: options.logger,
       hermes: this.hermes,
-      prewarmState: this.prewarmState
+      prewarmState: this.prewarmState,
+      onPrewarmStateChanged: (state) => this.emit({ channel: "prewarm-state-updated", payload: state })
     });
     this.soundscapePrewarm = new SoundscapePrewarmCoordinator({
       config: options.config,
       logger: options.logger,
       hermes: this.hermes,
       prewarmState: this.prewarmState,
+      onPrewarmStateChanged: (state) => this.emit({ channel: "prewarm-state-updated", payload: state }),
       isKinSoundscapeEnabled: (kinId) => this.kinSubscriptionSupervisor.kinSoundscapePreference(kinId).enabled,
       isGroupSoundscapeEnabled: (groupId) =>
         this.groupSubscriptionSupervisor.groupSoundscapePreference(groupId).enabled,
@@ -213,6 +218,7 @@ export class BridgeRuntime {
           running: statuses.filter((status) => status.running).length,
           disabled: statuses.filter((status) => !status.enabled).length
         });
+        this.resumePersistedChatHistoryCatchups();
         this.emit({ channel: "kins-updated", payload: statuses });
       },
       onRefreshError: (error) => {
@@ -243,6 +249,7 @@ export class BridgeRuntime {
           running: statuses.filter((status) => status.running).length,
           disabled: statuses.filter((status) => !status.enabled).length
         });
+        this.resumePersistedChatHistoryCatchups();
         this.emit({ channel: "groups-updated", payload: statuses });
       },
       onRefreshError: (error) => {
@@ -574,7 +581,8 @@ export class BridgeRuntime {
       journalSuggestions: this.pendingJournalSuggestions(),
       localScenes: this.localScenes.list(),
       previouslyOn: this.previouslyOn.list(),
-      soundscapes: this.soundscapes.list()
+      soundscapes: this.soundscapes.list(),
+      prewarmStates: this.prewarmState.list()
     };
   }
 
@@ -587,6 +595,48 @@ export class BridgeRuntime {
     }
     for (const soundscape of this.soundscapes.list()) {
       this.soundscapePrewarm.markReady(soundscape);
+    }
+  }
+
+  private resumePersistedChatHistoryCatchups(): void {
+    for (const state of this.prewarmState.list()) {
+      if (typeof state.chatHistoryCursorTimestamp !== "number") {
+        continue;
+      }
+
+      const [scope, id] = state.sourceKey.split(":", 2);
+      if (scope === "kin") {
+        if (this.resumedChatHistoryCatchups.has(state.sourceKey)) {
+          continue;
+        }
+        const kin = this.kinSubscriptionSupervisor.statuses().find((status) => status.kin.aiId === id)?.kin;
+        if (kin) {
+          this.resumedChatHistoryCatchups.add(state.sourceKey);
+          this.options.logger.info("Scheduling persisted chat history catch-up.", {
+            scope,
+            id,
+            nextStartAfterTimestamp: state.chatHistoryCursorTimestamp
+          });
+          this.previouslyOnPrewarm.resumeKinCatchup(kin);
+        }
+        continue;
+      }
+
+      if (scope === "group") {
+        if (this.resumedChatHistoryCatchups.has(state.sourceKey)) {
+          continue;
+        }
+        const group = this.groupSubscriptionSupervisor.statuses().find((status) => status.group.groupId === id)?.group;
+        if (group) {
+          this.resumedChatHistoryCatchups.add(state.sourceKey);
+          this.options.logger.info("Scheduling persisted group chat history catch-up.", {
+            scope,
+            id,
+            nextStartAfterTimestamp: state.chatHistoryCursorTimestamp
+          });
+          this.previouslyOnPrewarm.resumeGroupCatchup(group);
+        }
+      }
     }
   }
 
@@ -1055,6 +1105,7 @@ export interface BridgeRuntimeStatus {
   localScenes: LocalSceneState[];
   previouslyOn: PreviouslyOnBrief[];
   soundscapes: StoredSoundscapeUpdate[];
+  prewarmStates: PrewarmSourceState[];
 }
 
 export interface KinAmbientContextPreference {

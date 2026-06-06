@@ -45,7 +45,7 @@ export function renderDetailEmpty(context: Pick<CapturedDetailContext, "elements
   elements.kinDetailEmpty.hidden = false;
   elements.kinDetailEmpty.textContent = message;
   elements.kinDetailContent.hidden = true;
-  elements.kinDetailContent.classList.remove("app-settings-content", "form-detail-content");
+  elements.kinDetailContent.classList.remove("app-settings-content", "form-detail-content", "scene-detail-content");
   elements.appSettingsForm.hidden = true;
   elements.voiceForm.hidden = true;
   elements.groupAudioPanel.hidden = true;
@@ -58,7 +58,7 @@ export function renderDetailContent(context: CapturedDetailContext, detail: Capt
   const { state, elements } = context;
   elements.kinDetailEmpty.hidden = true;
   elements.kinDetailContent.hidden = false;
-  elements.kinDetailContent.classList.remove("app-settings-content", "form-detail-content");
+  elements.kinDetailContent.classList.remove("app-settings-content", "form-detail-content", "scene-detail-content");
   elements.fieldContent.hidden = false;
   elements.journalSuggestionPanel.hidden = true;
   elements.appSettingsForm.hidden = true;

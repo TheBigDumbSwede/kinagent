@@ -419,12 +419,14 @@ h2 {
 }
 
 .detail-content.app-settings-content,
-.detail-content.form-detail-content {
+.detail-content.form-detail-content,
+.detail-content.scene-detail-content {
   grid-template-columns: minmax(0, 1fr);
 }
 
 .detail-content.app-settings-content .detail-main,
-.detail-content.form-detail-content .detail-main {
+.detail-content.form-detail-content .detail-main,
+.detail-content.scene-detail-content .detail-main {
   border-right: 0;
 }
 
@@ -511,6 +513,7 @@ h2 {
 
 .previously-on-recap,
 .previously-on-line,
+.previously-on-catchup,
 .previously-on-meta {
   margin: 0;
   font-size: 12px;
@@ -519,6 +522,13 @@ h2 {
 
 .previously-on-recap {
   color: #26384a;
+}
+
+.previously-on-catchup {
+  border-left: 3px solid #2d5f87;
+  background: #eef5f9;
+  color: #2d5a7b;
+  padding: 7px 9px;
 }
 
 .previously-on-line {

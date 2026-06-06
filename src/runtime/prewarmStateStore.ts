@@ -26,6 +26,7 @@ export interface PrewarmSourceState {
   lastLocalScenePrewarmAt?: string;
   lastSoundscapePrewarmAt?: string;
   lastPreviouslyOnPrewarmAt?: string;
+  chatHistoryCursorTimestamp?: number;
   failureCount?: number;
   updatedAt: string;
 }
@@ -97,6 +98,27 @@ export class PrewarmStateStore {
     return this.update(source, (previous) => ({
       ...previous,
       [readyField(kind)]: false,
+      updatedAt: new Date().toISOString()
+    }));
+  }
+
+  chatHistoryStartAfter(source: PrewarmSourceKey): number | undefined {
+    const state = this.get(source);
+    return state?.chatHistoryCursorTimestamp ?? publicApiTimestampFromIso(state?.lastPrewarmTimestamp);
+  }
+
+  markChatHistoryCursor(source: PrewarmSourceKey, cursor: number): PrewarmSourceState {
+    return this.update(source, (previous) => ({
+      ...previous,
+      chatHistoryCursorTimestamp: cursor,
+      updatedAt: new Date().toISOString()
+    }));
+  }
+
+  clearChatHistoryCursor(source: PrewarmSourceKey): PrewarmSourceState {
+    return this.update(source, (previous) => ({
+      ...previous,
+      chatHistoryCursorTimestamp: undefined,
       updatedAt: new Date().toISOString()
     }));
   }
@@ -195,4 +217,13 @@ function isTriggerNewer(trigger: PrewarmTrigger, state: PrewarmSourceState): boo
   }
 
   return Boolean(trigger.documentId && trigger.documentId !== state.lastPrewarmMessageId);
+}
+
+function publicApiTimestampFromIso(value: string | null | undefined): number | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }

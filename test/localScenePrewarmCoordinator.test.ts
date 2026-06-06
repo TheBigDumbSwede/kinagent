@@ -32,7 +32,7 @@ describe("LocalScenePrewarmCoordinator", () => {
             message: "The reading room lights are dim except for one desk lamp."
           }
         ],
-        pagination: { hasMore: false, lastTimestamp: 1_780_000_001_000, limit: 18 }
+        pagination: { hasMore: false, lastTimestamp: 1_780_000_001_000, limit: 100 }
       })
     );
     vi.stubGlobal("fetch", fetchMock);
@@ -45,7 +45,7 @@ describe("LocalScenePrewarmCoordinator", () => {
     await coordinator(hermes).prewarmKin(kin("kin-1", "Alexis"), "test");
 
     expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
-      "https://api.kindroid.ai/v1/get-chat-messages?ai_id=kin-1&limit=18"
+      "https://api.kindroid.ai/v1/get-chat-messages?ai_id=kin-1&limit=100"
     );
     expect(hermes.prewarmLocalScene).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -81,7 +81,7 @@ describe("LocalScenePrewarmCoordinator", () => {
             message: "The elevator dings and the lobby speakers crackle."
           }
         ],
-        pagination: { hasMore: false, lastTimestamp: 1_780_000_001_000, limit: 18 }
+        pagination: { hasMore: false, lastTimestamp: 1_780_000_001_000, limit: 100 }
       })
     );
     vi.stubGlobal("fetch", fetchMock);
@@ -94,7 +94,7 @@ describe("LocalScenePrewarmCoordinator", () => {
     await coordinator(hermes).prewarmGroup(group("group-1", "Evening Group"), null, "test");
 
     expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
-      "https://api.kindroid.ai/v1/get-chat-messages?group_id=group-1&limit=18"
+      "https://api.kindroid.ai/v1/get-chat-messages?group_id=group-1&limit=100"
     );
     expect(hermes.prewarmLocalScene).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -141,7 +141,7 @@ describe("LocalScenePrewarmCoordinator", () => {
             message: "The room is unchanged."
           }
         ],
-        pagination: { hasMore: false, lastTimestamp: 1_780_000_001_000, limit: 18 }
+        pagination: { hasMore: false, lastTimestamp: 1_780_000_001_000, limit: 100 }
       })
     );
     vi.stubGlobal("fetch", fetchMock);

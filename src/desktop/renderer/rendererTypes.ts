@@ -174,6 +174,20 @@ export interface PreviouslyOnBriefSummary {
   confidence?: "low" | "medium" | "high" | string | null;
 }
 
+export interface PrewarmSourceSummary {
+  sourceKey?: string | null;
+  lastPrewarmMessageId?: string | null;
+  lastPrewarmTimestamp?: string | null;
+  localSceneReady?: boolean;
+  soundscapeReady?: boolean;
+  previouslyOnReady?: boolean;
+  lastLocalScenePrewarmAt?: string | null;
+  lastSoundscapePrewarmAt?: string | null;
+  lastPreviouslyOnPrewarmAt?: string | null;
+  chatHistoryCursorTimestamp?: number | null;
+  updatedAt?: string | null;
+}
+
 export interface CapturedHistoryEntry {
   hash?: string | null;
   shortHash?: string | null;

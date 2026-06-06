@@ -11,6 +11,7 @@ import type { Logger } from "../src/util/logger.js";
 
 describe("PreviouslyOnPrewarmCoordinator", () => {
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
     vi.clearAllMocks();
   });
@@ -32,7 +33,7 @@ describe("PreviouslyOnPrewarmCoordinator", () => {
             message: "Alexis notices and quietly starts making tea."
           }
         ],
-        pagination: { hasMore: false, lastTimestamp: 1_780_000_001_000, limit: 24 }
+        pagination: { hasMore: false, lastTimestamp: 1_780_000_001_000, limit: 100 }
       })
     );
     vi.stubGlobal("fetch", fetchMock);
@@ -44,7 +45,7 @@ describe("PreviouslyOnPrewarmCoordinator", () => {
     await coordinator(hermes).prewarmKin(kin("kin-1", "Alexis"), "test");
 
     expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
-      "https://api.kindroid.ai/v1/get-chat-messages?ai_id=kin-1&limit=24"
+      "https://api.kindroid.ai/v1/get-chat-messages?ai_id=kin-1&limit=100"
     );
     expect(hermes.prewarmPreviouslyOn).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -80,7 +81,7 @@ describe("PreviouslyOnPrewarmCoordinator", () => {
             message: "Nobody can find the room key."
           }
         ],
-        pagination: { hasMore: false, lastTimestamp: 1_780_000_001_000, limit: 24 }
+        pagination: { hasMore: false, lastTimestamp: 1_780_000_001_000, limit: 100 }
       })
     );
     vi.stubGlobal("fetch", fetchMock);
@@ -92,7 +93,7 @@ describe("PreviouslyOnPrewarmCoordinator", () => {
     await coordinator(hermes).prewarmGroup(group("group-1", "Evening Group"), null, "test");
 
     expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
-      "https://api.kindroid.ai/v1/get-chat-messages?group_id=group-1&limit=24"
+      "https://api.kindroid.ai/v1/get-chat-messages?group_id=group-1&limit=100"
     );
     expect(hermes.prewarmPreviouslyOn).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -116,7 +117,7 @@ describe("PreviouslyOnPrewarmCoordinator", () => {
             message: "Alexis sets the tea down."
           }
         ],
-        pagination: { hasMore: false, lastTimestamp: 1_780_000_001_000, limit: 24 }
+        pagination: { hasMore: false, lastTimestamp: 1_780_000_001_000, limit: 100 }
       })
     );
     vi.stubGlobal("fetch", fetchMock);
@@ -145,14 +146,156 @@ describe("PreviouslyOnPrewarmCoordinator", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(hermes.prewarmPreviouslyOn).toHaveBeenCalledTimes(1);
   });
+
+  it("defers prewarm and saves the chat history cursor when public API catch-up is incomplete", async () => {
+    const fetchMock = vi
+      .fn(async (_input: string | URL, _init?: RequestInit) => Response.json({ messages: [] }))
+      .mockResolvedValueOnce(
+        Response.json({
+          messages: [
+            {
+              id: "message-1",
+              sender_type: "user",
+              timestamp: 1_780_000_000_000,
+              message: "Very old setup."
+            },
+            {
+              id: "message-2",
+              sender_type: "ai",
+              timestamp: 1_780_000_001_000,
+              message: "Still not current."
+            }
+          ],
+          pagination: { hasMore: true, lastTimestamp: 1_780_000_001_000, limit: 100 }
+        })
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          messages: [
+            {
+              id: "message-3",
+              sender_type: "user",
+              timestamp: 1_780_000_002_000,
+              message: "A later but still incomplete page."
+            },
+            {
+              id: "message-4",
+              sender_type: "ai",
+              timestamp: 1_780_000_003_000,
+              message: "The newest page is still beyond this one."
+            }
+          ],
+          pagination: { hasMore: true, lastTimestamp: 1_780_000_003_000, limit: 100 }
+        })
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const hermes: HermesAdapter = {
+      handleChatChanged: vi.fn(),
+      prewarmPreviouslyOn: vi.fn()
+    };
+    const prewarmState = testPrewarmStateStore();
+
+    await coordinator(hermes, prewarmState).prewarmKin(kin("kin-1", "Alexis"), "manual-force", { force: true });
+
+    expect(hermes.prewarmPreviouslyOn).not.toHaveBeenCalled();
+    expect(prewarmState.get({ scope: "kin", id: "kin-1" })).toMatchObject({
+      chatHistoryCursorTimestamp: 1_780_000_003_000
+    });
+  });
+
+  it("continues deferred chat history catch-up automatically", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi
+      .fn(async (_input: string | URL, _init?: RequestInit) => Response.json({ messages: [] }))
+      .mockResolvedValueOnce(
+        Response.json({
+          messages: [
+            { id: "message-1", sender_type: "user", timestamp: 1_780_000_000_000, message: "Older setup." },
+            { id: "message-2", sender_type: "ai", timestamp: 1_780_000_001_000, message: "Still older." }
+          ],
+          pagination: { hasMore: true, lastTimestamp: 1_780_000_001_000, limit: 100 }
+        })
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          messages: [
+            { id: "message-3", sender_type: "user", timestamp: 1_780_000_002_000, message: "Middle setup." },
+            { id: "message-4", sender_type: "ai", timestamp: 1_780_000_003_000, message: "Middle response." }
+          ],
+          pagination: { hasMore: true, lastTimestamp: 1_780_000_003_000, limit: 100 }
+        })
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          messages: [
+            { id: "message-5", sender_type: "user", timestamp: 1_780_000_004_000, message: "Current setup." },
+            { id: "message-6", sender_type: "ai", timestamp: 1_780_000_005_000, message: "Current response." }
+          ],
+          pagination: { hasMore: false, lastTimestamp: 1_780_000_005_000, limit: 100 }
+        })
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const hermes: HermesAdapter = {
+      handleChatChanged: vi.fn(),
+      prewarmPreviouslyOn: vi.fn()
+    };
+    const prewarmState = testPrewarmStateStore();
+
+    await coordinator(hermes, prewarmState).prewarmKin(kin("kin-1", "Alexis"), "manual-force", { force: true });
+    expect(hermes.prewarmPreviouslyOn).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(hermes.prewarmPreviouslyOn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        documentId: "message-6",
+        text: expect.stringContaining("Current response.")
+      })
+    );
+  });
+
+  it("can resume persisted Kin chat history catch-up without a manual refresh", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn(async (_input: string | URL, _init?: RequestInit) =>
+      Response.json({
+        messages: [
+          { id: "message-7", sender_type: "user", timestamp: 1_780_000_006_000, message: "Persisted setup." },
+          { id: "message-8", sender_type: "ai", timestamp: 1_780_000_007_000, message: "Persisted response." }
+        ],
+        pagination: { hasMore: false, lastTimestamp: 1_780_000_007_000, limit: 100 }
+      })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const hermes: HermesAdapter = {
+      handleChatChanged: vi.fn(),
+      prewarmPreviouslyOn: vi.fn()
+    };
+    const prewarmState = testPrewarmStateStore();
+    prewarmState.markChatHistoryCursor({ scope: "kin", id: "kin-1" }, 1_780_000_005_000);
+
+    coordinator(hermes, prewarmState).resumeKinCatchup(kin("kin-1", "Alexis"));
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
+      "https://api.kindroid.ai/v1/get-chat-messages?ai_id=kin-1&limit=100&start_after_timestamp=1780000005000"
+    );
+    expect(hermes.prewarmPreviouslyOn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        documentId: "message-8",
+        text: expect.stringContaining("Persisted response.")
+      })
+    );
+    expect(prewarmState.get({ scope: "kin", id: "kin-1" })?.chatHistoryCursorTimestamp).toBeUndefined();
+  });
 });
 
-function coordinator(hermes: HermesAdapter): PreviouslyOnPrewarmCoordinator {
+function coordinator(hermes: HermesAdapter, prewarmState = testPrewarmStateStore()): PreviouslyOnPrewarmCoordinator {
   return new PreviouslyOnPrewarmCoordinator({
     config: testConfig(),
     logger: testLogger,
     hermes,
-    prewarmState: testPrewarmStateStore()
+    prewarmState
   });
 }
 

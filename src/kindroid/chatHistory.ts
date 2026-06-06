@@ -11,21 +11,76 @@ export interface KindroidChatHistoryTarget {
   id: string;
 }
 
+export interface KindroidRecentChatHistoryWindow {
+  messages: NormalizedKindroidMessage[];
+  complete: boolean;
+  nextStartAfterTimestamp?: number;
+  status?: number;
+  responseText?: string;
+  pageCount: number;
+}
+
+export async function loadRecentKindroidChatHistoryWindow(
+  config: AppConfig,
+  logger: Logger,
+  options: KindroidChatHistoryTarget & {
+    limit: number;
+    maxPages: number;
+    startAfterTimestamp?: number;
+  }
+): Promise<KindroidRecentChatHistoryWindow> {
+  const client = new KindroidClient(config, logger);
+  const messages: KindroidChatHistoryMessage[] = [];
+  let startAfterTimestamp = options.startAfterTimestamp;
+  let pageCount = 0;
+
+  for (;;) {
+    if (pageCount >= Math.max(1, options.maxPages)) {
+      return recentWindowResult(messages, options, false, startAfterTimestamp, pageCount);
+    }
+
+    const result = await pacedGetChatMessages(client, {
+      aiId: options.scope === "kin" ? options.id : undefined,
+      groupId: options.scope === "group" ? options.id : undefined,
+      limit: 100,
+      startAfterTimestamp
+    });
+    pageCount += 1;
+    if (!result.ok) {
+      return {
+        ...recentWindowResult(messages, options, false, startAfterTimestamp, pageCount),
+        status: result.status,
+        responseText: result.responseText
+      };
+    }
+
+    messages.push(...result.messages);
+    if (!result.pagination?.hasMore || typeof result.pagination.lastTimestamp !== "number") {
+      return recentWindowResult(messages, options, true, undefined, pageCount);
+    }
+    if (result.pagination.lastTimestamp === startAfterTimestamp) {
+      throw new Error("Kindroid get-chat-messages pagination did not advance.");
+    }
+    startAfterTimestamp = result.pagination.lastTimestamp;
+  }
+}
+
 export async function loadRecentKindroidChatHistoryMessages(
   config: AppConfig,
   logger: Logger,
   options: KindroidChatHistoryTarget & { limit: number }
 ): Promise<NormalizedKindroidMessage[]> {
-  const result = await new KindroidClient(config, logger).getChatMessages({
-    aiId: options.scope === "kin" ? options.id : undefined,
-    groupId: options.scope === "group" ? options.id : undefined,
-    limit: options.limit
+  const result = await loadRecentKindroidChatHistoryWindow(config, logger, {
+    ...options,
+    maxPages: 2
   });
-  if (!result.ok) {
-    throw new Error(`Kindroid get-chat-messages failed with HTTP ${result.status}.`);
+  if (!result.complete) {
+    if (result.status) {
+      throw new Error(`Kindroid get-chat-messages failed with HTTP ${result.status}.`);
+    }
+    throw new Error("Kindroid get-chat-messages recent read stopped before the newest page; retry later.");
   }
-
-  return result.messages.map((message) => normalizeKindroidChatHistoryMessage(message, options));
+  return result.messages;
 }
 
 export async function loadAllKindroidChatHistoryMessages(
@@ -38,7 +93,7 @@ export async function loadAllKindroidChatHistoryMessages(
   let startAfterTimestamp: number | undefined;
 
   for (;;) {
-    const result = await client.getChatMessages({
+    const result = await pacedGetChatMessages(client, {
       aiId: options.scope === "kin" ? options.id : undefined,
       groupId: options.scope === "group" ? options.id : undefined,
       limit: 100,
@@ -102,4 +157,48 @@ function normalizePublicApiTimestamp(value: unknown): string | null {
 
   const milliseconds = value > 10_000_000_000 ? value : value * 1000;
   return new Date(milliseconds).toISOString();
+}
+
+function recentWindowResult(
+  messages: KindroidChatHistoryMessage[],
+  options: KindroidChatHistoryTarget & { limit: number },
+  complete: boolean,
+  nextStartAfterTimestamp: number | undefined,
+  pageCount: number
+): KindroidRecentChatHistoryWindow {
+  return {
+    messages: messages
+      .slice(-Math.max(1, options.limit))
+      .map((message) => normalizeKindroidChatHistoryMessage(message, options)),
+    complete,
+    nextStartAfterTimestamp,
+    pageCount
+  };
+}
+
+let chatHistoryRequestChain: Promise<void> = Promise.resolve();
+let nextChatHistoryRequestAt = 0;
+const chatHistoryRequestIntervalMs = process.env.NODE_ENV === "test" ? 0 : 500;
+
+async function pacedGetChatMessages(
+  client: KindroidClient,
+  input: Parameters<KindroidClient["getChatMessages"]>[0]
+): ReturnType<KindroidClient["getChatMessages"]> {
+  const previous = chatHistoryRequestChain;
+  let release!: () => void;
+  chatHistoryRequestChain = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+
+  await previous.catch(() => undefined);
+  try {
+    const waitMs = nextChatHistoryRequestAt - Date.now();
+    if (waitMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
+    }
+    return await client.getChatMessages(input);
+  } finally {
+    nextChatHistoryRequestAt = Date.now() + chatHistoryRequestIntervalMs;
+    release();
+  }
 }
