@@ -81,12 +81,18 @@
           <button class="detail-tab active" type="button" data-mode="monitor" role="tab" aria-selected="true">
             Monitor
           </button>
-          <button class="detail-tab" type="button" data-mode="settings" role="tab" aria-selected="false">Kin</button>
+          <button
+            id="entityDetailTab"
+            class="detail-tab"
+            type="button"
+            data-mode="settings"
+            role="tab"
+            aria-selected="false"
+          >
+            Kin
+          </button>
           <button class="detail-tab" type="button" data-mode="app-settings" role="tab" aria-selected="false">
             Settings
-          </button>
-          <button class="detail-tab" type="button" data-mode="export" role="tab" aria-selected="false" hidden>
-            Export
           </button>
         </div>
         <div id="kinDetailTabs" class="detail-tabs kin-detail-tabs" role="tablist" aria-label="Kin detail tabs" hidden>
@@ -98,6 +104,23 @@
           <button class="detail-tab" type="button" data-mode="voice" role="tab" aria-selected="false">Audio</button>
           <button class="detail-tab" type="button" data-mode="analyze" role="tab" aria-selected="false">Analyze</button>
           <button class="detail-tab" type="button" data-mode="export" role="tab" aria-selected="false">Export</button>
+        </div>
+        <div
+          id="groupDetailTabs"
+          class="detail-tabs kin-detail-tabs"
+          role="tablist"
+          aria-label="Group detail tabs"
+          hidden
+        >
+          <button class="detail-tab active" type="button" data-mode="settings" role="tab" aria-selected="true">
+            Captured
+          </button>
+          <button class="detail-tab" type="button" data-mode="group-audio" role="tab" aria-selected="false">
+            Audio
+          </button>
+          <button class="detail-tab" type="button" data-mode="group-export" role="tab" aria-selected="false">
+            Export
+          </button>
         </div>
         <div id="settingTabs" class="setting-tabs" role="tablist" aria-label="Captured setting tabs" hidden>
           <button class="setting-tab active" type="button" data-setting="backstory" role="tab" aria-selected="true">
@@ -119,6 +142,44 @@
             Background
           </button>
           <button class="setting-tab" type="button" data-setting="profile" role="tab" aria-selected="false">
+            Profile
+          </button>
+        </div>
+        <div id="groupSettingTabs" class="setting-tabs" role="tablist" aria-label="Captured group setting tabs" hidden>
+          <button
+            class="setting-tab active"
+            type="button"
+            data-group-setting="group-context"
+            role="tab"
+            aria-selected="true"
+          >
+            Context
+          </button>
+          <button
+            class="setting-tab"
+            type="button"
+            data-group-setting="group-directive"
+            role="tab"
+            aria-selected="false"
+          >
+            Directive
+          </button>
+          <button class="setting-tab" type="button" data-group-setting="group-scene" role="tab" aria-selected="false">
+            Current Scene
+          </button>
+          <button
+            class="setting-tab"
+            type="button"
+            data-group-setting="group-scene-suggestion"
+            role="tab"
+            aria-selected="false"
+          >
+            Suggestion
+          </button>
+          <button class="setting-tab" type="button" data-group-setting="group-members" role="tab" aria-selected="false">
+            Members
+          </button>
+          <button class="setting-tab" type="button" data-group-setting="group-profile" role="tab" aria-selected="false">
             Profile
           </button>
         </div>
@@ -321,6 +382,23 @@
                     <button id="voiceSaveButton" type="submit">Save Audio</button>
                   </div>
                 </form>
+                <div id="groupAudioPanel" class="kin-action-panel" hidden>
+                  <section class="settings-section">
+                    <h2>Soundscape</h2>
+                    <label class="checkbox-label">
+                      <input id="groupSoundscapeEnabledInput" type="checkbox" />
+                      <span>Allow Hermes soundscape for this Group</span>
+                    </label>
+                    <p id="groupSoundscapeStatusLine" class="panel-note"></p>
+                    <div>
+                      <h3 class="subsection-heading">Current Layers</h3>
+                      <ul id="groupSoundscapeLayerList" class="soundscape-layer-list"></ul>
+                    </div>
+                    <div class="button-row narrow">
+                      <button id="groupSoundscapeSaveButton" type="button">Save Audio</button>
+                    </div>
+                  </section>
+                </div>
                 <form id="kinHermesForm" class="kin-hermes-form" hidden>
                   <section class="settings-section">
                     <h2>Ambient Context</h2>

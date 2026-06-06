@@ -1,7 +1,12 @@
 import type { AppConfig } from "../config/types.js";
 import { KindroidApiClient, type KindroidGroup } from "../kindroid/client/index.js";
 import type { Logger } from "../util/logger.js";
-import { loadGroupSubscriptionPreferences, saveGroupSubscriptionPreferences } from "./groupSubscriptionPreferences.js";
+import {
+  loadGroupSubscriptionPreferences,
+  normalizeGroupSoundscapePreference,
+  saveGroupSubscriptionPreferences,
+  type GroupSoundscapePreference
+} from "./groupSubscriptionPreferences.js";
 import { type MonitorStopReason, SubscriptionSupervisor, type SubscriptionStatus } from "./subscriptionSupervisor.js";
 
 export type GroupMonitorStopReason = MonitorStopReason;
@@ -10,6 +15,7 @@ export interface GroupSubscriptionStatus {
   group: KindroidGroup;
   enabled: boolean;
   running: boolean;
+  soundscape: GroupSoundscapePreference;
 }
 
 export type GroupRefreshState =
@@ -33,13 +39,19 @@ export interface GroupSubscriptionSupervisorOptions {
 
 export class GroupSubscriptionSupervisor {
   private readonly inner: SubscriptionSupervisor<KindroidGroup>;
+  private readonly disabledGroupIds: Set<string>;
+  private readonly soundscapePreferences: Map<string, GroupSoundscapePreference>;
+  private readonly config: AppConfig;
 
   constructor(options: GroupSubscriptionSupervisorOptions) {
+    this.config = options.config;
     const preferences = loadGroupSubscriptionPreferences(options.config);
+    this.disabledGroupIds = preferences.disabledGroupIds;
+    this.soundscapePreferences = preferences.soundscape;
     this.inner = new SubscriptionSupervisor({
       refreshMs: options.refreshMs,
       pageSize: options.pageSize,
-      disabledIds: preferences.disabledGroupIds,
+      disabledIds: this.disabledGroupIds,
       listResources: async () => {
         const client = new KindroidApiClient(options.config, options.logger);
         return client.groups.list();
@@ -53,10 +65,13 @@ export class GroupSubscriptionSupervisor {
         aiIds: []
       }),
       saveDisabledIds: (disabledGroupIds) => {
-        saveGroupSubscriptionPreferences(options.config, { disabledGroupIds });
+        saveGroupSubscriptionPreferences(options.config, {
+          disabledGroupIds,
+          soundscape: this.soundscapePreferences
+        });
       },
       startResource: options.startGroup,
-      onResourcesUpdated: (statuses) => options.onGroupsUpdated?.(toGroupStatuses(statuses)),
+      onResourcesUpdated: (statuses) => options.onGroupsUpdated?.(this.toGroupStatuses(statuses)),
       onRefreshError: options.onRefreshError,
       onMonitorStarted: options.onMonitorStarted,
       onMonitorStopped: options.onMonitorStopped,
@@ -85,12 +100,33 @@ export class GroupSubscriptionSupervisor {
     await this.inner.setEnabled(groupId, enabled);
   }
 
+  setGroupSoundscapePreference(
+    groupId: string,
+    preference: Partial<GroupSoundscapePreference>
+  ): GroupSoundscapePreference {
+    if (!groupId) {
+      throw new Error("Missing Group id.");
+    }
+
+    const saved = normalizeGroupSoundscapePreference(preference);
+    this.soundscapePreferences.set(groupId, saved);
+    saveGroupSubscriptionPreferences(this.config, {
+      disabledGroupIds: this.disabledGroupIds,
+      soundscape: this.soundscapePreferences
+    });
+    return saved;
+  }
+
+  groupSoundscapePreference(groupId: string): GroupSoundscapePreference {
+    return normalizeGroupSoundscapePreference(this.soundscapePreferences.get(groupId));
+  }
+
   stopAll(reason: GroupMonitorStopReason = "manual"): void {
     this.inner.stopAll(reason);
   }
 
   statuses(): GroupSubscriptionStatus[] {
-    return toGroupStatuses(this.inner.statuses());
+    return this.toGroupStatuses(this.inner.statuses());
   }
 
   runningCount(): number {
@@ -100,12 +136,13 @@ export class GroupSubscriptionSupervisor {
   refreshState(): GroupRefreshState {
     return this.inner.refreshState() as GroupRefreshState;
   }
-}
 
-function toGroupStatuses(statuses: SubscriptionStatus<KindroidGroup>[]): GroupSubscriptionStatus[] {
-  return statuses.map((status) => ({
-    group: status.resource,
-    enabled: status.enabled,
-    running: status.running
-  }));
+  private toGroupStatuses(statuses: SubscriptionStatus<KindroidGroup>[]): GroupSubscriptionStatus[] {
+    return statuses.map((status) => ({
+      group: status.resource,
+      enabled: status.enabled,
+      running: status.running,
+      soundscape: this.groupSoundscapePreference(status.resource.groupId)
+    }));
+  }
 }

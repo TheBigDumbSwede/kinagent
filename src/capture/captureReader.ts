@@ -18,7 +18,18 @@ const kinFieldTabs = [
   { key: "profile", label: "Profile", field: "profile" }
 ] as const;
 
+const groupFieldTabs = [
+  { key: "group-context", label: "Context", field: "group_context" },
+  { key: "group-directive", label: "Directive", field: "group_directive" },
+  { key: "group-scene", label: "Current Scene", field: "current_scene" },
+  { key: "group-scene-suggestion", label: "Scene Suggestion", field: "current_scene_suggestion" },
+  { key: "group-members", label: "Members", field: "group_ais" },
+  { key: "group-profile", label: "Profile", field: "profile" }
+] as const;
+
 export type CapturedKinTabKey = (typeof kinFieldTabs)[number]["key"];
+export type CapturedGroupTabKey = (typeof groupFieldTabs)[number]["key"];
+type CapturedTabKey = CapturedKinTabKey | CapturedGroupTabKey;
 
 export interface CaptureHistoryEntry {
   hash: string;
@@ -35,7 +46,7 @@ export interface CaptureHistoryEntry {
 }
 
 export interface CapturedKinFieldView {
-  key: CapturedKinTabKey;
+  key: CapturedTabKey;
   label: string;
   available: boolean;
   kind: "markdown" | "json" | "journal" | "missing";
@@ -47,6 +58,15 @@ export interface CapturedKinView {
   ok: boolean;
   outputDir: string;
   kinId: string;
+  folderName?: string;
+  fields: CapturedKinFieldView[];
+  error?: string;
+}
+
+export interface CapturedGroupView {
+  ok: boolean;
+  outputDir: string;
+  groupId: string;
   folderName?: string;
   fields: CapturedKinFieldView[];
   error?: string;
@@ -98,12 +118,55 @@ export async function readCapturedKin(kinId: string, outputDir = defaultCaptureO
   };
 }
 
+export async function readCapturedGroup(
+  groupId: string,
+  outputDir = defaultCaptureOutputDir
+): Promise<CapturedGroupView> {
+  const captureRoot = path.resolve(process.cwd(), outputDir);
+  const workspaceRoot = path.join(captureRoot, "workspace");
+  const safeGroupId = sanitizeId(groupId);
+
+  if (!safeGroupId) {
+    throw new Error("A Group id is required.");
+  }
+
+  const groupDir = await findCaptureDir(workspaceRoot, "groups", safeGroupId);
+  if (!groupDir) {
+    return {
+      ok: false,
+      outputDir: captureRoot,
+      groupId: safeGroupId,
+      fields: groupFieldTabs.map((tab) => missingView(tab.key, tab.label)),
+      error: "No captured state found for this Group yet."
+    };
+  }
+
+  const fields = await Promise.all(
+    groupFieldTabs.map((tab) => readFieldView(captureRoot, workspaceRoot, groupDir, tab))
+  );
+  return {
+    ok: true,
+    outputDir: captureRoot,
+    groupId: safeGroupId,
+    folderName: path.basename(groupDir),
+    fields
+  };
+}
+
 async function findKinCaptureDir(workspaceRoot: string, kinId: string): Promise<string | null> {
-  const kinsRoot = resolveInside(workspaceRoot, "kins");
+  return findCaptureDir(workspaceRoot, "kins", kinId);
+}
+
+async function findCaptureDir(
+  workspaceRoot: string,
+  resourceFolder: "kins" | "groups",
+  id: string
+): Promise<string | null> {
+  const resourcesRoot = resolveInside(workspaceRoot, resourceFolder);
   let entries: Dirent<string>[];
 
   try {
-    entries = await fs.readdir(kinsRoot, { withFileTypes: true });
+    entries = await fs.readdir(resourcesRoot, { withFileTypes: true });
   } catch {
     return null;
   }
@@ -113,13 +176,13 @@ async function findKinCaptureDir(workspaceRoot: string, kinId: string): Promise<
       continue;
     }
 
-    const candidate = resolveInside(kinsRoot, entry.name);
-    if (entry.name.endsWith(`--${kinId}`)) {
+    const candidate = resolveInside(resourcesRoot, entry.name);
+    if (entry.name.endsWith(`--${id}`)) {
       return candidate;
     }
 
     const profile = await readJson<CapturedProfile>(resolveInside(candidate, "profile.json"));
-    if (profile?.id === kinId) {
+    if (profile?.id === id) {
       return candidate;
     }
   }
@@ -131,7 +194,7 @@ async function readFieldView(
   captureRoot: string,
   workspaceRoot: string,
   kinDir: string,
-  tab: (typeof kinFieldTabs)[number]
+  tab: (typeof kinFieldTabs)[number] | (typeof groupFieldTabs)[number]
 ): Promise<CapturedKinFieldView> {
   if (tab.field === "journal") {
     return readJournalView(captureRoot, workspaceRoot, kinDir, tab.key, tab.label);
@@ -169,7 +232,7 @@ async function readJsonView(
   captureRoot: string,
   workspaceRoot: string,
   filePath: string,
-  key: CapturedKinTabKey,
+  key: CapturedTabKey,
   label: string
 ): Promise<CapturedKinFieldView> {
   if (!(await exists(filePath))) {
@@ -419,7 +482,7 @@ function emptyFieldViews(): CapturedKinFieldView[] {
   return kinFieldTabs.map((tab) => missingView(tab.key, tab.label));
 }
 
-function missingView(key: CapturedKinTabKey, label: string): CapturedKinFieldView {
+function missingView(key: CapturedTabKey, label: string): CapturedKinFieldView {
   return {
     key,
     label,

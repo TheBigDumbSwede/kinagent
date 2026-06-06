@@ -9,7 +9,7 @@ import { chromium, type Browser, type BrowserContext } from "playwright";
 import { ensureSessionDir, storageStatePath } from "../auth/tokenStore.js";
 import { loadConfig, saveConfig } from "../config/loadConfig.js";
 import type { AppConfig, LogLevel, VoiceProvider } from "../config/types.js";
-import { readCapturedKin } from "../capture/captureReader.js";
+import { readCapturedGroup, readCapturedKin } from "../capture/captureReader.js";
 import {
   exportGroupChatTranscript,
   exportKinChatTranscript,
@@ -242,6 +242,28 @@ function registerIpcHandlers(): void {
       throw error;
     }
   });
+  ipcMain.handle("capture:get-group", async (_event, input: { groupId?: string } = {}) => {
+    const groupId = input.groupId ?? "";
+    const startedAt = Date.now();
+    logger.info("Reading captured Group state for desktop.", { groupId });
+    try {
+      const result = await readCapturedGroup(groupId);
+      logger.info("Read captured Group state for desktop.", {
+        groupId,
+        ok: result.ok,
+        fields: result.fields.length,
+        durationMs: Date.now() - startedAt
+      });
+      return result;
+    } catch (error) {
+      logger.error("Failed to read captured Group state for desktop.", {
+        groupId,
+        error: error instanceof Error ? error.message : String(error),
+        durationMs: Date.now() - startedAt
+      });
+      throw error;
+    }
+  });
   ipcMain.handle("journal:list-suggestions", async () => requireRuntime().pendingJournalSuggestions());
   ipcMain.handle("journal:accept-suggestion", async (_event, input: { id?: string } = {}) =>
     acceptJournalSuggestion(input.id ?? "")
@@ -259,6 +281,14 @@ function registerIpcHandlers(): void {
     "voice:set-kin-preference",
     async (_event, input: { kinId?: string; preference?: Partial<KinAudioPreference> } = {}) =>
       setKinVoicePreference(input.kinId ?? "", input.preference ?? {})
+  );
+  ipcMain.handle("soundscape:get-group-preference", async (_event, input: { groupId?: string } = {}) =>
+    getGroupSoundscapePreference(input.groupId ?? "")
+  );
+  ipcMain.handle(
+    "soundscape:set-group-preference",
+    async (_event, input: { groupId?: string; preference?: Partial<GroupSoundscapePreference> } = {}) =>
+      setGroupSoundscapePreference(input.groupId ?? "", input.preference ?? {})
   );
   ipcMain.handle("ambient:get-kin-preference", async (_event, input: { kinId?: string } = {}) =>
     getKinAmbientPreference(input.kinId ?? "")
@@ -485,6 +515,10 @@ interface KinAudioPreference extends KinVoicePreference {
   soundscape?: Partial<KinSoundscapePreference>;
 }
 
+interface GroupSoundscapePreference {
+  enabled: boolean;
+}
+
 function setKinVoicePreference(kinId: string, preference: Partial<KinAudioPreference>) {
   if (!kinId) {
     throw new Error("Select a Kin before editing audio.");
@@ -508,6 +542,33 @@ function setKinVoicePreference(kinId: string, preference: Partial<KinAudioPrefer
     configuredProviders: voiceProvidersConfigured(config),
     openAiVoiceOptions,
     preference: saved,
+    soundscape: savedSoundscape
+  };
+}
+
+function getGroupSoundscapePreference(groupId: string) {
+  if (!groupId) {
+    throw new Error("Select a Group before editing audio.");
+  }
+
+  return {
+    ok: true,
+    soundscape: requireRuntime().getGroupSoundscapePreference(groupId)
+  };
+}
+
+function setGroupSoundscapePreference(groupId: string, preference: Partial<GroupSoundscapePreference>) {
+  if (!groupId) {
+    throw new Error("Select a Group before editing audio.");
+  }
+
+  const savedSoundscape = requireRuntime().setGroupSoundscapePreference(groupId, preference);
+  logger.info("Saved Group audio preference.", {
+    groupId,
+    groupSoundscapeEnabled: savedSoundscape.enabled
+  });
+  return {
+    ok: true,
     soundscape: savedSoundscape
   };
 }

@@ -56,7 +56,7 @@ describe("SoundscapePrewarmCoordinator", () => {
     );
   });
 
-  it("uses group get-chat-messages source Kin ids for group prewarm gating", async () => {
+  it("uses group get-chat-messages with group-owned prewarm gating", async () => {
     const fetchMock = vi.fn(async (_input: string | URL, _init?: RequestInit) =>
       Response.json({
         messages: [
@@ -69,7 +69,7 @@ describe("SoundscapePrewarmCoordinator", () => {
           },
           {
             id: "message-2",
-            ai_id: "kin-1",
+            ai_id: "kin-disabled",
             sender_type: "ai",
             timestamp: 1_780_000_001_000,
             message: "The elevator dings and the lobby speakers crackle."
@@ -89,7 +89,7 @@ describe("SoundscapePrewarmCoordinator", () => {
       {
         type: "kindroid.group_chat.changed",
         groupId: "group-1",
-        aiId: "kin-1",
+        aiId: "kin-disabled",
         documentId: "live-message-1",
         timestamp: "2026-06-01T12:00:00.000Z",
         text: "New live message.",
@@ -107,19 +107,51 @@ describe("SoundscapePrewarmCoordinator", () => {
       expect.objectContaining({
         scope: "group",
         groupId: "group-1",
-        aiId: "kin-1",
+        aiId: "kin-disabled",
         text: expect.stringContaining("The elevator dings and the lobby speakers crackle.")
       })
     );
   });
+
+  it("skips group get-chat-messages when the group soundscape setting is disabled", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const hermes: HermesAdapter = {
+      handleChatChanged: vi.fn(),
+      prewarmSoundscape: vi.fn()
+    };
+
+    await coordinator(hermes, { groupSoundscapeEnabled: false }).prewarmGroup(
+      group("group-1", "Evening Group"),
+      {
+        type: "kindroid.group_chat.changed",
+        groupId: "group-1",
+        aiId: "kin-1",
+        documentId: "live-message-1",
+        timestamp: "2026-06-01T12:00:00.000Z",
+        text: "New live message.",
+        sender: "ai",
+        role: "ai",
+        source: "firestore"
+      },
+      "test"
+    );
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(hermes.prewarmSoundscape).not.toHaveBeenCalled();
+  });
 });
 
-function coordinator(hermes: HermesAdapter): SoundscapePrewarmCoordinator {
+function coordinator(
+  hermes: HermesAdapter,
+  options: { groupSoundscapeEnabled?: boolean } = {}
+): SoundscapePrewarmCoordinator {
   return new SoundscapePrewarmCoordinator({
     config: testConfig(),
     logger: testLogger,
     hermes,
     isKinSoundscapeEnabled: (kinId) => kinId === "kin-1",
+    isGroupSoundscapeEnabled: () => options.groupSoundscapeEnabled ?? true,
     isKnownKin: (kinId) => kinId === "kin-1" || kinId === "kin-disabled"
   });
 }

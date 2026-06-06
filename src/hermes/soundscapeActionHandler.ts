@@ -59,7 +59,7 @@ export class SoundscapeActionHandler implements HermesActionHandler<SoundscapeAc
       'For direct Kin local ambience, you may request: {"type":"update_soundscape","ai_id":"<same direct chat ai_id>","reason":"<short reason>","soundscape":{"enabled":true,"environment":"<brief place or ambience>","mood":"<calm|melancholy|uneasy|tense|...>","intensity":0.4,"transition":"fade","layers":[{"type":"rain","volume":0.45,"density":0.5,"warmth":0.4,"movement":0.3},{"type":"roomTone","volume":0.4}]}}.',
       'For group local ambience, you may request: {"type":"update_group_soundscape","group_id":"<same group_id>","reason":"<short reason>","soundscape":{"enabled":true,"environment":"<brief group scene ambience>","mood":"<mood>","intensity":0.4,"transition":"fade","layers":[...]}}.',
       "Soundscape actions are local control-plane metadata only. They do not write Kindroid memory, current_scene, chat text, or Kin-visible instructions.",
-      "Use soundscape actions only when soundscapeContext.enabledForSource is true.",
+      "Use soundscape actions only when soundscapeContext.enabledForSource is true. For group chats, this is the group soundscape preference, not a per-speaker Kin preference.",
       "Use soundscape actions only when venue, weather, machinery, environmental texture, tension, or a major scene event materially changes. Do not update on every turn.",
       "Allowed layer types: rain, wind, roomTone, lowDrone, hum, tensionPulse, static. Use audible cached-sample mixer volumes: primary beds usually 0.35-0.55, weather 0.4-0.65, and drones/hum usually 0.15-0.3.",
       "Use static only for explicit radio, signal, comms, scanner, television, or interference scenes. Do not use static for generic office, lobby, tension, or machinery ambience."
@@ -110,7 +110,7 @@ export class SoundscapeActionHandler implements HermesActionHandler<SoundscapeAc
 
   async handle(notification: KindroidChatNotification, action: SoundscapeAction): Promise<void> {
     if (!this.isEnabled(notification)) {
-      this.logger.debug("Ignoring Hermes soundscape action because soundscape is disabled for the source Kin.", {
+      this.logger.debug("Ignoring Hermes soundscape action because soundscape is disabled for this source.", {
         ...safeNotificationMeta(notification),
         actionType: action.type
       });

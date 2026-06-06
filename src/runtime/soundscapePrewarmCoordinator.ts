@@ -11,6 +11,7 @@ interface SoundscapePrewarmCoordinatorOptions {
   logger: Logger;
   hermes: HermesAdapter;
   isKinSoundscapeEnabled: (kinId: string) => boolean;
+  isGroupSoundscapeEnabled: (groupId: string) => boolean;
   isKnownKin: (kinId: string) => boolean;
 }
 
@@ -37,6 +38,22 @@ export class SoundscapePrewarmCoordinator {
     void this.prewarmKin(kin, "preference-enabled");
   }
 
+  onGroupPreferenceChanged(group: KindroidGroup | null, enabled: boolean): void {
+    if (!group) {
+      return;
+    }
+
+    const key = `group:${group.groupId}`;
+    this.attempts.delete(key);
+    if (!enabled) {
+      this.inFlight.delete(key);
+      this.readySources.delete(key);
+      return;
+    }
+
+    void this.prewarmGroup(group, null, "preference-enabled");
+  }
+
   markReady(update: ScopedSoundscapeUpdate): void {
     if (update.scope === "kin" && update.kinId) {
       this.readySources.add(`kin:${update.kinId}`);
@@ -48,17 +65,25 @@ export class SoundscapePrewarmCoordinator {
   }
 
   isEnabled(notification: KindroidChatNotification): boolean {
+    if (notification.type === "kindroid.group_chat.changed") {
+      return this.options.isGroupSoundscapeEnabled(notification.groupId);
+    }
+
     const sourceKinId = this.sourceKinId(notification);
     return sourceKinId ? this.options.isKinSoundscapeEnabled(sourceKinId) : false;
   }
 
   context(notification: KindroidChatNotification): unknown {
     const sourceKinId = this.sourceKinId(notification);
+    const groupId = notification.type === "kindroid.group_chat.changed" ? notification.groupId : undefined;
     return {
-      enabledForSource: Boolean(sourceKinId && this.options.isKinSoundscapeEnabled(sourceKinId)),
+      enabledForSource: groupId
+        ? this.options.isGroupSoundscapeEnabled(groupId)
+        : Boolean(sourceKinId && this.options.isKinSoundscapeEnabled(sourceKinId)),
       sourceScope: notification.type === "kindroid.chat.changed" ? "direct" : "group",
-      sourceKinId,
-      groupId: notification.type === "kindroid.group_chat.changed" ? notification.groupId : undefined,
+      sourceKinId: notification.type === "kindroid.chat.changed" ? sourceKinId : undefined,
+      latestSpeakerKinId: notification.type === "kindroid.group_chat.changed" ? sourceKinId : undefined,
+      groupId,
       mutation: "local-renderer-only"
     };
   }
@@ -118,29 +143,23 @@ export class SoundscapePrewarmCoordinator {
     }
   }
 
-  async prewarmGroup(group: KindroidGroup, notification: KindroidChatNotification, reason: string): Promise<void> {
-    if (notification.type !== "kindroid.group_chat.changed") {
+  async prewarmGroup(
+    group: KindroidGroup,
+    notification: KindroidChatNotification | null,
+    reason: string
+  ): Promise<void> {
+    if (notification && notification.type !== "kindroid.group_chat.changed") {
       return;
     }
 
     const key = `group:${group.groupId}`;
-    if (!this.begin(key, true)) {
+    if (!this.begin(key, this.options.isGroupSoundscapeEnabled(group.groupId))) {
       return;
     }
 
     try {
       const messages = await this.loadRecentGroupMessages(group.groupId, 18);
-      const sourceKinId = mostRecentSoundscapeEnabledKinId(messages, this.options.isKinSoundscapeEnabled);
-      if (!sourceKinId) {
-        this.options.logger.debug(
-          "Skipping group soundscape prewarm because no recent source Kin has soundscape enabled.",
-          {
-            groupId: group.groupId,
-            reason
-          }
-        );
-        return;
-      }
+      const latestSpeakerKinId = notification?.aiId || mostRecentKinId(messages);
 
       const text = buildSoundscapePrewarmText({
         scope: "group",
@@ -158,14 +177,14 @@ export class SoundscapePrewarmCoordinator {
       this.options.logger.info("Starting Hermes group soundscape prewarm.", {
         groupId: group.groupId,
         groupName: group.name,
-        sourceKinId,
+        latestSpeakerKinId,
         reason,
         messageCount: messages.length
       });
       await this.options.hermes.prewarmSoundscape?.({
         scope: "group",
         groupId: group.groupId,
-        aiId: sourceKinId,
+        aiId: latestSpeakerKinId,
         documentId: `soundscape-prewarm:${group.groupId}:${Date.now()}`,
         timestamp: new Date().toISOString(),
         text,
@@ -173,7 +192,7 @@ export class SoundscapePrewarmCoordinator {
           enabledForSource: true,
           prewarm: true,
           sourceScope: "group",
-          sourceKinId,
+          latestSpeakerKinId,
           groupId: group.groupId,
           mutation: "local-renderer-only"
         }
@@ -279,12 +298,9 @@ function isReadablePrewarmMessage(message: NormalizedKindroidMessage): boolean {
   return Boolean(message.text?.trim()) && !(message.textEncrypted && !message.textDecrypted);
 }
 
-function mostRecentSoundscapeEnabledKinId(
-  messages: NormalizedKindroidMessage[],
-  isEnabled: (kinId: string) => boolean
-): string | null {
+function mostRecentKinId(messages: NormalizedKindroidMessage[]): string | null {
   for (const message of [...messages].reverse()) {
-    if (message.kinId && isEnabled(message.kinId)) {
+    if (message.kinId) {
       return message.kinId;
     }
   }

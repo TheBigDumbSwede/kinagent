@@ -105,8 +105,8 @@ Group request:
 
 Guardrails:
 
-- Requires the source Kin's Manage > Audio > Soundscape setting to be enabled. Group soundscape updates are gated by
-  the Kin that produced the group event until group-level audio settings exist.
+- Requires the direct Kin's Manage > Audio > Soundscape setting to be enabled. Group soundscape updates are gated by
+  that Group's Manage > Audio > Soundscape setting.
 - The handler rejects mismatched `ai_id` or `group_id`.
 - Use this only when venue, weather, machinery, environmental texture, tension, or a major scene event materially changes.
 - Do not update on every turn.

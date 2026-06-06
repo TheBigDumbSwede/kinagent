@@ -141,6 +141,8 @@ export class BridgeRuntime {
       logger: options.logger,
       hermes: this.hermes,
       isKinSoundscapeEnabled: (kinId) => this.kinSubscriptionSupervisor.kinSoundscapePreference(kinId).enabled,
+      isGroupSoundscapeEnabled: (groupId) =>
+        this.groupSubscriptionSupervisor.groupSoundscapePreference(groupId).enabled,
       isKnownKin: (kinId) =>
         this.kinSubscriptionSupervisor.statuses().some((subscription) => subscription.kin.aiId === kinId)
     });
@@ -323,6 +325,26 @@ export class BridgeRuntime {
 
   async setGroupEnabled(groupId: string, enabled: boolean): Promise<void> {
     await this.groupSubscriptionSupervisor.setGroupEnabled(groupId, enabled);
+  }
+
+  setGroupSoundscapePreference(
+    groupId: string,
+    preference: Partial<GroupSoundscapePreference>
+  ): GroupSoundscapePreference {
+    const saved = this.groupSubscriptionSupervisor.setGroupSoundscapePreference(groupId, preference);
+    const status = this.groupSubscriptionSupervisor
+      .statuses()
+      .find((subscription) => subscription.group.groupId === groupId);
+    this.soundscapePrewarm.onGroupPreferenceChanged(status?.group ?? null, saved.enabled);
+    return saved;
+  }
+
+  getGroupSoundscapePreference(groupId: string): GroupSoundscapePreference {
+    if (!groupId) {
+      throw new Error("Select a Group before editing soundscape.");
+    }
+
+    return this.groupSubscriptionSupervisor.groupSoundscapePreference(groupId);
   }
 
   pendingJournalSuggestions(): JournalSuggestion[] {
@@ -905,6 +927,10 @@ export interface KinChatDynamismPreference {
 }
 
 export interface KinSoundscapePreference {
+  enabled: boolean;
+}
+
+export interface GroupSoundscapePreference {
   enabled: boolean;
 }
 

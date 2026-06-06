@@ -201,6 +201,7 @@ export class HermesChatAdapter implements HermesAdapter {
       "Do not update the scene for routine conversation, greetings, emotional tone, preferences, memories, or speculation.",
       "Use soundscape actions only for local ambience changes, not as a substitute for current_scene, memory, journal, or chat text.",
       "Use soundscape actions only when soundscapeContext.enabledForSource is true.",
+      "For group soundscapes, enabledForSource refers to the group preference, not ownership by the most recent speaker Kin.",
       "For kindroid.soundscape.prewarm events, return a conservative soundscape action when recent context gives enough venue, weather, machinery, room tone, crowd, vehicle, or tension clues. Do not return non-soundscape actions for prewarm events.",
       `Keep current_scene under ${this.config.hermes.currentSceneUpdates.maxLength} characters.`,
       'Never invent a different ai_id or group_id. If unsure, return {"actions":[]}.'
@@ -238,7 +239,7 @@ function toPrewarmNotification(request: HermesSoundscapePrewarmRequest): Kindroi
     return {
       type: "kindroid.group_chat.changed",
       groupId: request.groupId,
-      aiId: request.aiId,
+      aiId: request.aiId ?? null,
       documentId: request.documentId,
       timestamp: request.timestamp,
       text: request.text,

@@ -66,7 +66,8 @@ export const hermesActionRegistryEntries: HermesActionRegistryEntry[] = [
   {
     actionTypes: ["update_soundscape", "update_group_soundscape"],
     handler: "SoundscapeActionHandler",
-    enabledWhen: "a desktop soundscape callback is provided and the source Kin's Audio soundscape setting is enabled",
+    enabledWhen:
+      "a desktop soundscape callback is provided and the direct Kin or Group Audio soundscape setting is enabled",
     execution: "immediate",
     scope: "Emits local desktop procedural soundscape metadata for the same direct Kin or group chat."
   },

@@ -14,6 +14,7 @@ import {
   loadGroupSubscriptionPreferences,
   saveGroupSubscriptionPreferences
 } from "../src/runtime/groupSubscriptionPreferences.js";
+import { GroupSubscriptionSupervisor } from "../src/runtime/groupSubscriptionSupervisor.js";
 import type { Logger } from "../src/util/logger.js";
 
 describe("subscription preferences", () => {
@@ -103,13 +104,42 @@ describe("subscription preferences", () => {
   it("defaults group monitoring to enabled and persists disabled group ids", () => {
     const config = testConfig();
 
-    expect(loadGroupSubscriptionPreferences(config).disabledGroupIds).toEqual(new Set());
+    const defaults = loadGroupSubscriptionPreferences(config);
+    expect(defaults.disabledGroupIds).toEqual(new Set());
+    expect(defaults.soundscape).toEqual(new Map());
 
-    saveGroupSubscriptionPreferences(config, { disabledGroupIds: new Set(["group-b", "group-a"]) });
+    saveGroupSubscriptionPreferences(config, {
+      disabledGroupIds: new Set(["group-b", "group-a"]),
+      soundscape: new Map([["group-a", { enabled: true }]])
+    });
 
-    expect(loadGroupSubscriptionPreferences(config).disabledGroupIds).toEqual(new Set(["group-a", "group-b"]));
+    const reloaded = loadGroupSubscriptionPreferences(config);
+    expect(reloaded.disabledGroupIds).toEqual(new Set(["group-a", "group-b"]));
+    expect(reloaded.soundscape).toEqual(new Map([["group-a", { enabled: true }]]));
     expect(JSON.parse(fs.readFileSync(groupSubscriptionPreferencesPath(config), "utf8"))).toEqual({
-      disabledGroupIds: ["group-a", "group-b"]
+      disabledGroupIds: ["group-a", "group-b"],
+      soundscape: {
+        "group-a": {
+          enabled: true
+        }
+      }
+    });
+  });
+
+  it("reloads per-Group soundscape enablement from the settings file", () => {
+    const config = testConfig();
+    const supervisor = testGroupSupervisor(config);
+
+    expect(supervisor.groupSoundscapePreference("group-a")).toEqual({ enabled: false });
+
+    supervisor.setGroupSoundscapePreference("group-a", { enabled: true });
+    const reloaded = testGroupSupervisor(config);
+
+    expect(reloaded.groupSoundscapePreference("group-a")).toEqual({ enabled: true });
+    expect(JSON.parse(fs.readFileSync(groupSubscriptionPreferencesPath(config), "utf8")).soundscape).toEqual({
+      "group-a": {
+        enabled: true
+      }
     });
   });
 });
@@ -119,6 +149,14 @@ function testKinSupervisor(config: AppConfig): KinSubscriptionSupervisor {
     config,
     logger: testLogger,
     startKin: async () => undefined
+  });
+}
+
+function testGroupSupervisor(config: AppConfig): GroupSubscriptionSupervisor {
+  return new GroupSubscriptionSupervisor({
+    config,
+    logger: testLogger,
+    startGroup: async () => undefined
   });
 }
 

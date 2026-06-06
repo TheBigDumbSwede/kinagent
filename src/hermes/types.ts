@@ -12,7 +12,7 @@ export type HermesSoundscapePrewarmRequest =
   | {
       scope: "group";
       groupId: string;
-      aiId: string;
+      aiId?: string | null;
       documentId: string;
       timestamp: string;
       text: string;

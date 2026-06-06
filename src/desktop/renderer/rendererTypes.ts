@@ -36,8 +36,13 @@ export interface KinagentApi {
   analyzeKin(input: { kinId: string }): Promise<KinAnalysisResult>;
   exportKinChat(input: ChatExportRequest & { kinId: string }): Promise<ChatExportResult>;
   exportGroupChat(input: ChatExportRequest & { groupId: string }): Promise<ChatExportResult>;
+  getCapturedGroup(input: { groupId: string }): Promise<CapturedGroupSummary & { fields?: CapturedFieldSummary[] }>;
   saveSettings(input: AppSettingsFormValue): Promise<AppSettingsResult>;
   setKinVoicePreference(input: { kinId: string; preference: KinVoicePreference }): Promise<KinVoicePreferenceResult>;
+  setGroupSoundscapePreference(input: {
+    groupId: string;
+    preference: GroupSoundscapePreference;
+  }): Promise<GroupSoundscapePreferenceResult>;
   setKinAmbientPreference(input: {
     kinId: string;
     enabled: boolean;
@@ -100,6 +105,7 @@ export interface GroupSubscriptionSummary {
   group?: GroupSummary;
   enabled?: boolean;
   running?: boolean;
+  soundscape?: GroupSoundscapePreference;
 }
 
 export interface JournalSuggestionSummary {
@@ -157,6 +163,13 @@ export interface CapturedKinSummary {
   error?: string | null;
 }
 
+export interface CapturedGroupSummary {
+  ok?: boolean;
+  groupId?: string | null;
+  folderName?: string | null;
+  error?: string | null;
+}
+
 export interface DetailStat {
   label: string;
   value: string;
@@ -175,6 +188,13 @@ export interface KinChatDynamismPreference {
 
 export interface KinSoundscapePreference {
   enabled: boolean;
+}
+
+export type GroupSoundscapePreference = KinSoundscapePreference;
+
+export interface GroupSoundscapePreferenceResult {
+  ok?: boolean;
+  soundscape?: GroupSoundscapePreference;
 }
 
 export interface KinAmbientPreferenceResult {

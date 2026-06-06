@@ -19,6 +19,7 @@ export interface CapturedDetailElements {
   journalSuggestionPanel: HTMLElement;
   appSettingsForm: HTMLElement;
   voiceForm: HTMLElement;
+  groupAudioPanel: HTMLElement;
   kinHermesForm: HTMLElement;
   kinAnalyzePanel: HTMLElement;
   chatExportPanel: HTMLElement;
@@ -47,6 +48,7 @@ export function renderDetailEmpty(context: Pick<CapturedDetailContext, "elements
   elements.kinDetailContent.classList.remove("app-settings-content", "form-detail-content");
   elements.appSettingsForm.hidden = true;
   elements.voiceForm.hidden = true;
+  elements.groupAudioPanel.hidden = true;
   elements.kinHermesForm.hidden = true;
   elements.kinAnalyzePanel.hidden = true;
   elements.chatExportPanel.hidden = true;
@@ -61,6 +63,7 @@ export function renderDetailContent(context: CapturedDetailContext, detail: Capt
   elements.journalSuggestionPanel.hidden = true;
   elements.appSettingsForm.hidden = true;
   elements.voiceForm.hidden = true;
+  elements.groupAudioPanel.hidden = true;
   elements.kinHermesForm.hidden = true;
   elements.kinAnalyzePanel.hidden = true;
   elements.chatExportPanel.hidden = true;
@@ -76,13 +79,18 @@ export function renderDetailContent(context: CapturedDetailContext, detail: Capt
 }
 
 export function capturedDetailStats(input: {
-  selectedKin: KinSummary | null;
+  selectedKin?: KinSummary | null;
+  selectedGroup?: { name?: string | null } | null;
+  groupId?: string | null;
   field: CapturedFieldSummary | null;
   capture: CapturedKinSummary;
   fallbackSettingLabel: string;
 }): DetailStat[] {
+  const entityLabel = input.selectedGroup ? "Group" : "Kin";
+  const entityValue =
+    input.selectedGroup?.name || input.groupId || input.selectedKin?.name || input.capture.kinId || "Unknown";
   return [
-    { label: "Kin", value: input.selectedKin?.name || input.capture.kinId || "Unknown" },
+    { label: entityLabel, value: entityValue },
     { label: "Capture", value: input.capture.folderName || "Unavailable" },
     { label: "Setting", value: input.field?.label || input.fallbackSettingLabel },
     { label: "Changes", value: String(input.field?.history?.length || 0) }

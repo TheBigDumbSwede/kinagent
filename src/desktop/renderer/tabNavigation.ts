@@ -1,6 +1,16 @@
 const settingTabKeys = new Set(["backstory", "directive", "memory", "example", "scene", "background", "profile"]);
+const groupSettingTabKeys = new Set([
+  "group-context",
+  "group-directive",
+  "group-scene",
+  "group-scene-suggestion",
+  "group-members",
+  "group-profile"
+]);
 const kinModes = ["settings", "journal", "hermes", "voice", "analyze", "export"];
+const groupModes = ["settings", "group-audio", "group-export"];
 const directModes = ["journal", "hermes", "voice", "analyze", "export"];
+const groupDirectModes = ["group-audio", "group-export"];
 
 export interface TabNavigationState {
   activeTab: string;
@@ -18,7 +28,9 @@ export interface TabNavigationState {
 export interface TabNavigationElements {
   detailTabs: HTMLElement;
   kinDetailTabs: HTMLElement;
+  groupDetailTabs: HTMLElement;
   settingTabs: HTMLElement;
+  groupSettingTabs: HTMLElement;
   monitorPane: HTMLElement;
   detailPane: HTMLElement;
   clearButton: HTMLElement;
@@ -65,6 +77,21 @@ export function handleSettingTabsClick(context: TabNavigationContext, event: Eve
   context.renderActivity();
 }
 
+export function handleGroupSettingTabsClick(context: TabNavigationContext, event: Event): void {
+  if (!(event.target instanceof Element)) {
+    return;
+  }
+
+  const button = event.target.closest<HTMLElement>("[data-group-setting]");
+  const setting = button?.dataset.groupSetting;
+  if (!setting || !groupSettingTabKeys.has(setting)) {
+    return;
+  }
+
+  setActiveTab(context, setting);
+  context.renderActivity();
+}
+
 export function renderTabNavigation(
   context: Pick<TabNavigationContext, "state" | "elements">,
   activeMode: string
@@ -72,14 +99,16 @@ export function renderTabNavigation(
   const { state, elements } = context;
   for (const button of elements.detailTabs.querySelectorAll<HTMLElement>("[data-mode]")) {
     if (button.dataset.mode === "settings") {
-      button.hidden = Boolean(state.selectedGroupId);
-    } else if (button.dataset.mode === "export") {
-      button.hidden = !state.selectedGroupId;
+      button.textContent = state.selectedGroupId ? "Group" : "Kin";
+    }
+    if (button.dataset.mode === "settings") {
+      button.hidden = Boolean(!state.selectedKinId && !state.selectedGroupId);
     } else {
       button.hidden = false;
     }
     const selected =
-      button.dataset.mode === activeMode || (button.dataset.mode === "settings" && isKinMode(activeMode));
+      button.dataset.mode === activeMode ||
+      (button.dataset.mode === "settings" && (isKinMode(activeMode) || isGroupMode(activeMode, state.activeTab)));
     button.classList.toggle("active", selected);
     button.setAttribute("aria-selected", String(selected));
   }
@@ -91,9 +120,25 @@ export function renderTabNavigation(
     button.setAttribute("aria-selected", String(selected));
   }
 
+  elements.groupDetailTabs.hidden = Boolean(!state.selectedGroupId || !isGroupMode(activeMode, state.activeTab));
+  for (const button of elements.groupDetailTabs.querySelectorAll<HTMLElement>("[data-mode]")) {
+    const selected =
+      button.dataset.mode === activeMode ||
+      (button.dataset.mode === "settings" && groupSettingTabKeys.has(state.activeTab));
+    button.classList.toggle("active", selected);
+    button.setAttribute("aria-selected", String(selected));
+  }
+
   elements.settingTabs.hidden = Boolean(state.selectedGroupId || activeMode !== "settings");
   for (const button of elements.settingTabs.querySelectorAll<HTMLElement>("[data-setting]")) {
     const selected = button.dataset.setting === currentSettingTab(state);
+    button.classList.toggle("active", selected);
+    button.setAttribute("aria-selected", String(selected));
+  }
+
+  elements.groupSettingTabs.hidden = Boolean(!state.selectedGroupId || activeMode !== "settings");
+  for (const button of elements.groupSettingTabs.querySelectorAll<HTMLElement>("[data-group-setting]")) {
+    const selected = button.dataset.groupSetting === currentGroupSettingTab(state);
     button.classList.toggle("active", selected);
     button.setAttribute("aria-selected", String(selected));
   }
@@ -125,9 +170,22 @@ export function tabLabelFor(context: Pick<TabNavigationContext, "state" | "eleme
     return "Export";
   }
 
+  if (tab === "group-audio") {
+    return "Audio";
+  }
+
+  if (tab === "group-export") {
+    return "Export";
+  }
+
   const settingButton = context.elements.settingTabs.querySelector(`[data-setting="${tab}"]`);
   if (settingButton) {
     return settingButton.textContent?.trim() || "Detail";
+  }
+
+  const groupSettingButton = context.elements.groupSettingTabs.querySelector(`[data-group-setting="${tab}"]`);
+  if (groupSettingButton) {
+    return groupSettingButton.textContent?.trim() || "Detail";
   }
 
   const modeButton = context.elements.detailTabs.querySelector(`[data-mode="${modeForTab(tab)}"]`);
@@ -140,7 +198,11 @@ export function tabForMode(state: TabNavigationState, mode: string | undefined):
   }
 
   if (mode === "settings") {
-    return currentSettingTab(state);
+    return state.selectedGroupId ? currentGroupSettingTab(state) : currentSettingTab(state);
+  }
+
+  if (mode && groupDirectModes.includes(mode)) {
+    return mode;
   }
 
   return mode && directModes.includes(mode) ? mode : "monitor";
@@ -155,11 +217,23 @@ export function modeForTab(tab: string | undefined): string {
     return "settings";
   }
 
+  if (tab && groupSettingTabKeys.has(tab)) {
+    return "settings";
+  }
+
+  if (tab && groupDirectModes.includes(tab)) {
+    return tab;
+  }
+
   return tab && directModes.includes(tab) ? tab : "monitor";
 }
 
 export function currentSettingTab(state: Pick<TabNavigationState, "activeTab">): string {
   return settingTabKeys.has(state.activeTab) ? state.activeTab : "backstory";
+}
+
+export function currentGroupSettingTab(state: Pick<TabNavigationState, "activeTab">): string {
+  return groupSettingTabKeys.has(state.activeTab) ? state.activeTab : "group-context";
 }
 
 export function subtitleForDetailMode(mode: string): string {
@@ -169,6 +243,10 @@ export function subtitleForDetailMode(mode: string): string {
 
   if (mode === "voice") {
     return "Audio configuration";
+  }
+
+  if (mode === "group-audio") {
+    return "Group audio configuration";
   }
 
   if (mode === "hermes") {
@@ -181,6 +259,10 @@ export function subtitleForDetailMode(mode: string): string {
 
   if (mode === "export") {
     return "Chat export";
+  }
+
+  if (mode === "group-export") {
+    return "Group chat export";
   }
 
   if (mode === "journal") {
@@ -226,4 +308,8 @@ function clickedDatasetValue(event: Event, key: string): string | undefined {
 
 function isKinMode(mode: string): boolean {
   return kinModes.includes(mode);
+}
+
+function isGroupMode(mode: string, activeTab: string): boolean {
+  return groupModes.includes(mode) || groupSettingTabKeys.has(activeTab);
 }

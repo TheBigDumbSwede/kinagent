@@ -28,6 +28,7 @@ import {
 } from "./subscriptionLists.js";
 import {
   handleDetailTabsClick,
+  handleGroupSettingTabsClick,
   handleKinDetailTabsClick,
   handleSettingTabsClick,
   modeForTab,
@@ -50,10 +51,13 @@ import type {
   AppSettingsResult,
   AppSettingsFormValue,
   CapturedFieldSummary,
+  CapturedGroupSummary,
   CapturedKinSummary,
   ChatExportProgress,
   ChatExportRequest,
   ChatExportResult,
+  GroupSoundscapePreference,
+  GroupSoundscapePreferenceResult,
   GroupSubscriptionSummary,
   GroupSummary,
   JournalSuggestionSummary,
@@ -81,6 +85,10 @@ interface CapturedKinResult extends CapturedKinSummary {
   fields?: CapturedFieldSummary[];
 }
 
+interface CapturedGroupResult extends CapturedGroupSummary {
+  fields?: CapturedFieldSummary[];
+}
+
 interface RefreshState {
   ok?: boolean;
   error?: string;
@@ -100,7 +108,9 @@ interface RendererState {
   selectedKinId: string | null;
   selectedGroupId: string | null;
   selectedKinCapture: CapturedKinResult | null;
+  selectedGroupCapture: CapturedGroupResult | null;
   selectedKinVoice: KinVoicePreferenceResult | null;
+  selectedGroupSoundscape: GroupSoundscapePreferenceResult | null;
   selectedKinAmbient: KinAmbientPreferenceResult | null;
   journalSuggestions: JournalSuggestionSummary[];
   journalSavingId: string | null;
@@ -108,6 +118,9 @@ interface RendererState {
   captureLoading: boolean;
   captureError: string | null;
   voiceLoading: boolean;
+  groupSoundscapeLoading: boolean;
+  groupSoundscapeSaving: boolean;
+  groupSoundscapeError: string | null;
   voiceError: string | null;
   voiceSaving: boolean;
   ambientLoading: boolean;
@@ -142,7 +155,9 @@ interface RendererElements {
   activityTitle: HTMLElement;
   detailTabs: HTMLElement;
   kinDetailTabs: HTMLElement;
+  groupDetailTabs: HTMLElement;
   settingTabs: HTMLElement;
+  groupSettingTabs: HTMLElement;
   monitorPane: HTMLElement;
   detailPane: HTMLElement;
   kinDetailEmpty: HTMLElement;
@@ -176,6 +191,11 @@ interface RendererElements {
   settingsElevenLabsModelInput: HTMLInputElement;
   settingsElevenLabsOutputFormatInput: HTMLInputElement;
   voiceForm: HTMLFormElement;
+  groupAudioPanel: HTMLElement;
+  groupSoundscapeEnabledInput: HTMLInputElement;
+  groupSoundscapeStatusLine: HTMLElement;
+  groupSoundscapeLayerList: HTMLElement;
+  groupSoundscapeSaveButton: HTMLButtonElement;
   kinHermesForm: HTMLFormElement;
   ambientContextEnabledInput: HTMLInputElement;
   chatDynamismCurrentValue: HTMLElement;
@@ -275,12 +295,18 @@ interface RendererApi {
   setGroupEnabled(input: { groupId: string; enabled: boolean }): Promise<unknown>;
   refreshGroups(): Promise<unknown>;
   getCapturedKin(input: { kinId: string }): Promise<CapturedKinResult>;
+  getCapturedGroup(input: { groupId: string }): Promise<CapturedGroupResult>;
   listJournalSuggestions(): Promise<JournalSuggestionSummary[]>;
   acceptJournalSuggestion(input: { id: string }): Promise<unknown>;
   deleteInvalidatedJournalSuggestion(input: { id: string }): Promise<unknown>;
   dismissJournalSuggestion(input: { id: string }): Promise<unknown>;
   getKinVoicePreference(input: { kinId: string }): Promise<KinVoicePreferenceResult>;
   setKinVoicePreference(input: { kinId: string; preference: KinVoicePreference }): Promise<KinVoicePreferenceResult>;
+  getGroupSoundscapePreference(input: { groupId: string }): Promise<GroupSoundscapePreferenceResult>;
+  setGroupSoundscapePreference(input: {
+    groupId: string;
+    preference: GroupSoundscapePreference;
+  }): Promise<GroupSoundscapePreferenceResult>;
   getKinAmbientPreference(input: { kinId: string }): Promise<KinAmbientPreferenceResult>;
   setKinAmbientPreference(input: {
     kinId: string;
@@ -344,7 +370,9 @@ const state: RendererState = {
   selectedKinId: null,
   selectedGroupId: null,
   selectedKinCapture: null,
+  selectedGroupCapture: null,
   selectedKinVoice: null,
+  selectedGroupSoundscape: null,
   selectedKinAmbient: null,
   journalSuggestions: [],
   journalSavingId: null,
@@ -352,6 +380,9 @@ const state: RendererState = {
   captureLoading: false,
   captureError: null,
   voiceLoading: false,
+  groupSoundscapeLoading: false,
+  groupSoundscapeSaving: false,
+  groupSoundscapeError: null,
   voiceError: null,
   voiceSaving: false,
   ambientLoading: false,
@@ -396,7 +427,9 @@ const elements: RendererElements = {
   activityTitle: query<HTMLElement>("#activityTitle"),
   detailTabs: query<HTMLElement>("#detailTabs"),
   kinDetailTabs: query<HTMLElement>("#kinDetailTabs"),
+  groupDetailTabs: query<HTMLElement>("#groupDetailTabs"),
   settingTabs: query<HTMLElement>("#settingTabs"),
+  groupSettingTabs: query<HTMLElement>("#groupSettingTabs"),
   monitorPane: query<HTMLElement>("#monitorPane"),
   detailPane: query<HTMLElement>("#detailPane"),
   kinDetailEmpty: query<HTMLElement>("#kinDetailEmpty"),
@@ -430,6 +463,11 @@ const elements: RendererElements = {
   settingsElevenLabsModelInput: query<HTMLInputElement>("#settingsElevenLabsModelInput"),
   settingsElevenLabsOutputFormatInput: query<HTMLInputElement>("#settingsElevenLabsOutputFormatInput"),
   voiceForm: query<HTMLFormElement>("#voiceForm"),
+  groupAudioPanel: query<HTMLElement>("#groupAudioPanel"),
+  groupSoundscapeEnabledInput: query<HTMLInputElement>("#groupSoundscapeEnabledInput"),
+  groupSoundscapeStatusLine: query<HTMLElement>("#groupSoundscapeStatusLine"),
+  groupSoundscapeLayerList: query<HTMLElement>("#groupSoundscapeLayerList"),
+  groupSoundscapeSaveButton: query<HTMLButtonElement>("#groupSoundscapeSaveButton"),
   kinHermesForm: query<HTMLFormElement>("#kinHermesForm"),
   ambientContextEnabledInput: query<HTMLInputElement>("#ambientContextEnabledInput"),
   chatDynamismCurrentValue: query<HTMLElement>("#chatDynamismCurrentValue"),
@@ -687,8 +725,14 @@ elements.detailTabs.addEventListener("click", (event) => {
 elements.kinDetailTabs.addEventListener("click", (event) => {
   handleKinDetailTabsClick(tabNavigationContext(), event);
 });
+elements.groupDetailTabs.addEventListener("click", (event) => {
+  handleKinDetailTabsClick(tabNavigationContext(), event);
+});
 elements.settingTabs.addEventListener("click", (event) => {
   handleSettingTabsClick(tabNavigationContext(), event);
+});
+elements.groupSettingTabs.addEventListener("click", (event) => {
+  handleGroupSettingTabsClick(tabNavigationContext(), event);
 });
 elements.voiceProviderInput.addEventListener("change", () => {
   renderVoiceProviderFields(voiceHermesContext());
@@ -703,6 +747,12 @@ elements.voiceForm.addEventListener("submit", (event) => {
 });
 elements.soundscapeEnabledInput.addEventListener("change", () => {
   soundscapeController.markUserInteractionReady();
+});
+elements.groupSoundscapeEnabledInput.addEventListener("change", () => {
+  soundscapeController.markUserInteractionReady();
+});
+elements.groupSoundscapeSaveButton.addEventListener("click", () => {
+  void saveSelectedGroupSoundscape();
 });
 elements.kinHermesForm.addEventListener("submit", (event) => {
   event.preventDefault();
@@ -934,12 +984,14 @@ async function selectKin(kinId: string): Promise<void> {
 
   state.selectedKinId = kinId;
   state.selectedGroupId = null;
-  state.activeTab = ["monitor", "app-settings"].includes(state.activeTab) ? "backstory" : state.activeTab;
+  state.activeTab = isKinTab(state.activeTab) ? state.activeTab : "backstory";
   state.selectedHistoryHash = null;
   state.captureLoading = true;
   state.captureError = null;
   state.selectedKinCapture = null;
+  state.selectedGroupCapture = null;
   state.selectedKinVoice = null;
+  state.selectedGroupSoundscape = null;
   state.selectedKinAmbient = null;
   state.journalError = null;
   state.voiceError = null;
@@ -972,22 +1024,42 @@ function selectGroup(groupId: string): void {
 
   state.selectedGroupId = groupId;
   state.selectedKinId = null;
-  state.activeTab = "monitor";
+  state.activeTab = isGroupTab(state.activeTab) ? state.activeTab : "group-context";
   state.selectedHistoryHash = null;
-  state.captureLoading = false;
+  state.captureLoading = true;
   state.captureError = null;
   state.selectedKinCapture = null;
+  state.selectedGroupCapture = null;
   state.selectedKinVoice = null;
+  state.selectedGroupSoundscape = null;
   state.selectedKinAmbient = null;
   state.voiceError = null;
+  state.groupSoundscapeError = null;
   state.ambientError = null;
   state.voiceLoading = false;
+  state.groupSoundscapeLoading = false;
   state.ambientLoading = false;
   resetKinActionPlaceholders();
   renderKinSubscriptions(subscriptionListContext());
   renderGroupSubscriptions(subscriptionListContext());
   renderMonitorState(monitorPanelContext());
   renderActivity();
+  void loadGroupSoundscape(groupId);
+
+  void (async () => {
+    try {
+      state.selectedGroupCapture = await withTimeout(
+        window.kinagent.getCapturedGroup({ groupId }),
+        captureRequestTimeoutMs,
+        "Captured settings request timed out."
+      );
+    } catch (error) {
+      state.captureError = errorMessage(error);
+    } finally {
+      state.captureLoading = false;
+      renderActivity();
+    }
+  })();
 }
 
 async function loadKinVoice(kinId: string): Promise<void> {
@@ -1001,6 +1073,21 @@ async function loadKinVoice(kinId: string): Promise<void> {
     state.voiceError = errorMessage(error);
   } finally {
     state.voiceLoading = false;
+    renderActivity();
+  }
+}
+
+async function loadGroupSoundscape(groupId: string): Promise<void> {
+  state.groupSoundscapeLoading = true;
+  state.groupSoundscapeError = null;
+  renderActivity();
+
+  try {
+    state.selectedGroupSoundscape = await window.kinagent.getGroupSoundscapePreference({ groupId });
+  } catch (error) {
+    state.groupSoundscapeError = errorMessage(error);
+  } finally {
+    state.groupSoundscapeLoading = false;
     renderActivity();
   }
 }
@@ -1040,6 +1127,7 @@ function renderActivity(): void {
   const activeMode = modeForTab(activeTab);
   const isMonitor = activeMode === "monitor";
   const isVoice = activeMode === "voice";
+  const isGroupAudio = activeMode === "group-audio";
   const isHermes = activeMode === "hermes";
   const isAnalyze = activeMode === "analyze";
   const isExport = activeMode === "export";
@@ -1069,7 +1157,14 @@ function renderActivity(): void {
   }
 
   const selectedGroup = currentSelectedGroup();
-  if (selectedGroup && isExport) {
+  if (selectedGroup && isGroupAudio) {
+    elements.activityTitle.textContent = `${selectedGroup.name || "Group"} · Audio`;
+    elements.monitorLine.textContent = subtitleForDetailMode(activeMode);
+    renderGroupAudioTab(selectedGroup);
+    return;
+  }
+
+  if (selectedGroup && activeMode === "group-export") {
     elements.activityTitle.textContent = `${selectedGroup.name || "Group"} · Export`;
     elements.monitorLine.textContent = subtitleForDetailMode(activeMode);
     renderGroupExportTab(actionPanelContext(), selectedGroup);
@@ -1079,11 +1174,20 @@ function renderActivity(): void {
   const selectedKin = currentSelectedKin();
   const field = currentCapturedField();
   const tabLabel = field?.label || tabLabelFor(tabNavigationContext(), activeTab);
-  elements.activityTitle.textContent = selectedKin ? `${selectedKin.name || "Kin"} · ${tabLabel}` : tabLabel;
+  elements.activityTitle.textContent = selectedGroup
+    ? `${selectedGroup.name || "Group"} · ${tabLabel}`
+    : selectedKin
+      ? `${selectedKin.name || "Kin"} · ${tabLabel}`
+      : tabLabel;
   elements.monitorLine.textContent = subtitleForDetailMode(activeMode);
 
+  if (selectedGroup) {
+    renderGroupCapturedTab(selectedGroup, field);
+    return;
+  }
+
   if (!state.selectedKinId) {
-    renderDetailEmpty("Select Manage on a Kin to inspect captured settings.");
+    renderDetailEmpty("Select Manage on a Kin or Group to inspect captured settings.");
     return;
   }
 
@@ -1148,6 +1252,148 @@ function renderActivity(): void {
     })
   });
   renderJournalSuggestions(journalSuggestionsContext());
+}
+
+function renderGroupCapturedTab(selectedGroup: GroupSummary, field: CapturedFieldSummary | null): void {
+  if (!state.selectedGroupId) {
+    renderDetailEmpty("Select Manage on a Group to inspect captured settings.");
+    return;
+  }
+
+  if (state.captureLoading) {
+    renderDetailEmpty("Loading captured settings.");
+    return;
+  }
+
+  if (state.captureError) {
+    renderDetailEmpty(state.captureError);
+    return;
+  }
+
+  if (!state.selectedGroupCapture?.ok) {
+    renderDetailEmpty(state.selectedGroupCapture?.error || "No captured state found for this Group yet.");
+    return;
+  }
+
+  if (!field || !field.available) {
+    renderCapturedDetailContent(capturedDetailContext(), {
+      content: "No captured value for this setting.",
+      history: [],
+      stats: capturedDetailStats({
+        selectedGroup,
+        groupId: state.selectedGroupId,
+        field,
+        capture: state.selectedGroupCapture,
+        fallbackSettingLabel: tabLabelFor(tabNavigationContext(), state.activeTab)
+      })
+    });
+    return;
+  }
+
+  renderCapturedDetailContent(capturedDetailContext(), {
+    content: field.content || "",
+    history: field.history || [],
+    stats: capturedDetailStats({
+      selectedGroup,
+      groupId: state.selectedGroupId,
+      field,
+      capture: state.selectedGroupCapture,
+      fallbackSettingLabel: tabLabelFor(tabNavigationContext(), state.activeTab)
+    })
+  });
+}
+
+function renderGroupAudioTab(selectedGroup: GroupSummary): void {
+  if (state.groupSoundscapeLoading) {
+    renderDetailEmpty("Loading group audio settings.");
+    return;
+  }
+
+  if (state.groupSoundscapeError) {
+    renderDetailEmpty(state.groupSoundscapeError);
+    return;
+  }
+
+  const preference = state.selectedGroupSoundscape?.soundscape || { enabled: false };
+  elements.kinDetailEmpty.hidden = true;
+  elements.kinDetailContent.hidden = false;
+  elements.kinDetailContent.classList.remove("app-settings-content");
+  elements.kinDetailContent.classList.add("form-detail-content");
+  elements.fieldContent.hidden = true;
+  elements.journalSuggestionPanel.hidden = true;
+  elements.appSettingsForm.hidden = true;
+  elements.voiceForm.hidden = true;
+  elements.groupAudioPanel.hidden = false;
+  elements.kinHermesForm.hidden = true;
+  elements.kinAnalyzePanel.hidden = true;
+  elements.chatExportPanel.hidden = true;
+  elements.timeline.hidden = true;
+
+  elements.groupSoundscapeEnabledInput.checked = Boolean(preference.enabled);
+  elements.groupSoundscapeSaveButton.disabled = state.groupSoundscapeSaving;
+  elements.groupSoundscapeStatusLine.textContent = preference.enabled
+    ? "Hermes soundscape is enabled for this Group."
+    : "Hermes soundscape is disabled for this Group.";
+  const key = `group:${state.selectedGroupId ?? ""}`;
+  renderSoundscapeLayerList(
+    elements.groupSoundscapeLayerList,
+    state.soundscapeUpdates[key]?.state,
+    activeCueLabel(key)
+  );
+  renderDetailStats([
+    { label: "Group", value: selectedGroup.name || state.selectedGroupId || "Unknown" },
+    { label: "Soundscape", value: preference.enabled ? "Enabled" : "Off" },
+    { label: "Scope", value: "Group" },
+    { label: "Mode", value: "Local" }
+  ]);
+}
+
+async function saveSelectedGroupSoundscape(): Promise<void> {
+  if (!state.selectedGroupId || state.groupSoundscapeSaving) {
+    return;
+  }
+
+  state.groupSoundscapeSaving = true;
+  state.groupSoundscapeError = null;
+  renderActivity();
+  try {
+    const saved = await window.kinagent.setGroupSoundscapePreference({
+      groupId: state.selectedGroupId,
+      preference: {
+        enabled: elements.groupSoundscapeEnabledInput.checked
+      }
+    });
+    state.selectedGroupSoundscape = saved;
+    state.groupSubscriptions = state.groupSubscriptions.map((subscription) =>
+      subscription.group?.groupId === state.selectedGroupId
+        ? { ...subscription, soundscape: saved.soundscape || { enabled: false } }
+        : subscription
+    );
+    if (!saved.soundscape?.enabled) {
+      delete state.soundscapeUpdates[`group:${state.selectedGroupId}`];
+    }
+    void applyActiveSoundscape();
+    renderSoundscapeStatus();
+    elements.monitorLine.textContent = "Group audio settings saved.";
+  } catch (error) {
+    state.groupSoundscapeError = errorMessage(error);
+  } finally {
+    state.groupSoundscapeSaving = false;
+    renderActivity();
+  }
+}
+
+function renderDetailStats(stats: Array<{ label: string; value: string }>): void {
+  elements.detailStats.replaceChildren();
+  for (const stat of stats) {
+    const item = document.createElement("div");
+    const label = document.createElement("span");
+    label.textContent = stat.label;
+    const value = document.createElement("strong");
+    value.textContent = stat.value;
+    item.append(label, value);
+    elements.detailStats.append(item);
+  }
 }
 
 function resetKinActionPlaceholders(): void {
@@ -1233,7 +1479,41 @@ async function focusJournalSuggestion(suggestion: JournalSuggestionSummary | nul
 }
 
 function currentCapturedField(): CapturedFieldSummary | null {
+  if (state.selectedGroupId) {
+    return state.selectedGroupCapture?.fields?.find((field) => field.key === state.activeTab) || null;
+  }
+
   return state.selectedKinCapture?.fields?.find((field) => field.key === state.activeTab) || null;
+}
+
+function isKinTab(tab: string): boolean {
+  return [
+    "backstory",
+    "directive",
+    "memory",
+    "example",
+    "scene",
+    "background",
+    "profile",
+    "journal",
+    "hermes",
+    "voice",
+    "analyze",
+    "export"
+  ].includes(tab);
+}
+
+function isGroupTab(tab: string): boolean {
+  return [
+    "group-context",
+    "group-directive",
+    "group-scene",
+    "group-scene-suggestion",
+    "group-members",
+    "group-profile",
+    "group-audio",
+    "group-export"
+  ].includes(tab);
 }
 
 function currentSelectedKin(): KinSummary | null {
@@ -1273,6 +1553,15 @@ function clearMissingSelectedGroup(): void {
 
   if (!state.groups.some((group) => group.groupId === state.selectedGroupId)) {
     state.selectedGroupId = null;
+    state.selectedGroupCapture = null;
+    state.selectedGroupSoundscape = null;
+    state.captureError = null;
+    state.groupSoundscapeError = null;
+    state.captureLoading = false;
+    state.groupSoundscapeLoading = false;
+    resetKinActionPlaceholders();
+    state.activeTab = "monitor";
+    state.selectedHistoryHash = null;
   }
 }
 
@@ -1347,6 +1636,16 @@ async function applyActiveSoundscape(): Promise<void> {
 }
 
 function renderSoundscapeStatus(): void {
+  if (state.activeTab === "group-audio" && state.selectedGroupId) {
+    const key = `group:${state.selectedGroupId}`;
+    renderSoundscapeLayerList(
+      elements.groupSoundscapeLayerList,
+      state.soundscapeUpdates[key]?.state,
+      activeCueLabel(key)
+    );
+    return;
+  }
+
   if (state.activeTab !== "voice" || !state.selectedKinId) {
     return;
   }
@@ -1395,7 +1694,9 @@ function activeCueLabel(key: string): string | null {
 function isSoundscapeEnabledForKey(key: string): boolean {
   const [scope, id] = key.split(":", 2);
   if (scope === "group") {
-    return true;
+    return Boolean(
+      state.groupSubscriptions.find((subscription) => subscription.group?.groupId === id)?.soundscape?.enabled
+    );
   }
 
   return Boolean(state.subscriptions.find((subscription) => subscription.kin?.aiId === id)?.soundscape?.enabled);
