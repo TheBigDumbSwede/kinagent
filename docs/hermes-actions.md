@@ -78,6 +78,8 @@ Prewarm:
 
 - Local scene prewarm is handled by `LocalScenePrewarmCoordinator`, separately from soundscape prewarm.
 - It loads bounded recent-message context through Kindroid's documented `/v1/get-chat-messages` API.
+- It is gated by the shared per-Kin or per-group prewarm watermark, so cached-ready sources are not re-fetched on
+  restart unless newer live chat activity arrives or the user explicitly uses Force Prewarm from the desktop Scene tab.
 - It emits `kindroid.local_scene.prewarm` to Hermes and executes only `update_local_scene_state` or
   `update_group_local_scene_state` actions from the response.
 - It does not execute soundscape, `current_scene`, journal, ambient-context, or Chat Dynamism actions.
@@ -175,6 +177,8 @@ Guardrails:
   generic office, lobby, tension, or machinery ambience.
 - This action must not include Kin-visible text, soundtrack instructions, Foley requests, or durable memory content.
 - It does not call Kindroid and does not write `current_scene`.
+- Soundscape prewarm uses the same shared prewarm watermark as local scene prewarm, persists generated soundscape state
+  locally, and can be refreshed per source with Force Prewarm from the desktop Audio tab.
 
 ## Journal Suggestions
 

@@ -68,6 +68,8 @@ Runtime or CLI
   -> KindroidClient
   -> GET /v1/get-chat-messages
   -> bounded recent-message context
+  -> ./data/prewarm-state.json freshness watermark
+  -> ./data/soundscape-state.json
 
 Local scene state:
 Runtime
@@ -77,6 +79,7 @@ Runtime
   -> Hermes
   -> update_local_scene_state or update_group_local_scene_state
   -> ./data/local-scene-state.json
+  -> ./data/prewarm-state.json freshness watermark
   -> desktop Kin or Group Scene tab
 ```
 
@@ -291,7 +294,10 @@ Group `Scene` tab shows the current local snapshot. Use Kindroid `current_scene`
 change; use local scene state for inspectable app-owned context that should remain inside Kinagent.
 
 Local scene prewarm is separate from soundscape prewarm. It uses the same documented `/v1/get-chat-messages` API for
-bounded recent context, but runs through its own coordinator and only executes local scene actions.
+bounded recent context, but runs through its own coordinator and only executes local scene actions. Kinagent persists a
+per-Kin or per-group prewarm watermark, so app restart hydrates existing local scene state without re-fetching every
+monitored source. A live chat event advances the source watermark and may trigger a fresh prewarm; the Scene tab also
+has a per-source Force Prewarm button for cases where the user chatted while Kinagent was not running.
 
 Enable desktop-only voice sidecar playback for new AI messages:
 
@@ -323,6 +329,11 @@ are gated by that Kin's Audio setting. Group soundscapes are gated by that Group
 desktop renderer caches that state by Kin or group and plays the most recently active monitored source. Browser autoplay
 policy still applies, so audio starts only after a user interaction with the desktop UI. If voice sidecar playback is
 active, the soundscape ducks while spoken audio is scheduled.
+
+Soundscape state is persisted per Kin or group and hydrated on startup. Automatic soundscape prewarm uses the shared
+prewarm watermark, so restart does not re-fetch every enabled source unless newer live chat activity arrives. The Kin or
+Group Audio tab has a per-source Force Prewarm button that bypasses the cached-ready check while still respecting the
+source's Soundscape enabled setting and any in-flight prewarm.
 
 Manual test: enable procedural ambience from the Kin or Group Audio tab, monitor that Kin or Group with
 Hermes enabled, and send a scene message that materially establishes or changes the environment. The Audio tab should

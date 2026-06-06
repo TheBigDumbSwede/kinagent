@@ -1,8 +1,13 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AppConfig } from "../src/config/types.js";
 import { SoundscapePrewarmCoordinator } from "../src/runtime/soundscapePrewarmCoordinator.js";
 import type { HermesAdapter } from "../src/hermes/types.js";
 import type { KindroidGroup, KindroidKin } from "../src/kindroid/client/index.js";
+import { PrewarmStateStore } from "../src/runtime/prewarmStateStore.js";
+import { silentSoundscapeState } from "../src/soundscape/SoundscapeState.js";
 import type { Logger } from "../src/util/logger.js";
 
 describe("SoundscapePrewarmCoordinator", () => {
@@ -140,6 +145,95 @@ describe("SoundscapePrewarmCoordinator", () => {
     expect(fetchMock).not.toHaveBeenCalled();
     expect(hermes.prewarmSoundscape).not.toHaveBeenCalled();
   });
+
+  it("skips persisted ready soundscapes until live chat advances the source watermark", async () => {
+    const fetchMock = vi.fn(async (_input: string | URL, _init?: RequestInit) =>
+      Response.json({
+        messages: [
+          {
+            id: "message-2",
+            ai_id: "kin-1",
+            sender_type: "ai",
+            timestamp: 1_780_000_001_000,
+            message: "The lobby speakers crackle."
+          }
+        ],
+        pagination: { hasMore: false, lastTimestamp: 1_780_000_001_000, limit: 18 }
+      })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const hermes: HermesAdapter = {
+      handleChatChanged: vi.fn(),
+      prewarmSoundscape: vi.fn()
+    };
+    const instance = coordinator(hermes);
+
+    instance.markReady({
+      scope: "group",
+      groupId: "group-1",
+      documentId: "message-1",
+      sourceTimestamp: "2026-06-01T12:00:00.000Z",
+      reason: "ready",
+      state: silentSoundscapeState
+    });
+
+    await instance.prewarmGroup(group("group-1", "Evening Group"), null, "startup");
+    await instance.prewarmGroup(
+      group("group-1", "Evening Group"),
+      {
+        type: "kindroid.group_chat.changed",
+        groupId: "group-1",
+        aiId: "kin-1",
+        documentId: "message-2",
+        timestamp: "2026-06-01T12:00:01.000Z",
+        text: "New live message.",
+        sender: "ai",
+        role: "ai",
+        source: "firestore"
+      },
+      "activity",
+      { trigger: { documentId: "message-2", timestamp: "2026-06-01T12:00:01.000Z" } }
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(hermes.prewarmSoundscape).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets manual force bypass a persisted ready soundscape", async () => {
+    const fetchMock = vi.fn(async (_input: string | URL, _init?: RequestInit) =>
+      Response.json({
+        messages: [
+          {
+            id: "message-1",
+            sender_type: "ai",
+            timestamp: 1_780_000_000_000,
+            message: "Rain taps the glass."
+          }
+        ],
+        pagination: { hasMore: false, lastTimestamp: 1_780_000_000_000, limit: 18 }
+      })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const hermes: HermesAdapter = {
+      handleChatChanged: vi.fn(),
+      prewarmSoundscape: vi.fn()
+    };
+    const instance = coordinator(hermes);
+
+    instance.markReady({
+      scope: "kin",
+      kinId: "kin-1",
+      documentId: "message-1",
+      sourceTimestamp: "2026-06-01T12:00:00.000Z",
+      reason: "ready",
+      state: silentSoundscapeState
+    });
+
+    await instance.prewarmKin(kin("kin-1", "Alexis"), "manual-force", { force: true });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(hermes.prewarmSoundscape).toHaveBeenCalledTimes(1);
+  });
 });
 
 function coordinator(
@@ -152,8 +246,14 @@ function coordinator(
     hermes,
     isKinSoundscapeEnabled: (kinId) => kinId === "kin-1",
     isGroupSoundscapeEnabled: () => options.groupSoundscapeEnabled ?? true,
-    isKnownKin: (kinId) => kinId === "kin-1" || kinId === "kin-disabled"
+    isKnownKin: (kinId) => kinId === "kin-1" || kinId === "kin-disabled",
+    prewarmState: testPrewarmStateStore()
   });
+}
+
+function testPrewarmStateStore(): PrewarmStateStore {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "kinagent-prewarm-test-"));
+  return new PrewarmStateStore(path.join(dir, "prewarm-state.json"));
 }
 
 function kin(aiId: string, name: string): KindroidKin {

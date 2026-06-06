@@ -117,6 +117,7 @@ interface RendererState {
   selectedKinAmbient: KinAmbientPreferenceResult | null;
   journalSuggestions: JournalSuggestionSummary[];
   localScenes: LocalSceneStateSummary[];
+  localSceneForceSaving: boolean;
   journalSavingId: string | null;
   journalError: string | null;
   captureLoading: boolean;
@@ -124,9 +125,11 @@ interface RendererState {
   voiceLoading: boolean;
   groupSoundscapeLoading: boolean;
   groupSoundscapeSaving: boolean;
+  groupSoundscapeForceSaving: boolean;
   groupSoundscapeError: string | null;
   voiceError: string | null;
   voiceSaving: boolean;
+  soundscapeForceSaving: boolean;
   ambientLoading: boolean;
   ambientError: string | null;
   ambientSaving: boolean;
@@ -169,6 +172,7 @@ interface RendererElements {
   detailStats: HTMLElement;
   journalSuggestionPanel: HTMLElement;
   fieldContent: HTMLElement;
+  localSceneActions: HTMLElement;
   appSettingsForm: HTMLFormElement;
   appSettingsStatusLine: HTMLElement;
   appSettingsSaveButton: HTMLButtonElement;
@@ -200,6 +204,7 @@ interface RendererElements {
   groupSoundscapeStatusLine: HTMLElement;
   groupSoundscapeLayerList: HTMLElement;
   groupSoundscapeSaveButton: HTMLButtonElement;
+  groupSoundscapeForcePrewarmButton: HTMLButtonElement;
   kinHermesForm: HTMLFormElement;
   ambientContextEnabledInput: HTMLInputElement;
   chatDynamismCurrentValue: HTMLElement;
@@ -239,6 +244,7 @@ interface RendererElements {
   soundscapeEnabledInput: HTMLInputElement;
   soundscapeStatusLine: HTMLElement;
   soundscapeLayerList: HTMLElement;
+  soundscapeForcePrewarmButton: HTMLButtonElement;
   timelineList: HTMLElement;
   timeline: HTMLElement;
   monitorLine: HTMLElement;
@@ -260,6 +266,7 @@ interface DesktopStatus {
   groupSubscriptions?: GroupSubscriptionSummary[];
   journalSuggestions?: JournalSuggestionSummary[];
   localScenes?: LocalSceneStateSummary[];
+  soundscapes?: ScopedSoundscapeUpdate[];
   monitorRunning?: boolean;
   session?: {
     available?: boolean;
@@ -321,6 +328,8 @@ interface RendererApi {
   exportKinChat(input: ChatExportRequest & { kinId: string }): Promise<ChatExportResult>;
   exportGroupChat(input: ChatExportRequest & { groupId: string }): Promise<ChatExportResult>;
   analyzeKin(input: { kinId: string }): Promise<KinAnalysisResult>;
+  forceLocalScenePrewarm(input: { scope: "kin" | "group"; id: string }): Promise<{ ok: boolean }>;
+  forceSoundscapePrewarm(input: { scope: "kin" | "group"; id: string }): Promise<{ ok: boolean }>;
   readSoundscapeAsset(input: { path: string }): Promise<ArrayBuffer | Uint8Array | number[]>;
   onEvent(callback: (message: RendererEvent) => void): () => void;
 }
@@ -381,6 +390,7 @@ const state: RendererState = {
   selectedKinAmbient: null,
   journalSuggestions: [],
   localScenes: [],
+  localSceneForceSaving: false,
   journalSavingId: null,
   journalError: null,
   captureLoading: false,
@@ -388,9 +398,11 @@ const state: RendererState = {
   voiceLoading: false,
   groupSoundscapeLoading: false,
   groupSoundscapeSaving: false,
+  groupSoundscapeForceSaving: false,
   groupSoundscapeError: null,
   voiceError: null,
   voiceSaving: false,
+  soundscapeForceSaving: false,
   ambientLoading: false,
   ambientError: null,
   ambientSaving: false,
@@ -443,6 +455,7 @@ const elements: RendererElements = {
   detailStats: query<HTMLElement>("#detailStats"),
   journalSuggestionPanel: query<HTMLElement>("#journalSuggestionPanel"),
   fieldContent: query<HTMLElement>("#fieldContent"),
+  localSceneActions: query<HTMLElement>("#localSceneActions"),
   appSettingsForm: query<HTMLFormElement>("#appSettingsForm"),
   appSettingsStatusLine: query<HTMLElement>("#appSettingsStatusLine"),
   appSettingsSaveButton: query<HTMLButtonElement>("#appSettingsSaveButton"),
@@ -474,6 +487,7 @@ const elements: RendererElements = {
   groupSoundscapeStatusLine: query<HTMLElement>("#groupSoundscapeStatusLine"),
   groupSoundscapeLayerList: query<HTMLElement>("#groupSoundscapeLayerList"),
   groupSoundscapeSaveButton: query<HTMLButtonElement>("#groupSoundscapeSaveButton"),
+  groupSoundscapeForcePrewarmButton: query<HTMLButtonElement>("#groupSoundscapeForcePrewarmButton"),
   kinHermesForm: query<HTMLFormElement>("#kinHermesForm"),
   ambientContextEnabledInput: query<HTMLInputElement>("#ambientContextEnabledInput"),
   chatDynamismCurrentValue: query<HTMLElement>("#chatDynamismCurrentValue"),
@@ -513,6 +527,7 @@ const elements: RendererElements = {
   soundscapeEnabledInput: query<HTMLInputElement>("#soundscapeEnabledInput"),
   soundscapeStatusLine: query<HTMLElement>("#soundscapeStatusLine"),
   soundscapeLayerList: query<HTMLElement>("#soundscapeLayerList"),
+  soundscapeForcePrewarmButton: query<HTMLButtonElement>("#soundscapeForcePrewarmButton"),
   timelineList: query<HTMLElement>("#timelineList"),
   timeline: query<HTMLElement>(".timeline"),
   monitorLine: query<HTMLElement>("#monitorLine"),
@@ -760,6 +775,12 @@ elements.groupSoundscapeEnabledInput.addEventListener("change", () => {
 elements.groupSoundscapeSaveButton.addEventListener("click", () => {
   void saveSelectedGroupSoundscape();
 });
+elements.soundscapeForcePrewarmButton.addEventListener("click", () => {
+  void forceSelectedSoundscapePrewarm("kin");
+});
+elements.groupSoundscapeForcePrewarmButton.addEventListener("click", () => {
+  void forceSelectedSoundscapePrewarm("group");
+});
 elements.kinHermesForm.addEventListener("submit", (event) => {
   event.preventDefault();
   void saveSelectedKinAmbient(voiceHermesContext());
@@ -963,6 +984,7 @@ function renderStatus(status: DesktopStatus): void {
   state.groupSubscriptions = status.groupSubscriptions || [];
   state.journalSuggestions = status.journalSuggestions || [];
   state.localScenes = status.localScenes || [];
+  state.soundscapeUpdates = soundscapeUpdatesFromList(status.soundscapes || []);
   state.monitorRunning = Boolean(status.monitorRunning);
   state.sessionAvailable = Boolean(status.session?.available);
   state.kinRefresh = status.kinRefresh || null;
@@ -1140,6 +1162,8 @@ async function loadAppSettings(): Promise<void> {
 }
 
 function renderActivity(): void {
+  elements.localSceneActions.hidden = true;
+  elements.localSceneActions.replaceChildren();
   const activeTab = state.activeTab || "monitor";
   const activeMode = modeForTab(activeTab);
   const isMonitor = activeMode === "monitor";
@@ -1362,6 +1386,7 @@ function renderGroupAudioTab(selectedGroup: GroupSummary): void {
 
   elements.groupSoundscapeEnabledInput.checked = Boolean(preference.enabled);
   elements.groupSoundscapeSaveButton.disabled = state.groupSoundscapeSaving;
+  elements.groupSoundscapeForcePrewarmButton.disabled = state.groupSoundscapeForceSaving || !preference.enabled;
   elements.groupSoundscapeStatusLine.textContent = preference.enabled
     ? "Hermes soundscape is enabled for this Group."
     : "Hermes soundscape is disabled for this Group.";
@@ -1386,6 +1411,79 @@ function renderLocalSceneTab(scope: "kin" | "group", selectedEntity: KinSummary 
     history: [],
     stats: localSceneStats(scope, selectedEntity, scene)
   });
+  renderLocalSceneForceButton(scope, selectedEntity);
+}
+
+function renderLocalSceneForceButton(scope: "kin" | "group", selectedEntity: KinSummary | GroupSummary | null): void {
+  if (!selectedEntity) {
+    return;
+  }
+
+  const button = document.createElement("button");
+  button.type = "button";
+  button.textContent = state.localSceneForceSaving ? "Prewarming" : "Force Prewarm";
+  button.disabled = state.localSceneForceSaving;
+  button.addEventListener("click", () => {
+    void forceSelectedLocalScenePrewarm(scope);
+  });
+
+  elements.localSceneActions.hidden = false;
+  elements.localSceneActions.replaceChildren(button);
+}
+
+async function forceSelectedLocalScenePrewarm(scope: "kin" | "group"): Promise<void> {
+  const id = scope === "group" ? state.selectedGroupId : state.selectedKinId;
+  if (!id || state.localSceneForceSaving) {
+    return;
+  }
+
+  state.localSceneForceSaving = true;
+  renderActivity();
+  try {
+    await window.kinagent.forceLocalScenePrewarm({ scope, id });
+    await refreshStatus();
+    elements.monitorLine.textContent = "Scene prewarm requested.";
+  } catch (error) {
+    elements.monitorLine.textContent = errorMessage(error);
+  } finally {
+    state.localSceneForceSaving = false;
+    renderActivity();
+  }
+}
+
+async function forceSelectedSoundscapePrewarm(scope: "kin" | "group"): Promise<void> {
+  const id = scope === "group" ? state.selectedGroupId : state.selectedKinId;
+  if (!id) {
+    return;
+  }
+
+  if (scope === "group") {
+    if (state.groupSoundscapeForceSaving) {
+      return;
+    }
+    state.groupSoundscapeForceSaving = true;
+  } else {
+    if (state.soundscapeForceSaving) {
+      return;
+    }
+    state.soundscapeForceSaving = true;
+  }
+
+  renderActivity();
+  try {
+    await window.kinagent.forceSoundscapePrewarm({ scope, id });
+    await refreshStatus();
+    elements.monitorLine.textContent = "Soundscape prewarm requested.";
+  } catch (error) {
+    elements.monitorLine.textContent = errorMessage(error);
+  } finally {
+    if (scope === "group") {
+      state.groupSoundscapeForceSaving = false;
+    } else {
+      state.soundscapeForceSaving = false;
+    }
+    renderActivity();
+  }
 }
 
 async function saveSelectedGroupSoundscape(): Promise<void> {
@@ -1712,6 +1810,17 @@ function handleSoundscapeUpdate(update: ScopedSoundscapeUpdate | undefined): voi
     void applyActiveSoundscape();
   }
   renderSoundscapeStatus();
+}
+
+function soundscapeUpdatesFromList(updates: ScopedSoundscapeUpdate[]): Record<string, ScopedSoundscapeUpdate> {
+  const next: Record<string, ScopedSoundscapeUpdate> = {};
+  for (const update of updates) {
+    const key = soundscapeKeyForUpdate(update);
+    if (key && update.state) {
+      next[key] = update;
+    }
+  }
+  return next;
 }
 
 function activateSoundscapeFromPayload(payload: { groupId?: unknown; kinId?: unknown } | undefined): void {

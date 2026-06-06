@@ -290,6 +290,12 @@ function registerIpcHandlers(): void {
     async (_event, input: { groupId?: string; preference?: Partial<GroupSoundscapePreference> } = {}) =>
       setGroupSoundscapePreference(input.groupId ?? "", input.preference ?? {})
   );
+  ipcMain.handle("prewarm:local-scene", async (_event, input: { scope?: "kin" | "group"; id?: string } = {}) =>
+    forceLocalScenePrewarm(input.scope, input.id ?? "")
+  );
+  ipcMain.handle("prewarm:soundscape", async (_event, input: { scope?: "kin" | "group"; id?: string } = {}) =>
+    forceSoundscapePrewarm(input.scope, input.id ?? "")
+  );
   ipcMain.handle("ambient:get-kin-preference", async (_event, input: { kinId?: string } = {}) =>
     getKinAmbientPreference(input.kinId ?? "")
   );
@@ -571,6 +577,20 @@ function setGroupSoundscapePreference(groupId: string, preference: Partial<Group
     ok: true,
     soundscape: savedSoundscape
   };
+}
+
+async function forceLocalScenePrewarm(scope: "kin" | "group" | undefined, id: string) {
+  if (scope !== "kin" && scope !== "group") {
+    throw new Error("Select a Kin or Group before forcing local scene prewarm.");
+  }
+  return requireRuntime().forceLocalScenePrewarm({ scope, id });
+}
+
+async function forceSoundscapePrewarm(scope: "kin" | "group" | undefined, id: string) {
+  if (scope !== "kin" && scope !== "group") {
+    throw new Error("Select a Kin or Group before forcing soundscape prewarm.");
+  }
+  return requireRuntime().forceSoundscapePrewarm({ scope, id });
 }
 
 function getKinAmbientPreference(kinId: string) {

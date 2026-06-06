@@ -43,6 +43,8 @@ export interface KinagentApi {
     groupId: string;
     preference: GroupSoundscapePreference;
   }): Promise<GroupSoundscapePreferenceResult>;
+  forceLocalScenePrewarm(input: { scope: "kin" | "group"; id: string }): Promise<{ ok: boolean }>;
+  forceSoundscapePrewarm(input: { scope: "kin" | "group"; id: string }): Promise<{ ok: boolean }>;
   setKinAmbientPreference(input: {
     kinId: string;
     enabled: boolean;

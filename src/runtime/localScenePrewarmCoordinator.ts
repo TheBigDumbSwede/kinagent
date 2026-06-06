@@ -5,11 +5,13 @@ import type { HermesAdapter } from "../hermes/types.js";
 import { type KindroidGroup, type KindroidKin } from "../kindroid/client/index.js";
 import { loadRecentKindroidChatHistoryMessages } from "../kindroid/chatHistory.js";
 import type { Logger } from "../util/logger.js";
+import { PrewarmStateStore, type PrewarmTrigger } from "./prewarmStateStore.js";
 
 interface LocalScenePrewarmCoordinatorOptions {
   config: AppConfig;
   logger: Logger;
   hermes: HermesAdapter;
+  prewarmState: PrewarmStateStore;
 }
 
 export class LocalScenePrewarmCoordinator {
@@ -21,22 +23,47 @@ export class LocalScenePrewarmCoordinator {
 
   markReady(state: LocalSceneState): void {
     if (state.scope === "kin" && state.kinId) {
-      this.readySources.add(`kin:${state.kinId}`);
+      const key = `kin:${state.kinId}`;
+      this.readySources.add(key);
+      this.attempts.delete(key);
+      this.options.prewarmState.markReady(
+        "localScene",
+        { scope: "kin", id: state.kinId },
+        {
+          documentId: state.sourceDocumentId,
+          timestamp: state.sourceTimestamp
+        }
+      );
       return;
     }
     if (state.scope === "group" && state.groupId) {
-      this.readySources.add(`group:${state.groupId}`);
+      const key = `group:${state.groupId}`;
+      this.readySources.add(key);
+      this.attempts.delete(key);
+      this.options.prewarmState.markReady(
+        "localScene",
+        { scope: "group", id: state.groupId },
+        {
+          documentId: state.sourceDocumentId,
+          timestamp: state.sourceTimestamp
+        }
+      );
     }
   }
 
-  async prewarmKin(kin: KindroidKin, reason: string): Promise<void> {
+  async prewarmKin(
+    kin: KindroidKin,
+    reason: string,
+    input: { trigger?: PrewarmTrigger; force?: boolean } = {}
+  ): Promise<void> {
     const key = `kin:${kin.aiId}`;
-    if (!this.begin(key)) {
+    if (!this.begin(key, { scope: "kin", id: kin.aiId }, input)) {
       return;
     }
 
     try {
       const messages = await this.loadRecentKinMessages(kin.aiId, 18);
+      const latestMessage = mostRecentMessage(messages);
       const text = buildLocalScenePrewarmText({
         scope: "direct",
         displayName: kin.name,
@@ -61,8 +88,9 @@ export class LocalScenePrewarmCoordinator {
       await this.options.hermes.prewarmLocalScene?.({
         scope: "kin",
         kinId: kin.aiId,
-        documentId: `local-scene-prewarm:${kin.aiId}:${Date.now()}`,
-        timestamp: new Date().toISOString(),
+        documentId:
+          latestMessage?.documentId ?? input.trigger?.documentId ?? `local-scene-prewarm:${kin.aiId}:${Date.now()}`,
+        timestamp: latestMessage?.timestamp ?? input.trigger?.timestamp ?? new Date().toISOString(),
         text,
         localSceneContext: {
           prewarm: true,
@@ -71,6 +99,11 @@ export class LocalScenePrewarmCoordinator {
           mutation: "local-kinagent-only"
         }
       });
+      this.options.prewarmState.markAttempt(
+        "localScene",
+        { scope: "kin", id: kin.aiId },
+        latestMessage ?? input.trigger
+      );
     } catch (error) {
       this.options.logger.warn("Hermes local scene prewarm setup failed.", {
         scope: "kin",
@@ -86,19 +119,21 @@ export class LocalScenePrewarmCoordinator {
   async prewarmGroup(
     group: KindroidGroup,
     notification: KindroidChatNotification | null,
-    reason: string
+    reason: string,
+    input: { trigger?: PrewarmTrigger; force?: boolean } = {}
   ): Promise<void> {
     if (notification && notification.type !== "kindroid.group_chat.changed") {
       return;
     }
 
     const key = `group:${group.groupId}`;
-    if (!this.begin(key)) {
+    if (!this.begin(key, { scope: "group", id: group.groupId }, input)) {
       return;
     }
 
     try {
       const messages = await this.loadRecentGroupMessages(group.groupId, 18);
+      const latestMessage = mostRecentMessage(messages);
       const latestSpeakerKinId = notification?.aiId || mostRecentKinId(messages);
       const text = buildLocalScenePrewarmText({
         scope: "group",
@@ -127,8 +162,11 @@ export class LocalScenePrewarmCoordinator {
         scope: "group",
         groupId: group.groupId,
         aiId: latestSpeakerKinId,
-        documentId: `local-scene-prewarm:${group.groupId}:${Date.now()}`,
-        timestamp: new Date().toISOString(),
+        documentId:
+          latestMessage?.documentId ??
+          input.trigger?.documentId ??
+          `local-scene-prewarm:${group.groupId}:${Date.now()}`,
+        timestamp: latestMessage?.timestamp ?? input.trigger?.timestamp ?? new Date().toISOString(),
         text,
         localSceneContext: {
           prewarm: true,
@@ -138,6 +176,11 @@ export class LocalScenePrewarmCoordinator {
           mutation: "local-kinagent-only"
         }
       });
+      this.options.prewarmState.markAttempt(
+        "localScene",
+        { scope: "group", id: group.groupId },
+        latestMessage ?? input.trigger
+      );
     } catch (error) {
       this.options.logger.warn("Hermes group local scene prewarm setup failed.", {
         groupId: group.groupId,
@@ -149,17 +192,25 @@ export class LocalScenePrewarmCoordinator {
     }
   }
 
-  private begin(key: string): boolean {
+  private begin(
+    key: string,
+    source: { scope: "kin" | "group"; id: string },
+    input: { trigger?: PrewarmTrigger; force?: boolean }
+  ): boolean {
     if (!this.options.config.hermes.enabled || !this.options.config.hermes.apiKey) {
       return false;
     }
 
-    if (this.readySources.has(key) || this.inFlight.has(key)) {
+    if (this.inFlight.has(key)) {
+      return false;
+    }
+
+    if (!this.options.prewarmState.shouldPrewarm("localScene", source, input)) {
       return false;
     }
 
     const attempts = this.attempts.get(key) ?? 0;
-    if (attempts >= 2) {
+    if (!input.force && attempts >= 2) {
       return false;
     }
 
@@ -243,4 +294,9 @@ function mostRecentKinId(messages: NormalizedKindroidMessage[]): string | null {
     }
   }
   return null;
+}
+
+function mostRecentMessage(messages: NormalizedKindroidMessage[]): PrewarmTrigger | undefined {
+  const message = messages[messages.length - 1];
+  return message ? { documentId: message.id, timestamp: message.timestamp } : undefined;
 }

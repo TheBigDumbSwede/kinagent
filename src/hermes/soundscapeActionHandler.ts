@@ -14,6 +14,7 @@ export interface ScopedSoundscapeUpdate {
   kinId?: string;
   groupId?: string;
   documentId: string;
+  sourceTimestamp?: string | null;
   reason?: string;
   state: SoundscapeState;
 }
@@ -152,6 +153,7 @@ export class SoundscapeActionHandler implements HermesActionHandler<SoundscapeAc
       scope: "kin",
       kinId: notification.kinId,
       documentId: notification.documentId,
+      sourceTimestamp: notification.timestamp,
       reason: action.reason,
       state: action.soundscape
     });
@@ -184,6 +186,7 @@ export class SoundscapeActionHandler implements HermesActionHandler<SoundscapeAc
       scope: "group",
       groupId: notification.groupId,
       documentId: notification.documentId,
+      sourceTimestamp: notification.timestamp,
       reason: action.reason,
       state: action.soundscape
     });

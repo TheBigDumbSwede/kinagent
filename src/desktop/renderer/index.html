@@ -200,6 +200,7 @@
                 <div id="detailStats" class="detail-stats"></div>
                 <div id="journalSuggestionPanel" class="journal-suggestions" hidden></div>
                 <pre id="fieldContent" class="field-content"></pre>
+                <div id="localSceneActions" class="button-row narrow" hidden></div>
                 <form id="appSettingsForm" class="app-settings-form" hidden>
                   <section class="settings-section">
                     <h2>General</h2>
@@ -383,6 +384,9 @@
                       <h3 class="subsection-heading">Current Layers</h3>
                       <ul id="soundscapeLayerList" class="soundscape-layer-list"></ul>
                     </div>
+                    <div class="button-row narrow">
+                      <button id="soundscapeForcePrewarmButton" type="button">Force Prewarm</button>
+                    </div>
                   </section>
                   <div class="button-row narrow">
                     <button id="voiceSaveButton" type="submit">Save Audio</button>
@@ -402,6 +406,7 @@
                     </div>
                     <div class="button-row narrow">
                       <button id="groupSoundscapeSaveButton" type="button">Save Audio</button>
+                      <button id="groupSoundscapeForcePrewarmButton" type="button">Force Prewarm</button>
                     </div>
                   </section>
                 </div>

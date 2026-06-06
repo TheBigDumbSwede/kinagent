@@ -5,6 +5,7 @@ import type { HermesAdapter } from "../hermes/types.js";
 import { type KindroidGroup, type KindroidKin } from "../kindroid/client/index.js";
 import { loadRecentKindroidChatHistoryMessages } from "../kindroid/chatHistory.js";
 import type { Logger } from "../util/logger.js";
+import { PrewarmStateStore, type PrewarmTrigger } from "./prewarmStateStore.js";
 
 interface SoundscapePrewarmCoordinatorOptions {
   config: AppConfig;
@@ -13,6 +14,7 @@ interface SoundscapePrewarmCoordinatorOptions {
   isKinSoundscapeEnabled: (kinId: string) => boolean;
   isGroupSoundscapeEnabled: (groupId: string) => boolean;
   isKnownKin: (kinId: string) => boolean;
+  prewarmState: PrewarmStateStore;
 }
 
 export class SoundscapePrewarmCoordinator {
@@ -56,11 +58,25 @@ export class SoundscapePrewarmCoordinator {
 
   markReady(update: ScopedSoundscapeUpdate): void {
     if (update.scope === "kin" && update.kinId) {
-      this.readySources.add(`kin:${update.kinId}`);
+      const key = `kin:${update.kinId}`;
+      this.readySources.add(key);
+      this.attempts.delete(key);
+      this.options.prewarmState.markReady(
+        "soundscape",
+        { scope: "kin", id: update.kinId },
+        { documentId: update.documentId, timestamp: update.sourceTimestamp ?? null }
+      );
       return;
     }
     if (update.scope === "group" && update.groupId) {
-      this.readySources.add(`group:${update.groupId}`);
+      const key = `group:${update.groupId}`;
+      this.readySources.add(key);
+      this.attempts.delete(key);
+      this.options.prewarmState.markReady(
+        "soundscape",
+        { scope: "group", id: update.groupId },
+        { documentId: update.documentId, timestamp: update.sourceTimestamp ?? null }
+      );
     }
   }
 
@@ -88,14 +104,19 @@ export class SoundscapePrewarmCoordinator {
     };
   }
 
-  async prewarmKin(kin: KindroidKin, reason: string): Promise<void> {
+  async prewarmKin(
+    kin: KindroidKin,
+    reason: string,
+    input: { trigger?: PrewarmTrigger; force?: boolean } = {}
+  ): Promise<void> {
     const key = `kin:${kin.aiId}`;
-    if (!this.begin(key, this.options.isKinSoundscapeEnabled(kin.aiId))) {
+    if (!this.begin(key, this.options.isKinSoundscapeEnabled(kin.aiId), { scope: "kin", id: kin.aiId }, input)) {
       return;
     }
 
     try {
       const messages = await this.loadRecentKinMessages(kin.aiId, 18);
+      const latestMessage = mostRecentMessage(messages);
       const text = buildSoundscapePrewarmText({
         scope: "direct",
         displayName: kin.name,
@@ -120,8 +141,9 @@ export class SoundscapePrewarmCoordinator {
       await this.options.hermes.prewarmSoundscape?.({
         scope: "kin",
         kinId: kin.aiId,
-        documentId: `soundscape-prewarm:${kin.aiId}:${Date.now()}`,
-        timestamp: new Date().toISOString(),
+        documentId:
+          latestMessage?.documentId ?? input.trigger?.documentId ?? `soundscape-prewarm:${kin.aiId}:${Date.now()}`,
+        timestamp: latestMessage?.timestamp ?? input.trigger?.timestamp ?? new Date().toISOString(),
         text,
         soundscapeContext: {
           enabledForSource: true,
@@ -131,6 +153,11 @@ export class SoundscapePrewarmCoordinator {
           mutation: "local-renderer-only"
         }
       });
+      this.options.prewarmState.markAttempt(
+        "soundscape",
+        { scope: "kin", id: kin.aiId },
+        latestMessage ?? input.trigger
+      );
     } catch (error) {
       this.options.logger.warn("Hermes soundscape prewarm setup failed.", {
         scope: "kin",
@@ -146,19 +173,28 @@ export class SoundscapePrewarmCoordinator {
   async prewarmGroup(
     group: KindroidGroup,
     notification: KindroidChatNotification | null,
-    reason: string
+    reason: string,
+    input: { trigger?: PrewarmTrigger; force?: boolean } = {}
   ): Promise<void> {
     if (notification && notification.type !== "kindroid.group_chat.changed") {
       return;
     }
 
     const key = `group:${group.groupId}`;
-    if (!this.begin(key, this.options.isGroupSoundscapeEnabled(group.groupId))) {
+    if (
+      !this.begin(
+        key,
+        this.options.isGroupSoundscapeEnabled(group.groupId),
+        { scope: "group", id: group.groupId },
+        input
+      )
+    ) {
       return;
     }
 
     try {
       const messages = await this.loadRecentGroupMessages(group.groupId, 18);
+      const latestMessage = mostRecentMessage(messages);
       const latestSpeakerKinId = notification?.aiId || mostRecentKinId(messages);
 
       const text = buildSoundscapePrewarmText({
@@ -185,8 +221,9 @@ export class SoundscapePrewarmCoordinator {
         scope: "group",
         groupId: group.groupId,
         aiId: latestSpeakerKinId,
-        documentId: `soundscape-prewarm:${group.groupId}:${Date.now()}`,
-        timestamp: new Date().toISOString(),
+        documentId:
+          latestMessage?.documentId ?? input.trigger?.documentId ?? `soundscape-prewarm:${group.groupId}:${Date.now()}`,
+        timestamp: latestMessage?.timestamp ?? input.trigger?.timestamp ?? new Date().toISOString(),
         text,
         soundscapeContext: {
           enabledForSource: true,
@@ -197,6 +234,11 @@ export class SoundscapePrewarmCoordinator {
           mutation: "local-renderer-only"
         }
       });
+      this.options.prewarmState.markAttempt(
+        "soundscape",
+        { scope: "group", id: group.groupId },
+        latestMessage ?? input.trigger
+      );
     } catch (error) {
       this.options.logger.warn("Hermes group soundscape prewarm setup failed.", {
         groupId: group.groupId,
@@ -208,13 +250,22 @@ export class SoundscapePrewarmCoordinator {
     }
   }
 
-  private begin(key: string, enabled: boolean): boolean {
-    if (!enabled || this.readySources.has(key) || this.inFlight.has(key)) {
+  private begin(
+    key: string,
+    enabled: boolean,
+    source: { scope: "kin" | "group"; id: string },
+    input: { trigger?: PrewarmTrigger; force?: boolean }
+  ): boolean {
+    if (!enabled || this.inFlight.has(key)) {
+      return false;
+    }
+
+    if (!this.options.prewarmState.shouldPrewarm("soundscape", source, input)) {
       return false;
     }
 
     const attempts = this.attempts.get(key) ?? 0;
-    if (attempts >= 2) {
+    if (!input.force && attempts >= 2) {
       return false;
     }
 
@@ -305,4 +356,9 @@ function mostRecentKinId(messages: NormalizedKindroidMessage[]): string | null {
     }
   }
   return null;
+}
+
+function mostRecentMessage(messages: NormalizedKindroidMessage[]): PrewarmTrigger | undefined {
+  const message = messages[messages.length - 1];
+  return message ? { documentId: message.id, timestamp: message.timestamp } : undefined;
 }

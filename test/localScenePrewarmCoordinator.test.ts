@@ -1,8 +1,12 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AppConfig } from "../src/config/types.js";
 import type { HermesAdapter } from "../src/hermes/types.js";
 import type { KindroidGroup, KindroidKin } from "../src/kindroid/client/index.js";
 import { LocalScenePrewarmCoordinator } from "../src/runtime/localScenePrewarmCoordinator.js";
+import { PrewarmStateStore } from "../src/runtime/prewarmStateStore.js";
 import type { Logger } from "../src/util/logger.js";
 
 describe("LocalScenePrewarmCoordinator", () => {
@@ -126,6 +130,47 @@ describe("LocalScenePrewarmCoordinator", () => {
     expect(hermes.prewarmLocalScene).not.toHaveBeenCalled();
   });
 
+  it("only fetches again when a live trigger moves past the persisted watermark", async () => {
+    const fetchMock = vi.fn(async (_input: string | URL, _init?: RequestInit) =>
+      Response.json({
+        messages: [
+          {
+            id: "message-2",
+            sender_type: "ai",
+            timestamp: 1_780_000_001_000,
+            message: "The room is unchanged."
+          }
+        ],
+        pagination: { hasMore: false, lastTimestamp: 1_780_000_001_000, limit: 18 }
+      })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const hermes: HermesAdapter = {
+      handleChatChanged: vi.fn(),
+      prewarmLocalScene: vi.fn()
+    };
+    const instance = coordinator(hermes);
+
+    instance.markReady({
+      scope: "kin",
+      kinId: "kin-1",
+      updatedAt: "2026-06-01T12:00:00.000Z",
+      sourceDocumentId: "message-1",
+      sourceTimestamp: "2026-06-01T12:00:00.000Z",
+      location: "library"
+    });
+
+    await instance.prewarmKin(kin("kin-1", "Alexis"), "activity", {
+      trigger: { documentId: "message-1", timestamp: "2026-06-01T12:00:00.000Z" }
+    });
+    await instance.prewarmKin(kin("kin-1", "Alexis"), "activity", {
+      trigger: { documentId: "message-2", timestamp: "2026-06-01T12:00:01.000Z" }
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(hermes.prewarmLocalScene).toHaveBeenCalledTimes(1);
+  });
+
   it("does not load recent messages when Hermes is disabled", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
@@ -145,8 +190,14 @@ function coordinator(hermes: HermesAdapter, options: { hermesEnabled?: boolean }
   return new LocalScenePrewarmCoordinator({
     config: testConfig(options),
     logger: testLogger,
-    hermes
+    hermes,
+    prewarmState: testPrewarmStateStore()
   });
+}
+
+function testPrewarmStateStore(): PrewarmStateStore {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "kinagent-prewarm-test-"));
+  return new PrewarmStateStore(path.join(dir, "prewarm-state.json"));
 }
 
 function kin(aiId: string, name: string): KindroidKin {

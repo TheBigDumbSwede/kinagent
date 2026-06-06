@@ -28,6 +28,7 @@ export interface VoiceHermesState {
   ambientLoading: boolean;
   ambientError: string | null;
   ambientSaving: boolean;
+  soundscapeForceSaving: boolean;
   subscriptions: SubscriptionSummary[];
 }
 
@@ -58,6 +59,7 @@ export interface VoiceHermesElements {
   soundscapeEnabledInput: HTMLInputElement;
   soundscapeStatusLine: HTMLElement;
   soundscapeLayerList: HTMLElement;
+  soundscapeForcePrewarmButton: HTMLButtonElement;
   ambientContextEnabledInput: HTMLInputElement;
   chatDynamismCurrentValue: HTMLElement;
   chatDynamismRangeControl: HTMLElement;
@@ -114,6 +116,8 @@ export function renderVoiceTab(context: VoiceHermesContext, selectedKin: KinSumm
   elements.openAiInstructionsInput.value = preference.openaiInstructions || "";
   elements.voiceSaveButton.disabled = state.voiceSaving;
   elements.soundscapeEnabledInput.checked = Boolean(state.selectedKinVoice.soundscape?.enabled);
+  elements.soundscapeForcePrewarmButton.disabled =
+    state.soundscapeForceSaving || !state.selectedKinVoice.soundscape?.enabled;
   renderVoiceProviderFields(context);
   renderVoiceStatusLine(context);
   renderSoundscapeStatusLine(context);
