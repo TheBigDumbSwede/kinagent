@@ -44,6 +44,7 @@ export class SoundscapeController {
   private currentState: SoundscapeState | null = null;
   private userInteractionReady = false;
   private duckedUntil = 0;
+  private updateGeneration = 0;
   private duckTimer: number | undefined;
   private cueTimer: number | undefined;
   private cueScheduler = new SoundscapeCueScheduler();
@@ -53,12 +54,14 @@ export class SoundscapeController {
   markUserInteractionReady(): void {
     this.userInteractionReady = true;
     if (this.currentState?.enabled) {
-      void this.applyState(this.currentState);
+      const generation = this.nextGeneration();
+      void this.applyState(this.currentState, generation);
     }
   }
 
   async update(input: SoundscapeState): Promise<void> {
     const state = normalizeSoundscapeState(input);
+    const generation = this.nextGeneration();
     this.currentState = state;
 
     if (!state.enabled) {
@@ -73,7 +76,7 @@ export class SoundscapeController {
       return;
     }
 
-    await this.applyState(state);
+    await this.applyState(state, generation);
   }
 
   duckFor(durationMs: number): void {
@@ -93,6 +96,7 @@ export class SoundscapeController {
   }
 
   stop(): void {
+    this.nextGeneration();
     if (!this.context || !this.masterGain) {
       this.layers.clear();
       return;
@@ -111,13 +115,14 @@ export class SoundscapeController {
   }
 
   dispose(): void {
+    this.nextGeneration();
     this.stop();
     void this.context?.close();
     this.context = null;
     this.masterGain = null;
   }
 
-  private async applyState(state: SoundscapeState): Promise<void> {
+  private async applyState(state: SoundscapeState, generation: number): Promise<void> {
     const context = this.ensureContext();
     const masterGain = this.masterGain;
     if (!masterGain) {
@@ -125,6 +130,9 @@ export class SoundscapeController {
     }
     if (context.state === "suspended") {
       await context.resume();
+      if (!this.isCurrentGeneration(generation)) {
+        return;
+      }
     }
 
     const now = context.currentTime;
@@ -146,7 +154,19 @@ export class SoundscapeController {
       if (existing) {
         existing.update(descriptor, state.intensity, now);
       } else {
-        const voice = await this.createLayerVoice(context, state, descriptor);
+        let voice: LayerVoice;
+        try {
+          voice = await this.createLayerVoice(context, state, descriptor, generation);
+        } catch (error) {
+          if (error instanceof StaleSoundscapeUpdateError) {
+            return;
+          }
+          throw error;
+        }
+        if (!this.isCurrentGeneration(generation)) {
+          voice.stop(context.currentTime + 0.02);
+          return;
+        }
         voice.output.connect(masterGain);
         voice.update(descriptor, state.intensity, now);
         this.layers.set(key, voice);
@@ -165,7 +185,8 @@ export class SoundscapeController {
   private async createLayerVoice(
     context: AudioContext,
     state: SoundscapeState,
-    descriptor: ProceduralLayerDescriptor
+    descriptor: ProceduralLayerDescriptor,
+    generation: number
   ): Promise<LayerVoice> {
     const sample = chooseSampleLoop(state, descriptor);
     if (!sample) {
@@ -174,8 +195,14 @@ export class SoundscapeController {
 
     try {
       const buffer = await this.loadSampleBuffer(context, `loops/${sample.path}`);
+      if (!this.isCurrentGeneration(generation)) {
+        throw new StaleSoundscapeUpdateError();
+      }
       return createSampleLayerVoice(context, descriptor, buffer, sample.baseGain);
     } catch (error) {
+      if (error instanceof StaleSoundscapeUpdateError || !this.isCurrentGeneration(generation)) {
+        throw new StaleSoundscapeUpdateError();
+      }
       this.options.onStatus?.(`Soundscape sample unavailable: ${errorMessage(error)}`);
       return createProceduralLayerVoice(context, descriptor, state.intensity);
     }
@@ -197,7 +224,12 @@ export class SoundscapeController {
             }
             return response.arrayBuffer();
           })
-    ).then((audio) => context.decodeAudioData(audio.slice(0)));
+    )
+      .then((audio) => context.decodeAudioData(audio.slice(0)))
+      .catch((error) => {
+        this.sampleCache.delete(url);
+        throw error;
+      });
     this.sampleCache.set(url, promise);
     return promise;
   }
@@ -268,7 +300,18 @@ export class SoundscapeController {
   }
 
   private random = (): number => this.options.random?.() ?? Math.random();
+
+  private nextGeneration(): number {
+    this.updateGeneration += 1;
+    return this.updateGeneration;
+  }
+
+  private isCurrentGeneration(generation: number): boolean {
+    return this.updateGeneration === generation;
+  }
 }
+
+class StaleSoundscapeUpdateError extends Error {}
 
 function createProceduralLayerVoice(
   context: AudioContext,

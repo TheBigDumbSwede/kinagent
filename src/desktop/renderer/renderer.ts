@@ -45,6 +45,7 @@ import {
   syncChatDynamismRangeLabels
 } from "./voiceHermesForms.js";
 import { SoundscapeController } from "./SoundscapeController.js";
+import { shouldDeactivateActiveSoundscape, soundscapeKeyFromPayload } from "./SoundscapeActivation.js";
 import { describeSoundscapeLayerSample } from "./SoundscapeSampleSelection.js";
 import { silentSoundscapeState, type SoundscapeState } from "../../soundscape/SoundscapeState.js";
 import type {
@@ -850,6 +851,7 @@ window.kinagent.onEvent((message) => {
   }
 
   if (message.channel === "monitor-stopped" || message.channel === "monitor-exit") {
+    deactivateSoundscapeFromPayload(message.payload);
     markKinSubscriptionRunning(subscriptionListContext(), message.payload?.kinId, false);
     updateMonitorRunning();
     renderMonitorState(monitorPanelContext());
@@ -857,6 +859,7 @@ window.kinagent.onEvent((message) => {
   }
 
   if (message.channel === "monitor-error") {
+    deactivateSoundscapeFromPayload(message.payload);
     markKinSubscriptionRunning(subscriptionListContext(), message.payload?.kinId, false);
     updateMonitorRunning();
     elements.monitorLine.textContent = payloadText(message.payload, "Monitor error");
@@ -872,6 +875,7 @@ window.kinagent.onEvent((message) => {
   }
 
   if (message.channel === "group-monitor-stopped" || message.channel === "group-monitor-exit") {
+    deactivateSoundscapeFromPayload(message.payload);
     markGroupSubscriptionRunning(subscriptionListContext(), message.payload?.groupId, false);
     updateMonitorRunning();
     renderMonitorState(monitorPanelContext());
@@ -879,6 +883,7 @@ window.kinagent.onEvent((message) => {
   }
 
   if (message.channel === "group-monitor-error") {
+    deactivateSoundscapeFromPayload(message.payload);
     markGroupSubscriptionRunning(subscriptionListContext(), message.payload?.groupId, false);
     updateMonitorRunning();
     elements.monitorLine.textContent = payloadText(message.payload, "Group monitor error");
@@ -1625,6 +1630,17 @@ function activateSoundscapeFromPayload(payload: { groupId?: unknown; kinId?: unk
   renderSoundscapeStatus();
 }
 
+function deactivateSoundscapeFromPayload(payload: { groupId?: unknown; kinId?: unknown } | undefined): void {
+  if (!shouldDeactivateActiveSoundscape(state.activeSoundscapeKey, payload)) {
+    return;
+  }
+
+  state.activeSoundscapeKey = null;
+  state.lastSoundscapeCue = null;
+  void applyActiveSoundscape();
+  renderSoundscapeStatus();
+}
+
 async function applyActiveSoundscape(): Promise<void> {
   if (!state.activeSoundscapeKey || !isSoundscapeEnabledForKey(state.activeSoundscapeKey)) {
     await soundscapeController.update(silentSoundscapeState);
@@ -1700,16 +1716,6 @@ function isSoundscapeEnabledForKey(key: string): boolean {
   }
 
   return Boolean(state.subscriptions.find((subscription) => subscription.kin?.aiId === id)?.soundscape?.enabled);
-}
-
-function soundscapeKeyFromPayload(payload: { groupId?: unknown; kinId?: unknown } | undefined): string | null {
-  const groupId = typeof payload?.groupId === "string" && payload.groupId ? payload.groupId : null;
-  if (groupId) {
-    return `group:${groupId}`;
-  }
-
-  const kinId = typeof payload?.kinId === "string" && payload.kinId ? payload.kinId : null;
-  return kinId ? `kin:${kinId}` : null;
 }
 
 function soundscapeKeyForUpdate(update: ScopedSoundscapeUpdate | undefined): string | null {
