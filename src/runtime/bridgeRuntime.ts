@@ -36,7 +36,13 @@ import {
   type KinSubscriptionStatus
 } from "./kinSubscriptionSupervisor.js";
 import { LocalScenePrewarmCoordinator } from "./localScenePrewarmCoordinator.js";
-import { PrewarmStateStore, prewarmTriggerFromNotification, type PrewarmSourceState } from "./prewarmStateStore.js";
+import { PrewarmCoordinatorRegistry } from "./prewarmCoordinatorRegistry.js";
+import {
+  PrewarmStateStore,
+  prewarmTriggerFromNotification,
+  type PrewarmKind,
+  type PrewarmSourceState
+} from "./prewarmStateStore.js";
 import { PreviouslyOnPrewarmCoordinator } from "./previouslyOnPrewarmCoordinator.js";
 import { SoundscapePrewarmCoordinator } from "./soundscapePrewarmCoordinator.js";
 import { VoiceRuntime, voiceProviderConfigured } from "../voice/voiceRuntime.js";
@@ -92,7 +98,7 @@ export class BridgeRuntime {
   private readonly localScenePrewarm: LocalScenePrewarmCoordinator;
   private readonly previouslyOnPrewarm: PreviouslyOnPrewarmCoordinator;
   private readonly soundscapePrewarm: SoundscapePrewarmCoordinator;
-  private readonly resumedChatHistoryCatchups = new Set<string>();
+  private readonly prewarmCoordinators: PrewarmCoordinatorRegistry;
   private started = false;
   private startupCaptureStarted = false;
 
@@ -105,6 +111,15 @@ export class BridgeRuntime {
     this.previouslyOn = PreviouslyOnStore.fromConfig(options.config);
     this.soundscapes = SoundscapeStateStore.fromConfig(options.config);
     this.prewarmState = PrewarmStateStore.fromConfig(options.config);
+    this.prewarmCoordinators = new PrewarmCoordinatorRegistry({
+      logger: options.logger,
+      prewarmState: this.prewarmState,
+      resolveKin: (kinId) =>
+        this.kinSubscriptionSupervisor.statuses().find((subscription) => subscription.kin.aiId === kinId)?.kin ?? null,
+      resolveGroup: (groupId) =>
+        this.groupSubscriptionSupervisor.statuses().find((subscription) => subscription.group.groupId === groupId)
+          ?.group ?? null
+    });
     this.chatDynamismSuggestions = ChatDynamismSuggestionStore.fromConfig(options.config);
     this.hermes = createHermesAdapter(options.config, options.logger, {
       dedupeStore,
@@ -193,6 +208,9 @@ export class BridgeRuntime {
       isKnownKin: (kinId) =>
         this.kinSubscriptionSupervisor.statuses().some((subscription) => subscription.kin.aiId === kinId)
     });
+    this.prewarmCoordinators.register("localScene", this.localScenePrewarm);
+    this.prewarmCoordinators.register("previouslyOn", this.previouslyOnPrewarm);
+    this.prewarmCoordinators.register("soundscape", this.soundscapePrewarm);
     this.hydratePrewarmReadiness();
     this.voice = new VoiceRuntime({
       config: options.config,
@@ -409,44 +427,34 @@ export class BridgeRuntime {
   }
 
   async forceLocalScenePrewarm(input: { scope: "kin" | "group"; id: string }): Promise<{ ok: true }> {
-    if (input.scope === "kin") {
-      const kin = this.resolveKin(input.id);
-      await this.localScenePrewarm.prewarmKin(kin, "manual-force", { force: true });
-      return { ok: true };
-    }
-
-    const group = this.resolveGroup(input.id);
-    await this.localScenePrewarm.prewarmGroup(group, null, "manual-force", { force: true });
-    return { ok: true };
+    return this.forcePrewarm("localScene", input);
   }
 
   async forcePreviouslyOnPrewarm(input: { scope: "kin" | "group"; id: string }): Promise<{ ok: true }> {
-    if (input.scope === "kin") {
-      const kin = this.resolveKin(input.id);
-      await this.previouslyOnPrewarm.prewarmKin(kin, "manual-force", { force: true });
-      return { ok: true };
-    }
-
-    const group = this.resolveGroup(input.id);
-    await this.previouslyOnPrewarm.prewarmGroup(group, null, "manual-force", { force: true });
-    return { ok: true };
+    return this.forcePrewarm("previouslyOn", input);
   }
 
   async forceSoundscapePrewarm(input: { scope: "kin" | "group"; id: string }): Promise<{ ok: true }> {
     if (input.scope === "kin") {
-      const kin = this.resolveKin(input.id);
       if (!this.kinSubscriptionSupervisor.kinSoundscapePreference(input.id).enabled) {
         throw new Error("Enable soundscape for this Kin before forcing prewarm.");
       }
-      await this.soundscapePrewarm.prewarmKin(kin, "manual-force", { force: true });
-      return { ok: true };
+      return this.forcePrewarm("soundscape", input);
     }
 
-    const group = this.resolveGroup(input.id);
     if (!this.groupSubscriptionSupervisor.groupSoundscapePreference(input.id).enabled) {
       throw new Error("Enable soundscape for this Group before forcing prewarm.");
     }
-    await this.soundscapePrewarm.prewarmGroup(group, null, "manual-force", { force: true });
+    return this.forcePrewarm("soundscape", input);
+  }
+
+  private async forcePrewarm(kind: PrewarmKind, input: { scope: "kin" | "group"; id: string }): Promise<{ ok: true }> {
+    if (input.scope === "kin") {
+      await this.prewarmCoordinators.forceKin(kind, this.resolveKin(input.id));
+      return { ok: true };
+    }
+
+    await this.prewarmCoordinators.forceGroup(kind, this.resolveGroup(input.id));
     return { ok: true };
   }
 
@@ -599,45 +607,7 @@ export class BridgeRuntime {
   }
 
   private resumePersistedChatHistoryCatchups(): void {
-    for (const state of this.prewarmState.list()) {
-      if (typeof state.chatHistoryCursorTimestamp !== "number") {
-        continue;
-      }
-
-      const [scope, id] = state.sourceKey.split(":", 2);
-      if (scope === "kin") {
-        if (this.resumedChatHistoryCatchups.has(state.sourceKey)) {
-          continue;
-        }
-        const kin = this.kinSubscriptionSupervisor.statuses().find((status) => status.kin.aiId === id)?.kin;
-        if (kin) {
-          this.resumedChatHistoryCatchups.add(state.sourceKey);
-          this.options.logger.info("Scheduling persisted chat history catch-up.", {
-            scope,
-            id,
-            nextStartAfterTimestamp: state.chatHistoryCursorTimestamp
-          });
-          this.previouslyOnPrewarm.resumeKinCatchup(kin);
-        }
-        continue;
-      }
-
-      if (scope === "group") {
-        if (this.resumedChatHistoryCatchups.has(state.sourceKey)) {
-          continue;
-        }
-        const group = this.groupSubscriptionSupervisor.statuses().find((status) => status.group.groupId === id)?.group;
-        if (group) {
-          this.resumedChatHistoryCatchups.add(state.sourceKey);
-          this.options.logger.info("Scheduling persisted group chat history catch-up.", {
-            scope,
-            id,
-            nextStartAfterTimestamp: state.chatHistoryCursorTimestamp
-          });
-          this.previouslyOnPrewarm.resumeGroupCatchup(group);
-        }
-      }
-    }
+    this.prewarmCoordinators.resumePersisted();
   }
 
   private async startKinMonitor(kin: KindroidKin, monitorOptions: { pageSize: number; signal: AbortSignal }) {
@@ -675,9 +645,7 @@ export class BridgeRuntime {
         const trigger = prewarmTriggerFromNotification(notification);
 
         this.emit({ channel: "monitor-line", payload: { ...message, kinName: kin.name } });
-        void this.localScenePrewarm.prewarmKin(kin, "activity", { trigger });
-        void this.previouslyOnPrewarm.prewarmKin(kin, "activity", { trigger });
-        void this.soundscapePrewarm.prewarmKin(kin, "activity", { trigger });
+        this.prewarmCoordinators.prewarmKinActivity(kin, trigger);
         this.voice.enqueue({
           id: message.id,
           kinId: kin.aiId,
@@ -757,9 +725,7 @@ export class BridgeRuntime {
           }
         });
         const trigger = prewarmTriggerFromNotification(notification);
-        void this.localScenePrewarm.prewarmGroup(group, notification, "activity", { trigger });
-        void this.previouslyOnPrewarm.prewarmGroup(group, notification, "activity", { trigger });
-        void this.soundscapePrewarm.prewarmGroup(group, notification, "activity", { trigger });
+        this.prewarmCoordinators.prewarmGroupActivity(group, notification, trigger);
         this.voice.enqueue({
           id: message.id,
           kinId: aiId,

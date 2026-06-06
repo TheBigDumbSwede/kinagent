@@ -184,6 +184,9 @@ export interface PrewarmSourceSummary {
   lastLocalScenePrewarmAt?: string | null;
   lastSoundscapePrewarmAt?: string | null;
   lastPreviouslyOnPrewarmAt?: string | null;
+  localSceneChatHistoryCursorTimestamp?: number | null;
+  soundscapeChatHistoryCursorTimestamp?: number | null;
+  previouslyOnChatHistoryCursorTimestamp?: number | null;
   chatHistoryCursorTimestamp?: number | null;
   updatedAt?: string | null;
 }

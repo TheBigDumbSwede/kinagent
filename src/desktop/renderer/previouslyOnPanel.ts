@@ -1,6 +1,7 @@
 import type { PreviouslyOnBriefSummary } from "./rendererTypes.js";
 
 interface PrewarmCatchupSummary {
+  previouslyOnChatHistoryCursorTimestamp?: number | null;
   chatHistoryCursorTimestamp?: number | null;
   updatedAt?: string | null;
 }
@@ -17,7 +18,7 @@ export interface PreviouslyOnPanelInput {
 
 export function renderPreviouslyOnPanel(input: PreviouslyOnPanelInput): void {
   const { container, title, brief, catchup, refreshSaving, formatTimestamp, onRefresh } = input;
-  const catchupActive = Boolean(catchup?.chatHistoryCursorTimestamp);
+  const catchupActive = Boolean(catchup?.previouslyOnChatHistoryCursorTimestamp ?? catchup?.chatHistoryCursorTimestamp);
   const catchupUpdatedAt = catchup?.updatedAt;
   container.hidden = false;
   container.replaceChildren();

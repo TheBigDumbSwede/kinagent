@@ -18,14 +18,25 @@ export interface PrewarmTrigger {
 
 export interface PrewarmSourceState {
   sourceKey: string;
+  /** Legacy shared watermark retained for old persisted state and older renderer summaries. */
   lastPrewarmMessageId?: string;
   lastPrewarmTimestamp?: string | null;
+  localScenePrewarmMessageId?: string;
+  localScenePrewarmTimestamp?: string | null;
+  soundscapePrewarmMessageId?: string;
+  soundscapePrewarmTimestamp?: string | null;
+  previouslyOnPrewarmMessageId?: string;
+  previouslyOnPrewarmTimestamp?: string | null;
   localSceneReady?: boolean;
   soundscapeReady?: boolean;
   previouslyOnReady?: boolean;
   lastLocalScenePrewarmAt?: string;
   lastSoundscapePrewarmAt?: string;
   lastPreviouslyOnPrewarmAt?: string;
+  localSceneChatHistoryCursorTimestamp?: number;
+  soundscapeChatHistoryCursorTimestamp?: number;
+  previouslyOnChatHistoryCursorTimestamp?: number;
+  /** Legacy shared cursor retained so interrupted v0.3.1 catch-ups can resume once. */
   chatHistoryCursorTimestamp?: number;
   failureCount?: number;
   updatedAt: string;
@@ -72,13 +83,14 @@ export class PrewarmStateStore {
       return true;
     }
 
-    return isTriggerNewer(input.trigger, state);
+    return isTriggerNewer(input.trigger, state, kind);
   }
 
   markAttempt(kind: PrewarmKind, source: PrewarmSourceKey, trigger?: PrewarmTrigger): PrewarmSourceState {
     return this.update(source, (previous) => ({
       ...previous,
-      ...watermarkFields(trigger, previous),
+      ...legacyWatermarkFields(trigger, previous),
+      ...kindWatermarkFields(kind, trigger, previous),
       [lastPrewarmField(kind)]: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     }));
@@ -87,7 +99,8 @@ export class PrewarmStateStore {
   markReady(kind: PrewarmKind, source: PrewarmSourceKey, trigger?: PrewarmTrigger): PrewarmSourceState {
     return this.update(source, (previous) => ({
       ...previous,
-      ...watermarkFields(trigger, previous),
+      ...legacyWatermarkFields(trigger, previous),
+      ...kindWatermarkFields(kind, trigger, previous),
       [readyField(kind)]: true,
       failureCount: 0,
       updatedAt: new Date().toISOString()
@@ -102,22 +115,31 @@ export class PrewarmStateStore {
     }));
   }
 
-  chatHistoryStartAfter(source: PrewarmSourceKey): number | undefined {
+  chatHistoryStartAfter(kind: PrewarmKind, source: PrewarmSourceKey): number | undefined {
     const state = this.get(source);
-    return state?.chatHistoryCursorTimestamp ?? publicApiTimestampFromIso(state?.lastPrewarmTimestamp);
+    if (!state) {
+      return undefined;
+    }
+
+    return (
+      chatHistoryCursorForKind(kind, state) ??
+      legacyCursorForReadyKind(kind, state) ??
+      publicApiTimestampFromIso(prewarmTimestampForKind(kind, state) ?? legacyTimestampForReadyKind(kind, state))
+    );
   }
 
-  markChatHistoryCursor(source: PrewarmSourceKey, cursor: number): PrewarmSourceState {
+  markChatHistoryCursor(kind: PrewarmKind, source: PrewarmSourceKey, cursor: number): PrewarmSourceState {
     return this.update(source, (previous) => ({
       ...previous,
-      chatHistoryCursorTimestamp: cursor,
+      [chatHistoryCursorField(kind)]: cursor,
       updatedAt: new Date().toISOString()
     }));
   }
 
-  clearChatHistoryCursor(source: PrewarmSourceKey): PrewarmSourceState {
+  clearChatHistoryCursor(kind: PrewarmKind, source: PrewarmSourceKey): PrewarmSourceState {
     return this.update(source, (previous) => ({
       ...previous,
+      [chatHistoryCursorField(kind)]: undefined,
       chatHistoryCursorTimestamp: undefined,
       updatedAt: new Date().toISOString()
     }));
@@ -197,7 +219,30 @@ function lastPrewarmField(
   return kind === "soundscape" ? "lastSoundscapePrewarmAt" : "lastPreviouslyOnPrewarmAt";
 }
 
-function watermarkFields(
+export function prewarmKindsWithChatHistoryCursor(state: PrewarmSourceState): PrewarmKind[] {
+  const kinds: PrewarmKind[] = [];
+  for (const kind of allPrewarmKinds) {
+    if (typeof chatHistoryCursorForKind(kind, state) === "number") {
+      kinds.push(kind);
+    }
+  }
+
+  if (typeof state.chatHistoryCursorTimestamp === "number") {
+    for (const kind of allPrewarmKinds) {
+      if (!kinds.includes(kind)) {
+        kinds.push(kind);
+      }
+    }
+  }
+
+  return kinds;
+}
+
+export function prewarmChatHistoryCursorTimestamp(kind: PrewarmKind, state: PrewarmSourceState): number | undefined {
+  return chatHistoryCursorForKind(kind, state) ?? state.chatHistoryCursorTimestamp;
+}
+
+function legacyWatermarkFields(
   trigger: PrewarmTrigger | undefined,
   previous: PrewarmSourceState
 ): Pick<PrewarmSourceState, "lastPrewarmMessageId" | "lastPrewarmTimestamp"> {
@@ -207,16 +252,30 @@ function watermarkFields(
   };
 }
 
-function isTriggerNewer(trigger: PrewarmTrigger, state: PrewarmSourceState): boolean {
-  if (trigger.timestamp && state.lastPrewarmTimestamp) {
+function kindWatermarkFields(
+  kind: PrewarmKind,
+  trigger: PrewarmTrigger | undefined,
+  previous: PrewarmSourceState
+): Partial<PrewarmSourceState> {
+  return {
+    [messageIdField(kind)]: trigger?.documentId ?? prewarmMessageIdForKind(kind, previous),
+    [timestampField(kind)]: trigger?.timestamp ?? prewarmTimestampForKind(kind, previous)
+  };
+}
+
+function isTriggerNewer(trigger: PrewarmTrigger, state: PrewarmSourceState, kind?: PrewarmKind): boolean {
+  const stateTimestamp = kind ? prewarmTimestampForKind(kind, state) : state.lastPrewarmTimestamp;
+  const stateMessageId = kind ? prewarmMessageIdForKind(kind, state) : state.lastPrewarmMessageId;
+
+  if (trigger.timestamp && stateTimestamp) {
     const triggerMs = Date.parse(trigger.timestamp);
-    const stateMs = Date.parse(state.lastPrewarmTimestamp);
+    const stateMs = Date.parse(stateTimestamp);
     if (Number.isFinite(triggerMs) && Number.isFinite(stateMs)) {
       return triggerMs > stateMs;
     }
   }
 
-  return Boolean(trigger.documentId && trigger.documentId !== state.lastPrewarmMessageId);
+  return Boolean(trigger.documentId && trigger.documentId !== stateMessageId);
 }
 
 function publicApiTimestampFromIso(value: string | null | undefined): number | undefined {
@@ -226,4 +285,74 @@ function publicApiTimestampFromIso(value: string | null | undefined): number | u
 
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+const allPrewarmKinds: PrewarmKind[] = ["localScene", "soundscape", "previouslyOn"];
+
+function prewarmMessageIdForKind(kind: PrewarmKind, state: PrewarmSourceState): string | undefined {
+  if (kind === "localScene") {
+    return state.localScenePrewarmMessageId ?? (state.localSceneReady ? state.lastPrewarmMessageId : undefined);
+  }
+  if (kind === "soundscape") {
+    return state.soundscapePrewarmMessageId ?? (state.soundscapeReady ? state.lastPrewarmMessageId : undefined);
+  }
+  return state.previouslyOnPrewarmMessageId ?? (state.previouslyOnReady ? state.lastPrewarmMessageId : undefined);
+}
+
+function prewarmTimestampForKind(kind: PrewarmKind, state: PrewarmSourceState): string | null | undefined {
+  if (kind === "localScene") {
+    return state.localScenePrewarmTimestamp ?? (state.localSceneReady ? state.lastPrewarmTimestamp : undefined);
+  }
+  if (kind === "soundscape") {
+    return state.soundscapePrewarmTimestamp ?? (state.soundscapeReady ? state.lastPrewarmTimestamp : undefined);
+  }
+  return state.previouslyOnPrewarmTimestamp ?? (state.previouslyOnReady ? state.lastPrewarmTimestamp : undefined);
+}
+
+function chatHistoryCursorForKind(kind: PrewarmKind, state: PrewarmSourceState): number | undefined {
+  if (kind === "localScene") {
+    return state.localSceneChatHistoryCursorTimestamp;
+  }
+  if (kind === "soundscape") {
+    return state.soundscapeChatHistoryCursorTimestamp;
+  }
+  return state.previouslyOnChatHistoryCursorTimestamp;
+}
+
+function legacyCursorForReadyKind(kind: PrewarmKind, state: PrewarmSourceState): number | undefined {
+  return readyForKind(state, kind) ? state.chatHistoryCursorTimestamp : undefined;
+}
+
+function legacyTimestampForReadyKind(kind: PrewarmKind, state: PrewarmSourceState): string | null | undefined {
+  return readyForKind(state, kind) ? state.lastPrewarmTimestamp : undefined;
+}
+
+function messageIdField(
+  kind: PrewarmKind
+): "localScenePrewarmMessageId" | "soundscapePrewarmMessageId" | "previouslyOnPrewarmMessageId" {
+  if (kind === "localScene") {
+    return "localScenePrewarmMessageId";
+  }
+  return kind === "soundscape" ? "soundscapePrewarmMessageId" : "previouslyOnPrewarmMessageId";
+}
+
+function timestampField(
+  kind: PrewarmKind
+): "localScenePrewarmTimestamp" | "soundscapePrewarmTimestamp" | "previouslyOnPrewarmTimestamp" {
+  if (kind === "localScene") {
+    return "localScenePrewarmTimestamp";
+  }
+  return kind === "soundscape" ? "soundscapePrewarmTimestamp" : "previouslyOnPrewarmTimestamp";
+}
+
+function chatHistoryCursorField(
+  kind: PrewarmKind
+):
+  | "localSceneChatHistoryCursorTimestamp"
+  | "soundscapeChatHistoryCursorTimestamp"
+  | "previouslyOnChatHistoryCursorTimestamp" {
+  if (kind === "localScene") {
+    return "localSceneChatHistoryCursorTimestamp";
+  }
+  return kind === "soundscape" ? "soundscapeChatHistoryCursorTimestamp" : "previouslyOnChatHistoryCursorTimestamp";
 }

@@ -199,7 +199,7 @@ describe("PreviouslyOnPrewarmCoordinator", () => {
 
     expect(hermes.prewarmPreviouslyOn).not.toHaveBeenCalled();
     expect(prewarmState.get({ scope: "kin", id: "kin-1" })).toMatchObject({
-      chatHistoryCursorTimestamp: 1_780_000_003_000
+      previouslyOnChatHistoryCursorTimestamp: 1_780_000_003_000
     });
   });
 
@@ -272,7 +272,7 @@ describe("PreviouslyOnPrewarmCoordinator", () => {
       prewarmPreviouslyOn: vi.fn()
     };
     const prewarmState = testPrewarmStateStore();
-    prewarmState.markChatHistoryCursor({ scope: "kin", id: "kin-1" }, 1_780_000_005_000);
+    prewarmState.markChatHistoryCursor("previouslyOn", { scope: "kin", id: "kin-1" }, 1_780_000_005_000);
 
     coordinator(hermes, prewarmState).resumeKinCatchup(kin("kin-1", "Alexis"));
     await vi.advanceTimersByTimeAsync(1_000);
@@ -286,7 +286,7 @@ describe("PreviouslyOnPrewarmCoordinator", () => {
         text: expect.stringContaining("Persisted response.")
       })
     );
-    expect(prewarmState.get({ scope: "kin", id: "kin-1" })?.chatHistoryCursorTimestamp).toBeUndefined();
+    expect(prewarmState.get({ scope: "kin", id: "kin-1" })?.previouslyOnChatHistoryCursorTimestamp).toBeUndefined();
   });
 });
 
