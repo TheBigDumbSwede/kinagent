@@ -199,8 +199,8 @@
               <div class="detail-main">
                 <div id="detailStats" class="detail-stats"></div>
                 <div id="journalSuggestionPanel" class="journal-suggestions" hidden></div>
+                <div id="localSceneActions" class="local-scene-actions" hidden></div>
                 <pre id="fieldContent" class="field-content"></pre>
-                <div id="localSceneActions" class="button-row narrow" hidden></div>
                 <form id="appSettingsForm" class="app-settings-form" hidden>
                   <section class="settings-section">
                     <h2>General</h2>
@@ -384,12 +384,10 @@
                       <h3 class="subsection-heading">Current Layers</h3>
                       <ul id="soundscapeLayerList" class="soundscape-layer-list"></ul>
                     </div>
-                    <div class="button-row narrow">
-                      <button id="soundscapeForcePrewarmButton" type="button">Force Prewarm</button>
-                    </div>
                   </section>
-                  <div class="button-row narrow">
+                  <div class="button-row form-action-row">
                     <button id="voiceSaveButton" type="submit">Save Audio</button>
+                    <button id="soundscapeForcePrewarmButton" class="secondary" type="button">Force Prewarm</button>
                   </div>
                 </form>
                 <div id="groupAudioPanel" class="kin-action-panel" hidden>
@@ -404,9 +402,11 @@
                       <h3 class="subsection-heading">Current Layers</h3>
                       <ul id="groupSoundscapeLayerList" class="soundscape-layer-list"></ul>
                     </div>
-                    <div class="button-row narrow">
+                    <div class="button-row form-action-row">
                       <button id="groupSoundscapeSaveButton" type="button">Save Audio</button>
-                      <button id="groupSoundscapeForcePrewarmButton" type="button">Force Prewarm</button>
+                      <button id="groupSoundscapeForcePrewarmButton" class="secondary" type="button">
+                        Force Prewarm
+                      </button>
                     </div>
                   </section>
                 </div>

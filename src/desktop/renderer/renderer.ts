@@ -1421,6 +1421,7 @@ function renderLocalSceneForceButton(scope: "kin" | "group", selectedEntity: Kin
 
   const button = document.createElement("button");
   button.type = "button";
+  button.className = "secondary compact";
   button.textContent = state.localSceneForceSaving ? "Prewarming" : "Force Prewarm";
   button.disabled = state.localSceneForceSaving;
   button.addEventListener("click", () => {

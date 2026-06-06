@@ -180,6 +180,16 @@ h2 {
   max-width: 360px;
 }
 
+.button-row.form-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  max-width: none;
+}
+
+.button-row.form-action-row button {
+  min-width: 128px;
+}
+
 .status-list {
   display: grid;
   gap: 8px;
@@ -420,7 +430,7 @@ h2 {
 
 .detail-main {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
   border-right: 1px solid #d7e0e8;
@@ -466,6 +476,15 @@ h2 {
   line-height: 1.55;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.local-scene-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 10px 20px;
+  border-bottom: 1px solid #d7e0e8;
+  background: #fbfcfd;
 }
 
 .journal-suggestions {
