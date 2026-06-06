@@ -1,5 +1,6 @@
 import { normalizeSoundscapeState } from "../../soundscape/ProceduralLayers.js";
 import type { ProceduralLayerDescriptor, SoundscapeState } from "../../soundscape/SoundscapeState.js";
+import { SoundscapeCueScheduler, type SoundscapeCueChoice } from "./SoundscapeCueSelection.js";
 import {
   chooseSampleLoop,
   layerVoiceKey,
@@ -9,7 +10,9 @@ import {
 
 interface SoundscapeControllerOptions {
   onStatus?: (message: string) => void;
+  onCue?: (label: string) => void;
   loadSample?: (relativePath: string) => Promise<ArrayBuffer>;
+  random?: () => number;
 }
 
 interface LayerVoice {
@@ -28,9 +31,10 @@ const fadeSeconds = 1.2;
 const stopFadeSeconds = 0.18;
 const masterVolume = 1;
 const duckedVolumeMultiplier = 0.32;
-const sampleAssetRoot = "../assets/soundscape-normalized/loops";
+const sampleAssetRoot = "../assets/soundscape-normalized";
 const samplePresenceFloor = 0.8;
 const samplePlaybackBoost = 1.6;
+const cuePlaybackBoost = 1.38;
 
 export class SoundscapeController {
   private context: AudioContext | null = null;
@@ -41,6 +45,8 @@ export class SoundscapeController {
   private userInteractionReady = false;
   private duckedUntil = 0;
   private duckTimer: number | undefined;
+  private cueTimer: number | undefined;
+  private cueScheduler = new SoundscapeCueScheduler();
 
   constructor(private readonly options: SoundscapeControllerOptions = {}) {}
 
@@ -57,6 +63,7 @@ export class SoundscapeController {
 
     if (!state.enabled) {
       this.stop();
+      this.cueScheduler.reset();
       this.options.onStatus?.("Soundscape off.");
       return;
     }
@@ -99,6 +106,8 @@ export class SoundscapeController {
     this.layers.clear();
     window.clearTimeout(this.duckTimer);
     this.duckTimer = undefined;
+    window.clearTimeout(this.cueTimer);
+    this.cueTimer = undefined;
   }
 
   dispose(): void {
@@ -149,6 +158,7 @@ export class SoundscapeController {
       now,
       state.transition === "swell" ? 2.4 : fadeSeconds
     );
+    this.scheduleCuePlayback(state);
     this.options.onStatus?.(`Soundscape: ${state.environment} (${soundscapeLayerSummary(state)}).`);
   }
 
@@ -163,7 +173,7 @@ export class SoundscapeController {
     }
 
     try {
-      const buffer = await this.loadSampleBuffer(context, sample.path);
+      const buffer = await this.loadSampleBuffer(context, `loops/${sample.path}`);
       return createSampleLayerVoice(context, descriptor, buffer, sample.baseGain);
     } catch (error) {
       this.options.onStatus?.(`Soundscape sample unavailable: ${errorMessage(error)}`);
@@ -211,6 +221,53 @@ export class SoundscapeController {
 
     fadeGain(this.masterGain.gain, value, at, seconds);
   }
+
+  private scheduleCuePlayback(state: SoundscapeState): void {
+    const nowMs = performance.now();
+    this.cueScheduler.syncScene(state, nowMs, this.random);
+    window.clearTimeout(this.cueTimer);
+
+    const nextAt = this.cueScheduler.snapshot().nextAmbientCueAt;
+    if (!this.userInteractionReady || !state.enabled || nextAt === null) {
+      this.cueTimer = undefined;
+      return;
+    }
+
+    const delayMs = Math.max(0, nextAt - nowMs);
+    this.cueTimer = window.setTimeout(() => {
+      void this.playScheduledCue();
+    }, delayMs);
+  }
+
+  private async playScheduledCue(): Promise<void> {
+    if (!this.currentState?.enabled || !this.userInteractionReady) {
+      return;
+    }
+
+    const cue = this.cueScheduler.consumeDueCue(this.currentState, performance.now(), this.random);
+    if (cue) {
+      await this.playCue(cue, this.currentState.intensity);
+    }
+    this.scheduleCuePlayback(this.currentState);
+  }
+
+  private async playCue(cue: SoundscapeCueChoice, intensity: number): Promise<void> {
+    const context = this.ensureContext();
+    const masterGain = this.masterGain;
+    if (!masterGain) {
+      return;
+    }
+
+    try {
+      const buffer = await this.loadSampleBuffer(context, `cues/${cue.path}`);
+      playOneShotCue(context, masterGain, buffer, targetCueGain(cue, intensity));
+      this.options.onCue?.(cue.path.replace(/\.mp3$/i, ""));
+    } catch (error) {
+      this.options.onStatus?.(`Soundscape cue unavailable: ${errorMessage(error)}`);
+    }
+  }
+
+  private random = (): number => this.options.random?.() ?? Math.random();
 }
 
 function createProceduralLayerVoice(
@@ -267,6 +324,25 @@ function createSampleLayerVoice(
       });
     }
   };
+}
+
+function playOneShotCue(context: AudioContext, destination: AudioNode, buffer: AudioBuffer, gain: number): void {
+  const source = context.createBufferSource();
+  source.buffer = buffer;
+  const output = context.createGain();
+  const now = context.currentTime;
+  output.gain.setValueAtTime(0, now);
+  output.gain.linearRampToValueAtTime(gain, now + 0.035);
+  output.gain.setValueAtTime(gain, Math.max(now + 0.035, now + buffer.duration - 0.16));
+  output.gain.linearRampToValueAtTime(0, now + buffer.duration);
+  source.connect(output);
+  output.connect(destination);
+  source.start(now);
+  source.stop(now + buffer.duration + 0.04);
+  scheduleCleanup(context, now + buffer.duration + 0.08, () => {
+    source.disconnect();
+    output.disconnect();
+  });
 }
 
 function createNoiseLayer(
@@ -469,6 +545,10 @@ function targetSampleLayerGain(descriptor: ProceduralLayerDescriptor, intensity:
   }
 
   return (samplePresenceFloor + layerGain * (1 - samplePresenceFloor)) * baseGain * samplePlaybackBoost;
+}
+
+function targetCueGain(cue: SoundscapeCueChoice, intensity: number): number {
+  return cue.gain * (0.72 + intensity * 0.28) * cuePlaybackBoost;
 }
 
 function detectLoopRegion(buffer: AudioBuffer): LoopRegion {

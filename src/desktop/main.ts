@@ -752,12 +752,13 @@ function sendVoicePlayback(chunk: unknown): void {
 }
 
 function readSoundscapeAsset(relativePath: string): ArrayBuffer {
-  if (!/^[a-z0-9_]+\.mp3$/i.test(relativePath)) {
+  const normalizedPath = relativePath.includes("/") ? relativePath : `loops/${relativePath}`;
+  if (!/^(loops|cues)\/[a-z0-9_]+(?:_v\d+)?\.mp3$/i.test(normalizedPath)) {
     throw new Error("Invalid soundscape asset path.");
   }
 
-  const baseDir = path.resolve(__dirname, "assets", "soundscape-normalized", "loops");
-  const assetPath = path.resolve(baseDir, relativePath);
+  const baseDir = path.resolve(__dirname, "assets", "soundscape-normalized");
+  const assetPath = path.resolve(baseDir, normalizedPath);
   if (!assetPath.startsWith(`${baseDir}${path.sep}`)) {
     throw new Error("Invalid soundscape asset path.");
   }

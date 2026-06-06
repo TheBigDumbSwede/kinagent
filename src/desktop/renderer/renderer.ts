@@ -122,6 +122,7 @@ interface RendererState {
   appSettingsError: string | null;
   soundscapeUpdates: Record<string, ScopedSoundscapeUpdate>;
   activeSoundscapeKey: string | null;
+  lastSoundscapeCue: { key: string; label: string; expiresAt: number } | null;
   kinAnalysisRunning: boolean;
   kinAnalysisJobId: string | null;
   kinAnalysisReport: string;
@@ -365,6 +366,7 @@ const state: RendererState = {
   appSettingsError: null,
   soundscapeUpdates: {},
   activeSoundscapeKey: null,
+  lastSoundscapeCue: null,
   kinAnalysisRunning: false,
   kinAnalysisJobId: null,
   kinAnalysisReport: "",
@@ -484,6 +486,18 @@ const elements: RendererElements = {
 const soundscapeController = new SoundscapeController({
   async loadSample(relativePath: string) {
     return bytesToArrayBuffer(await window.kinagent.readSoundscapeAsset({ path: relativePath }));
+  },
+  onCue(label: string) {
+    if (!state.activeSoundscapeKey) {
+      return;
+    }
+    state.lastSoundscapeCue = {
+      key: state.activeSoundscapeKey,
+      label,
+      expiresAt: Date.now() + 12_000
+    };
+    renderSoundscapeStatus();
+    window.setTimeout(renderSoundscapeStatus, 12_200);
   },
   onStatus(message: string) {
     if (state.activeTab === "voice") {
@@ -1338,13 +1352,17 @@ function renderSoundscapeStatus(): void {
   }
 
   const key = `kin:${state.selectedKinId}`;
-  renderSoundscapeLayerList(elements.soundscapeLayerList, state.soundscapeUpdates[key]?.state);
+  renderSoundscapeLayerList(elements.soundscapeLayerList, state.soundscapeUpdates[key]?.state, activeCueLabel(key));
 }
 
-function renderSoundscapeLayerList(container: HTMLElement, soundscape: SoundscapeState | undefined): void {
+function renderSoundscapeLayerList(
+  container: HTMLElement,
+  soundscape: SoundscapeState | undefined,
+  activeCue: string | null = null
+): void {
   container.replaceChildren();
   const layers = soundscape?.layers ?? [];
-  if (layers.length === 0) {
+  if (layers.length === 0 && !activeCue) {
     const item = document.createElement("li");
     item.textContent = "silent";
     container.append(item);
@@ -1357,6 +1375,21 @@ function renderSoundscapeLayerList(container: HTMLElement, soundscape: Soundscap
     item.textContent = `${layer.type} ${Math.round(layer.volume * 100)}%${sample ? ` · ${sample}` : ""}`;
     container.append(item);
   }
+
+  if (activeCue) {
+    const item = document.createElement("li");
+    item.textContent = `cue · ${activeCue}`;
+    container.append(item);
+  }
+}
+
+function activeCueLabel(key: string): string | null {
+  const cue = state.lastSoundscapeCue;
+  if (!cue || cue.key !== key || cue.expiresAt <= Date.now()) {
+    return null;
+  }
+
+  return cue.label;
 }
 
 function isSoundscapeEnabledForKey(key: string): boolean {

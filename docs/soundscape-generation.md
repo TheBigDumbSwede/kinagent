@@ -74,7 +74,7 @@ By default the generator skips files whose catalog source hash still matches the
 
 ## Runtime Boundary
 
-This script prepares assets only. Playback should read curated normalized assets from `assets/soundscape-normalized/`, select local files by scene tags and intensity, and mix them in Hermes soundscape playback. It should not use the ElevenLabs API as a live effect source.
+This script prepares assets only. Playback reads curated normalized assets from `assets/soundscape-normalized/`: loop assets provide the continuous bed, and cue assets provide sparse one-shot accents selected by the desktop runtime. It should not use the ElevenLabs API as a live effect source.
 
 ## Analyze Generated Assets
 
