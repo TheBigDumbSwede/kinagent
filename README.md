@@ -1,6 +1,6 @@
 # kinagent
 
-`kinagent` is a headless Node.js/TypeScript bridge prototype for watching Kindroid chat activity and forwarding it into Hermes Agent. It can also send a single message back to a Kin through Kindroid's public `send-message` endpoint.
+`kinagent` is a headless Node.js/TypeScript bridge prototype for watching Kindroid chat activity and forwarding it into Hermes Agent. It also wraps the parts of Kindroid's public `/v1` API that the bridge needs for outbound sends, chat export, and narrow reviewed mutations.
 
 This is intentionally a small service foundation. It does not depend on Cadence; the optional desktop control panel is an Electron wrapper around the same Node internals.
 
@@ -20,7 +20,8 @@ Working in this first milestone:
 - Firestore realtime listen stream for `ChatMessages` using the saved Firebase browser auth state, with gRPC keepalive and reconnect backoff.
 - Optional Firestore chat text decryption in `probe-chat` using the saved Firebase UID as the Kindroid AES passphrase.
 - Live plaintext monitor for new incoming Firestore chat messages.
-- Kindroid outbound `POST https://api.kindroid.ai/v1/send-message` client using the documented `kn_` API-key flow when configured.
+- Kindroid outbound client using the documented `kn_` API-key flow when configured, including direct sends, group sends,
+  public chat-history export, current-scene updates, and low-level chat break/rewind helpers.
 - SQLite-backed outbound dedupe for recent bridge-originated messages.
 - Hermes chat adapter for the local Cadence Hermes gateway, including a narrow `current_scene` action executor.
 - Experimental desktop-only procedural soundscape controls using local Web Audio synthesis.
@@ -52,6 +53,12 @@ Hermes or CLI
   -> KindroidClient
   -> POST /v1/send-message
   -> dedupe record
+
+Chat export:
+Desktop
+  -> KindroidClient
+  -> GET /v1/get-chat-messages
+  -> local Markdown transcript
 ```
 
 Kindroid domain access is organized behind `KindroidApiClient` resource modules:
@@ -78,12 +85,21 @@ URL `https://api.kindroid.ai/v1`.
 
 Kinagent uses the documented API shape for:
 
-- `POST https://api.kindroid.ai/v1/send-message`
-- `POST https://api.kindroid.ai/v1/groupchats-user-message`
+- `POST https://api.kindroid.ai/v1/send-message`, using blocking text responses with `stream: false`.
+- `POST https://api.kindroid.ai/v1/chat-break`, as a low-level client helper only.
+- `GET https://api.kindroid.ai/v1/get-chat-messages` for direct Kin and group chat transcript export.
+- `POST https://api.kindroid.ai/v1/rewind-messages`, as a low-level client helper only.
+- `POST https://api.kindroid.ai/v1/groupchats-user-message`, including the documented `message`/`audio_url` one-of payload
+  shape. Current Kinagent callers send text messages.
 - `POST https://api.kindroid.ai/v1/groupchats-get-turn`
-- `POST https://api.kindroid.ai/v1/groupchats-ai-response`
-- `POST https://api.kindroid.ai/v1/update-info` for `current_scene`
-- `POST https://api.kindroid.ai/v1/groupchats-update` for group `current_scene`
+- `POST https://api.kindroid.ai/v1/groupchats-ai-response`, using blocking text responses with `stream: false`.
+- `POST https://api.kindroid.ai/v1/groupchats-chat-break`, as a low-level client helper only.
+- `POST https://api.kindroid.ai/v1/update-info` for `current_scene` and identity-field writes.
+- `POST https://api.kindroid.ai/v1/groupchats-update` for group `current_scene`.
+
+Kinagent does not currently expose public API streaming (`stream: true`) because the bridge runtime and desktop
+workflows expect completed response text. It also does not wrap the Discord bot endpoint; that belongs to a different
+integration model.
 
 Kinagent still depends on observed Kindroid web behavior for:
 

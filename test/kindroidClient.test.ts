@@ -9,10 +9,13 @@ import { normalizeGroupDocument } from "../src/kindroid/client/groups.js";
 import { normalizeKinDocument } from "../src/kindroid/client/kins.js";
 import { KindroidClient } from "../src/kindroid/kindroidClient.js";
 import {
+  buildBreakChatPayload,
+  buildBreakGroupChatPayload,
   buildCreateGroupAiResponsePayload,
   buildCreateJournalEntryPayload,
   buildDeleteJournalEntryPayload,
   buildGetGroupTurnPayload,
+  buildRewindMessagesPayload,
   buildSendGroupMessagePayload,
   buildSendMessagePayload,
   buildUpdateChatDynamismPayload,
@@ -208,6 +211,40 @@ describe("Kindroid client normalizers", () => {
     });
   });
 
+  it("builds documented group user-message payloads with audio_url instead of message", () => {
+    expect(
+      buildSendGroupMessagePayload({
+        groupId: "group-1",
+        audioUrl: "https://example.test/audio.mp3",
+        requestId: "request-1",
+        idempotencyKey: "idempotency-1"
+      })
+    ).toEqual({
+      group_id: "group-1",
+      audio_url: "https://example.test/audio.mp3"
+    });
+  });
+
+  it("rejects invalid group user-message one-of payloads", () => {
+    expect(() =>
+      buildSendGroupMessagePayload({
+        groupId: "group-1",
+        requestId: "request-1",
+        idempotencyKey: "idempotency-1"
+      })
+    ).toThrow("Group user message requires message or audioUrl.");
+
+    expect(() =>
+      buildSendGroupMessagePayload({
+        groupId: "group-1",
+        message: "Visible group diagnostic message.",
+        audioUrl: "https://example.test/audio.mp3",
+        requestId: "request-1",
+        idempotencyKey: "idempotency-1"
+      })
+    ).toThrow("Group user message must specify either message or audioUrl, not both.");
+  });
+
   it("builds the observed Kindroid group get-turn payload", () => {
     expect(
       buildGetGroupTurnPayload({
@@ -234,8 +271,67 @@ describe("Kindroid client normalizers", () => {
     });
   });
 
+  it("builds documented chat-break payloads", () => {
+    expect(
+      buildBreakChatPayload({
+        aiId: "kin-1",
+        greeting: "  A clean opening.  ",
+        wipeCascaded: true
+      })
+    ).toEqual({
+      ai_id: "kin-1",
+      greeting: "A clean opening.",
+      wipe_cascaded: true
+    });
+  });
+
+  it("builds documented group chat-break payloads", () => {
+    expect(
+      buildBreakGroupChatPayload({
+        groupId: "group-1",
+        greeting: "A clean group opening.",
+        wipeCascaded: false
+      })
+    ).toEqual({
+      group_id: "group-1",
+      greeting: "A clean group opening.",
+      wipe_cascaded: false
+    });
+  });
+
+  it("builds documented rewind-messages payloads", () => {
+    expect(
+      buildRewindMessagesPayload({
+        aiId: "kin-1",
+        count: 2
+      })
+    ).toEqual({
+      ai_id: "kin-1",
+      count: 2
+    });
+
+    expect(
+      buildRewindMessagesPayload({
+        groupId: "group-1",
+        count: 1
+      })
+    ).toEqual({
+      group_id: "group-1",
+      count: 1
+    });
+  });
+
+  it("rejects invalid rewind-messages payloads before calling the endpoint", () => {
+    expect(() => buildRewindMessagesPayload({ aiId: "kin-1", groupId: "group-1", count: 2 })).toThrow(
+      "Rewind request must specify either aiId or groupId, not both."
+    );
+    expect(() => buildRewindMessagesPayload({ aiId: "kin-1", count: 1 })).toThrow(
+      "Direct Kin rewind count must be even."
+    );
+  });
+
   it("authenticates /v1 requests with the configured Kindroid API key when available", async () => {
-    const fetchMock = vi.fn(async () => new Response("OK", { status: 200 }));
+    const fetchMock = vi.fn(async (_input: string | URL, _init?: RequestInit) => new Response("OK", { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
     const client = new KindroidClient(testConfig({ apiKey: "kn_test-token" }), testLogger);
 
@@ -246,7 +342,7 @@ describe("Kindroid client normalizers", () => {
         requestId: "request-1",
         idempotencyKey: "idempotency-1"
       })
-    ).resolves.toMatchObject({ ok: true, status: 200 });
+    ).resolves.toMatchObject({ ok: true, status: 200, replyText: "OK" });
 
     expect(fetchMock).toHaveBeenCalledWith(
       "https://api.kindroid.ai/v1/send-message",
@@ -328,7 +424,7 @@ describe("Kindroid client normalizers", () => {
 
   it("does not trigger a group AI response after group user-message sends by default", async () => {
     const sessionDir = createTestSessionDir(tempDirs);
-    const fetchMock = vi.fn(async () => new Response("OK", { status: 200 }));
+    const fetchMock = vi.fn(async (_input: string | URL, _init?: RequestInit) => new Response("OK", { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
     const client = new KindroidClient(testConfig({ sessionDir }), testLogger);
 
@@ -359,7 +455,7 @@ describe("Kindroid client normalizers", () => {
       .fn()
       .mockResolvedValueOnce(new Response("OK", { status: 200 }))
       .mockResolvedValueOnce(new Response("kin-1", { status: 200 }))
-      .mockResolvedValueOnce(new Response("OK", { status: 200 }));
+      .mockResolvedValueOnce(new Response("Generated group reply.", { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
     const client = new KindroidClient(testConfig({ sessionDir }), testLogger);
 
@@ -379,13 +475,43 @@ describe("Kindroid client normalizers", () => {
       idempotencyKey: "idempotency-1",
       nextAiId: "kin-1",
       aiResponseStatus: 200,
-      aiResponseOk: true
+      aiResponseOk: true,
+      aiResponseText: "Generated group reply."
     });
     expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
       "https://api.kindroid.ai/v1/groupchats-user-message",
       "https://api.kindroid.ai/v1/groupchats-get-turn",
       "https://api.kindroid.ai/v1/groupchats-ai-response"
+    ]);
+  });
+
+  it("calls documented chat-break, group chat-break, and rewind endpoints", async () => {
+    const sessionDir = createTestSessionDir(tempDirs);
+    const fetchMock = vi.fn(async (_input: string | URL, _init?: RequestInit) => new Response("OK", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new KindroidClient(testConfig({ sessionDir }), testLogger);
+
+    await expect(client.breakChat({ aiId: "kin-1", greeting: "Fresh start." })).resolves.toEqual({
+      ok: true,
+      status: 200,
+      responseText: undefined
+    });
+    await expect(client.breakGroupChat({ groupId: "group-1", greeting: "Fresh group start." })).resolves.toEqual({
+      ok: true,
+      status: 200,
+      responseText: undefined
+    });
+    await expect(client.rewindMessages({ groupId: "group-1", count: 1 })).resolves.toEqual({
+      ok: true,
+      status: 200,
+      responseText: undefined
+    });
+
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      "https://api.kindroid.ai/v1/chat-break",
+      "https://api.kindroid.ai/v1/groupchats-chat-break",
+      "https://api.kindroid.ai/v1/rewind-messages"
     ]);
   });
 
@@ -460,7 +586,7 @@ describe("Kindroid client normalizers", () => {
 
   it("updates Chat Dynamism through a separate update-info path", async () => {
     const sessionDir = createTestSessionDir(tempDirs);
-    const fetchMock = vi.fn(async () => new Response("OK", { status: 200 }));
+    const fetchMock = vi.fn(async (_input: string | URL, _init?: RequestInit) => new Response("OK", { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
     const client = new KindroidClient(testConfig({ sessionDir }), testLogger);
 

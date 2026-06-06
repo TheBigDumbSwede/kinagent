@@ -1,8 +1,11 @@
 import type {
+  BreakKindroidChatInput,
+  BreakKindroidGroupChatInput,
   CreateKindroidJournalEntryInput,
   CreateKindroidGroupAiResponseInput,
   DeleteKindroidJournalEntryInput,
   GetKindroidGroupTurnInput,
+  RewindKindroidMessagesInput,
   SendKindroidGroupMessageInput,
   SendKindroidMessageInput,
   UpdateKindroidCurrentSceneInput,
@@ -29,10 +32,24 @@ export function buildSendMessagePayload(input: SendKindroidMessageInput): Record
 }
 
 export function buildSendGroupMessagePayload(input: SendKindroidGroupMessageInput): Record<string, unknown> {
+  const message = input.message?.trim();
+  const audioUrl = input.audioUrl?.trim();
+  if (message && audioUrl) {
+    throw new Error("Group user message must specify either message or audioUrl, not both.");
+  }
+  if (!message && !audioUrl) {
+    throw new Error("Group user message requires message or audioUrl.");
+  }
+
   const payload: Record<string, unknown> = {
-    message: input.message,
     group_id: input.groupId
   };
+  if (message) {
+    payload.message = input.message;
+  }
+  if (audioUrl) {
+    payload.audio_url = audioUrl;
+  }
 
   if (input.internetResponse) {
     payload.internet_response = input.internetResponse;
@@ -53,6 +70,66 @@ export function buildCreateGroupAiResponsePayload(input: CreateKindroidGroupAiRe
     ai_id: input.aiId,
     group_id: input.groupId,
     stream: false
+  };
+}
+
+export function buildBreakChatPayload(input: BreakKindroidChatInput): Record<string, unknown> {
+  if (!input.aiId) {
+    throw new Error("Missing Kindroid ai_id for chat break.");
+  }
+
+  const greeting = input.greeting.trim();
+  if (!greeting) {
+    throw new Error("Chat break greeting cannot be empty.");
+  }
+
+  const payload: Record<string, unknown> = {
+    ai_id: input.aiId,
+    greeting
+  };
+  if (typeof input.wipeCascaded === "boolean") {
+    payload.wipe_cascaded = input.wipeCascaded;
+  }
+  return payload;
+}
+
+export function buildBreakGroupChatPayload(input: BreakKindroidGroupChatInput): Record<string, unknown> {
+  if (!input.groupId) {
+    throw new Error("Missing Kindroid group_id for group chat break.");
+  }
+
+  const greeting = input.greeting.trim();
+  if (!greeting) {
+    throw new Error("Group chat break greeting cannot be empty.");
+  }
+
+  const payload: Record<string, unknown> = {
+    group_id: input.groupId,
+    greeting
+  };
+  if (typeof input.wipeCascaded === "boolean") {
+    payload.wipe_cascaded = input.wipeCascaded;
+  }
+  return payload;
+}
+
+export function buildRewindMessagesPayload(input: RewindKindroidMessagesInput): Record<string, unknown> {
+  if (input.aiId && input.groupId) {
+    throw new Error("Rewind request must specify either aiId or groupId, not both.");
+  }
+  if (!input.aiId && !input.groupId) {
+    throw new Error("Rewind request requires an aiId or groupId.");
+  }
+  if (!Number.isInteger(input.count) || input.count < 1) {
+    throw new Error("Rewind count must be a positive integer.");
+  }
+  if (input.aiId && input.count % 2 !== 0) {
+    throw new Error("Direct Kin rewind count must be even.");
+  }
+
+  return {
+    ...(input.aiId ? { ai_id: input.aiId } : { group_id: input.groupId }),
+    count: input.count
   };
 }
 

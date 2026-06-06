@@ -2,6 +2,10 @@ import type { AppConfig } from "../config/types.js";
 import { loadFreshFirebaseAuth } from "../auth/firebaseSession.js";
 import type { Logger } from "../util/logger.js";
 import type {
+  BreakKindroidChatInput,
+  BreakKindroidChatResult,
+  BreakKindroidGroupChatInput,
+  BreakKindroidGroupChatResult,
   CreateKindroidJournalEntryInput,
   CreateKindroidJournalEntryResult,
   CreateKindroidGroupAiResponseInput,
@@ -10,6 +14,8 @@ import type {
   GetKindroidChatMessagesInput,
   GetKindroidChatMessagesResult,
   GetKindroidGroupTurnInput,
+  RewindKindroidMessagesInput,
+  RewindKindroidMessagesResult,
   SendKindroidGroupMessageInput,
   SendKindroidGroupMessageResult,
   SendKindroidMessageInput,
@@ -24,10 +30,13 @@ import type {
   UpdateKindroidIdentityResult
 } from "./types.js";
 import {
+  buildBreakChatPayload,
+  buildBreakGroupChatPayload,
   buildCreateJournalEntryPayload,
   buildCreateGroupAiResponsePayload,
   buildDeleteJournalEntryPayload,
   buildGetGroupTurnPayload,
+  buildRewindMessagesPayload,
   buildSendGroupMessagePayload,
   buildSendMessagePayload,
   buildUpdateCurrentScenePayload,
@@ -40,6 +49,9 @@ const sendMessageUrl = "https://api.kindroid.ai/v1/send-message";
 const groupUserMessageUrl = "https://api.kindroid.ai/v1/groupchats-user-message";
 const groupGetTurnUrl = "https://api.kindroid.ai/v1/groupchats-get-turn";
 const groupAiResponseUrl = "https://api.kindroid.ai/v1/groupchats-ai-response";
+const chatBreakUrl = "https://api.kindroid.ai/v1/chat-break";
+const groupChatBreakUrl = "https://api.kindroid.ai/v1/groupchats-chat-break";
+const rewindMessagesUrl = "https://api.kindroid.ai/v1/rewind-messages";
 const updateInfoUrl = "https://api.kindroid.ai/v1/update-info";
 const updateGroupChatUrl = "https://api.kindroid.ai/v1/groupchats-update";
 const journalCreateUrl = "https://api.kindroid.ai/v1/journal-create";
@@ -74,6 +86,7 @@ export class KindroidClient {
       ok: response.ok,
       requestId: input.requestId,
       idempotencyKey: input.idempotencyKey,
+      replyText: response.ok ? responseText : undefined,
       responseText: response.ok ? undefined : responseText.slice(0, 1000)
     };
   }
@@ -140,7 +153,7 @@ export class KindroidClient {
       nextAiId: turnResult.aiId,
       aiResponseStatus: aiResponseResult.status,
       aiResponseOk: aiResponseResult.ok,
-      aiResponseText: aiResponseResult.responseText,
+      aiResponseText: aiResponseResult.replyText ?? aiResponseResult.responseText,
       responseText: aiResponseResult.ok ? undefined : aiResponseResult.responseText
     };
   }
@@ -178,6 +191,7 @@ export class KindroidClient {
   private async createGroupAiResponse(input: CreateKindroidGroupAiResponseInput): Promise<{
     ok: boolean;
     status: number;
+    replyText?: string;
     responseText?: string;
   }> {
     const payload = buildCreateGroupAiResponsePayload(input);
@@ -194,6 +208,80 @@ export class KindroidClient {
       groupId: input.groupId,
       aiId: input.aiId,
       requestId: input.requestId
+    });
+
+    return {
+      status: response.status,
+      ok: response.ok,
+      replyText: response.ok ? responseText : undefined,
+      responseText: response.ok ? undefined : responseText.slice(0, 1000)
+    };
+  }
+
+  async breakChat(input: BreakKindroidChatInput): Promise<BreakKindroidChatResult> {
+    const payload = buildBreakChatPayload(input);
+    const response = await fetch(chatBreakUrl, {
+      method: "POST",
+      headers: await this.authHeaders(),
+      body: JSON.stringify(payload)
+    });
+
+    const responseText = await response.text();
+    this.logger.info("Kindroid chat-break request completed.", {
+      status: response.status,
+      ok: response.ok,
+      aiId: input.aiId,
+      wipeCascaded: input.wipeCascaded === true,
+      responseText: response.ok ? undefined : responseText.slice(0, 500)
+    });
+
+    return {
+      status: response.status,
+      ok: response.ok,
+      responseText: response.ok ? undefined : responseText.slice(0, 1000)
+    };
+  }
+
+  async breakGroupChat(input: BreakKindroidGroupChatInput): Promise<BreakKindroidGroupChatResult> {
+    const payload = buildBreakGroupChatPayload(input);
+    const response = await fetch(groupChatBreakUrl, {
+      method: "POST",
+      headers: await this.authHeaders(),
+      body: JSON.stringify(payload)
+    });
+
+    const responseText = await response.text();
+    this.logger.info("Kindroid groupchats-chat-break request completed.", {
+      status: response.status,
+      ok: response.ok,
+      groupId: input.groupId,
+      wipeCascaded: input.wipeCascaded === true,
+      responseText: response.ok ? undefined : responseText.slice(0, 500)
+    });
+
+    return {
+      status: response.status,
+      ok: response.ok,
+      responseText: response.ok ? undefined : responseText.slice(0, 1000)
+    };
+  }
+
+  async rewindMessages(input: RewindKindroidMessagesInput): Promise<RewindKindroidMessagesResult> {
+    const payload = buildRewindMessagesPayload(input);
+    const response = await fetch(rewindMessagesUrl, {
+      method: "POST",
+      headers: await this.authHeaders(),
+      body: JSON.stringify(payload)
+    });
+
+    const responseText = await response.text();
+    this.logger.info("Kindroid rewind-messages request completed.", {
+      status: response.status,
+      ok: response.ok,
+      aiId: input.aiId,
+      groupId: input.groupId,
+      count: input.count,
+      responseText: response.ok ? undefined : responseText.slice(0, 500)
     });
 
     return {

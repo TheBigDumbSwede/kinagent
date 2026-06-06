@@ -237,6 +237,7 @@ program
         status: result.status,
         requestId: result.requestId,
         idempotencyKey: result.idempotencyKey,
+        response: result.ok ? result.replyText : undefined,
         error: result.ok || !result.responseText ? undefined : redactSecrets(result.responseText)
       })}\n`
     );

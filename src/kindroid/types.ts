@@ -11,12 +11,14 @@ export interface SendKindroidMessageResult {
   ok: boolean;
   requestId: string;
   idempotencyKey: string;
+  replyText?: string;
   responseText?: string;
 }
 
 export interface SendKindroidGroupMessageInput {
   groupId: string;
-  message: string;
+  message?: string;
+  audioUrl?: string;
   requestId: string;
   idempotencyKey: string;
   internetResponse?: string | null;
@@ -47,16 +49,36 @@ export interface CreateKindroidGroupAiResponseInput {
   requestId: string;
 }
 
+export interface BreakKindroidChatInput {
+  aiId: string;
+  greeting: string;
+  wipeCascaded?: boolean;
+}
+
+export interface BreakKindroidGroupChatInput {
+  groupId: string;
+  greeting: string;
+  wipeCascaded?: boolean;
+}
+
+export interface RewindKindroidMessagesInput {
+  aiId?: string;
+  groupId?: string;
+  count: number;
+}
+
+export interface KindroidMutationResult {
+  status: number;
+  ok: boolean;
+  responseText?: string;
+}
+
 export interface UpdateKindroidCurrentSceneInput {
   aiId: string;
   currentScene: string;
 }
 
-export interface UpdateKindroidCurrentSceneResult {
-  status: number;
-  ok: boolean;
-  responseText?: string;
-}
+export type UpdateKindroidCurrentSceneResult = KindroidMutationResult;
 
 export interface UpdateKindroidGroupCurrentSceneInput {
   groupId: string;
@@ -64,6 +86,9 @@ export interface UpdateKindroidGroupCurrentSceneInput {
 }
 
 export type UpdateKindroidGroupCurrentSceneResult = UpdateKindroidCurrentSceneResult;
+export type BreakKindroidChatResult = KindroidMutationResult;
+export type BreakKindroidGroupChatResult = KindroidMutationResult;
+export type RewindKindroidMessagesResult = KindroidMutationResult;
 
 export interface CreateKindroidJournalEntryInput {
   aiId: string;
