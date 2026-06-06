@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AppConfig } from "../src/config/types.js";
 import { HermesChatAdapter } from "../src/hermes/hermesAdapter.js";
 import { JournalSuggestionStore } from "../src/journal/journalSuggestionStore.js";
+import { LocalSceneStateStore } from "../src/localScene/localSceneStore.js";
 import { InMemoryDedupeStore } from "../src/state/dedupeStore.js";
 import type { Logger } from "../src/util/logger.js";
 
@@ -324,6 +325,84 @@ describe("HermesChatAdapter", () => {
           environment: "abandoned hydro station in a thunderstorm",
           mood: "tense"
         })
+      })
+    );
+  });
+
+  it("prewarms local scene without executing non-local-scene actions", async () => {
+    const kindroid = testKindroidUpdater();
+    const onLocalSceneUpdated = vi.fn();
+    const onSoundscapeUpdated = vi.fn();
+    const localScenes = testLocalSceneStateStore();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  actions: [
+                    {
+                      type: "update_current_scene",
+                      ai_id: "kin-1",
+                      current_scene: "Inside a closed library after rain."
+                    },
+                    {
+                      type: "update_soundscape",
+                      ai_id: "kin-1",
+                      soundscape: {
+                        enabled: true,
+                        environment: "library rain",
+                        layers: [{ type: "rain", volume: 0.4 }]
+                      }
+                    },
+                    {
+                      type: "update_local_scene_state",
+                      ai_id: "kin-1",
+                      location: "closed library",
+                      mood: "quiet and watchful",
+                      evidence: ["Rainwater is pooling by the library doors."]
+                    }
+                  ]
+                })
+              }
+            }
+          ]
+        })
+      )
+    );
+
+    const adapter = new HermesChatAdapter(testConfig(), logger, kindroid, {
+      localScenes,
+      onLocalSceneUpdated,
+      onSoundscapeUpdated,
+      isSoundscapeEnabled: () => true
+    });
+    await adapter.prewarmLocalScene({
+      scope: "kin",
+      kinId: "kin-1",
+      documentId: "local-scene-prewarm:kin-1",
+      timestamp: "2026-06-01T12:00:00.000Z",
+      text: "LOCAL_SCENE_PREWARM_REQUEST\nRecent messages mention a closed library after rain.",
+      localSceneContext: {
+        prewarm: true,
+        sourceScope: "direct",
+        sourceKinId: "kin-1",
+        mutation: "local-kinagent-only"
+      }
+    });
+
+    expect(kindroid.updateCurrentScene).not.toHaveBeenCalled();
+    expect(kindroid.updateGroupCurrentScene).not.toHaveBeenCalled();
+    expect(onSoundscapeUpdated).not.toHaveBeenCalled();
+    expect(onLocalSceneUpdated).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scope: "kin",
+        kinId: "kin-1",
+        location: "closed library",
+        mood: "quiet and watchful",
+        sourceDocumentId: "local-scene-prewarm:kin-1"
       })
     );
   });
@@ -1150,6 +1229,12 @@ function testJournalSuggestionStore() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "kinagent-journal-suggestions-"));
   tempDirs.push(dir);
   return new JournalSuggestionStore(path.join(dir, "journal-suggestions.json"));
+}
+
+function testLocalSceneStateStore() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "kinagent-local-scenes-"));
+  tempDirs.push(dir);
+  return new LocalSceneStateStore(path.join(dir, "local-scenes.json"));
 }
 
 function testConfig(): AppConfig {

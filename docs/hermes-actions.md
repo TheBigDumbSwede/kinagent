@@ -16,13 +16,71 @@ disabled features are ignored.
 
 The active registry is built by `createHermesActionRegistry(...)`.
 
-| Action types                                         | Handler                          | Execution | Scope                                                                                                  |
-| ---------------------------------------------------- | -------------------------------- | --------- | ------------------------------------------------------------------------------------------------------ |
-| `update_current_scene`, `update_group_current_scene` | `CurrentSceneActionHandler`      | Immediate | Updates Kindroid `current_scene` for the same direct Kin or group chat.                                |
-| `update_soundscape`, `update_group_soundscape`       | `SoundscapeActionHandler`        | Immediate | Emits local procedural soundscape metadata for the same direct Kin or group chat.                      |
-| `send_ambient_context_turn`                          | `AmbientContextActionHandler`    | Immediate | Sends a direct Kin ambient visible message with hidden `internet_response` context.                    |
-| `propose_journal_entry`, `delete_journal_entry`      | `JournalSuggestionActionHandler` | Reviewed  | Creates pending desktop review items. Kindroid journals are changed only after user acceptance.        |
-| `propose_chat_dynamism_adjustment`                   | `ChatDynamismActionHandler`      | Reviewed  | Creates pending direct-Kin Chat Dynamism suggestions. No Kindroid mutation is performed automatically. |
+| Action types                                                 | Handler                          | Execution | Scope                                                                                                  |
+| ------------------------------------------------------------ | -------------------------------- | --------- | ------------------------------------------------------------------------------------------------------ |
+| `update_local_scene_state`, `update_group_local_scene_state` | `LocalSceneActionHandler`        | Immediate | Stores local-only backstage scene metadata for the same direct Kin or group chat.                      |
+| `update_current_scene`, `update_group_current_scene`         | `CurrentSceneActionHandler`      | Immediate | Updates Kindroid `current_scene` for the same direct Kin or group chat.                                |
+| `update_soundscape`, `update_group_soundscape`               | `SoundscapeActionHandler`        | Immediate | Emits local procedural soundscape metadata for the same direct Kin or group chat.                      |
+| `send_ambient_context_turn`                                  | `AmbientContextActionHandler`    | Immediate | Sends a direct Kin ambient visible message with hidden `internet_response` context.                    |
+| `propose_journal_entry`, `delete_journal_entry`              | `JournalSuggestionActionHandler` | Reviewed  | Creates pending desktop review items. Kindroid journals are changed only after user acceptance.        |
+| `propose_chat_dynamism_adjustment`                           | `ChatDynamismActionHandler`      | Reviewed  | Creates pending direct-Kin Chat Dynamism suggestions. No Kindroid mutation is performed automatically. |
+
+## Local Scene State
+
+Local scene state is backstage Kinagent metadata. It is stored per direct Kin or group and surfaced in the desktop UI so
+future local features can inspect the current place, activity, mood, tension, privacy, palette, or ambience without
+writing to Kindroid-visible state.
+
+Direct Kin request:
+
+```json
+{
+  "type": "update_local_scene_state",
+  "ai_id": "<same direct chat ai_id>",
+  "location": "rainy apartment kitchen",
+  "timeOfDay": "late evening",
+  "mood": "quiet, intimate, slightly melancholy",
+  "activity": "talking over coffee",
+  "tension": 0.25,
+  "privacy": "private",
+  "soundscape": {},
+  "visualPalette": {},
+  "suggestedUiAccent": "cool low-light",
+  "evidence": ["<specific recent-message evidence>"],
+  "reason": "<why this local scene state changed>"
+}
+```
+
+Group request:
+
+```json
+{
+  "type": "update_group_local_scene_state",
+  "group_id": "<same group_id>",
+  "location": "ship engine bay",
+  "activity": "checking a damaged relay",
+  "tension": 0.55,
+  "privacy": "restricted",
+  "reason": "<why this local scene state changed>"
+}
+```
+
+Guardrails:
+
+- The handler rejects mismatched `ai_id` or `group_id`.
+- Use this only when the venue, time, activity, privacy, tension, mood, or scene direction materially changes.
+- Keep values compact, factual, inspectable, and grounded in recent readable chat.
+- This action does not call Kindroid and must not write Kindroid memory, `current_scene`, journals, chat text, or user replies.
+- Group state is keyed by `group_id`; the latest speaker Kin is recorded only as metadata and is not treated as the group
+  scene owner.
+
+Prewarm:
+
+- Local scene prewarm is handled by `LocalScenePrewarmCoordinator`, separately from soundscape prewarm.
+- It loads bounded recent-message context through Kindroid's documented `/v1/get-chat-messages` API.
+- It emits `kindroid.local_scene.prewarm` to Hermes and executes only `update_local_scene_state` or
+  `update_group_local_scene_state` actions from the response.
+- It does not execute soundscape, `current_scene`, journal, ambient-context, or Chat Dynamism actions.
 
 ## Current Scene Updates
 

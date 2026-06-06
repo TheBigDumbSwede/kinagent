@@ -57,6 +57,7 @@ import type {
   ChatExportProgress,
   ChatExportRequest,
   ChatExportResult,
+  DetailStat,
   GroupSoundscapePreference,
   GroupSoundscapePreferenceResult,
   GroupSubscriptionSummary,
@@ -69,7 +70,8 @@ import type {
   KinSummary,
   KinVoicePreference,
   KinSubscriptionSummary,
-  KinVoicePreferenceResult
+  KinVoicePreferenceResult,
+  LocalSceneStateSummary
 } from "./rendererTypes.js";
 import type { MonitorMessage } from "./monitorMessages.js";
 
@@ -114,6 +116,7 @@ interface RendererState {
   selectedGroupSoundscape: GroupSoundscapePreferenceResult | null;
   selectedKinAmbient: KinAmbientPreferenceResult | null;
   journalSuggestions: JournalSuggestionSummary[];
+  localScenes: LocalSceneStateSummary[];
   journalSavingId: string | null;
   journalError: string | null;
   captureLoading: boolean;
@@ -256,6 +259,7 @@ interface DesktopStatus {
   groups?: GroupSummary[];
   groupSubscriptions?: GroupSubscriptionSummary[];
   journalSuggestions?: JournalSuggestionSummary[];
+  localScenes?: LocalSceneStateSummary[];
   monitorRunning?: boolean;
   session?: {
     available?: boolean;
@@ -376,6 +380,7 @@ const state: RendererState = {
   selectedGroupSoundscape: null,
   selectedKinAmbient: null,
   journalSuggestions: [],
+  localScenes: [],
   journalSavingId: null,
   journalError: null,
   captureLoading: false,
@@ -821,6 +826,12 @@ window.kinagent.onEvent((message) => {
     return;
   }
 
+  if (message.channel === "local-scene-updated") {
+    upsertLocalScene(message.payload as LocalSceneStateSummary | undefined);
+    renderActivity();
+    return;
+  }
+
   if (message.channel === "journal-suggestions-updated") {
     state.journalSuggestions = Array.isArray(message.payload) ? (message.payload as JournalSuggestionSummary[]) : [];
     renderActivity();
@@ -951,6 +962,7 @@ function renderStatus(status: DesktopStatus): void {
   state.groups = status.groups || [];
   state.groupSubscriptions = status.groupSubscriptions || [];
   state.journalSuggestions = status.journalSuggestions || [];
+  state.localScenes = status.localScenes || [];
   state.monitorRunning = Boolean(status.monitorRunning);
   state.sessionAvailable = Boolean(status.session?.available);
   state.kinRefresh = status.kinRefresh || null;
@@ -1132,6 +1144,8 @@ function renderActivity(): void {
   const activeMode = modeForTab(activeTab);
   const isMonitor = activeMode === "monitor";
   const isVoice = activeMode === "voice";
+  const isLocalScene = activeMode === "local-scene";
+  const isGroupLocalScene = activeMode === "group-local-scene";
   const isGroupAudio = activeMode === "group-audio";
   const isHermes = activeMode === "hermes";
   const isAnalyze = activeMode === "analyze";
@@ -1162,6 +1176,13 @@ function renderActivity(): void {
   }
 
   const selectedGroup = currentSelectedGroup();
+  if (selectedGroup && isGroupLocalScene) {
+    elements.activityTitle.textContent = `${selectedGroup.name || "Group"} · Scene`;
+    elements.monitorLine.textContent = subtitleForDetailMode(activeMode);
+    renderLocalSceneTab("group", selectedGroup);
+    return;
+  }
+
   if (selectedGroup && isGroupAudio) {
     elements.activityTitle.textContent = `${selectedGroup.name || "Group"} · Audio`;
     elements.monitorLine.textContent = subtitleForDetailMode(activeMode);
@@ -1198,6 +1219,11 @@ function renderActivity(): void {
 
   if (isVoice) {
     renderVoiceTab(voiceHermesContext(), selectedKin);
+    return;
+  }
+
+  if (isLocalScene) {
+    renderLocalSceneTab("kin", selectedKin);
     return;
   }
 
@@ -1353,6 +1379,15 @@ function renderGroupAudioTab(selectedGroup: GroupSummary): void {
   ]);
 }
 
+function renderLocalSceneTab(scope: "kin" | "group", selectedEntity: KinSummary | GroupSummary | null): void {
+  const scene = currentLocalScene(scope);
+  renderCapturedDetailContent(capturedDetailContext(), {
+    content: scene ? localSceneContent(scene) : "No local scene metadata has been captured yet.",
+    history: [],
+    stats: localSceneStats(scope, selectedEntity, scene)
+  });
+}
+
 async function saveSelectedGroupSoundscape(): Promise<void> {
   if (!state.selectedGroupId || state.groupSoundscapeSaving) {
     return;
@@ -1491,6 +1526,64 @@ function currentCapturedField(): CapturedFieldSummary | null {
   return state.selectedKinCapture?.fields?.find((field) => field.key === state.activeTab) || null;
 }
 
+function currentLocalScene(scope: "kin" | "group"): LocalSceneStateSummary | null {
+  if (scope === "group") {
+    return (
+      state.localScenes.find((scene) => scene.scope === "group" && scene.groupId === state.selectedGroupId) || null
+    );
+  }
+
+  return state.localScenes.find((scene) => scene.scope === "kin" && scene.kinId === state.selectedKinId) || null;
+}
+
+function upsertLocalScene(scene: LocalSceneStateSummary | null | undefined): void {
+  if (!scene?.scope) {
+    return;
+  }
+
+  const sameSource = (current: LocalSceneStateSummary): boolean =>
+    scene.scope === "group"
+      ? current.scope === "group" && current.groupId === scene.groupId
+      : current.scope === "kin" && current.kinId === scene.kinId;
+  state.localScenes = [scene, ...state.localScenes.filter((current) => !sameSource(current))];
+}
+
+function localSceneContent(scene: LocalSceneStateSummary): string {
+  const content = {
+    location: scene.location || undefined,
+    timeOfDay: scene.timeOfDay || undefined,
+    mood: scene.mood || undefined,
+    activity: scene.activity || undefined,
+    tension: typeof scene.tension === "number" ? scene.tension : undefined,
+    privacy: scene.privacy || undefined,
+    soundscape: scene.soundscape || undefined,
+    visualPalette: scene.visualPalette || undefined,
+    suggestedUiAccent: scene.suggestedUiAccent || undefined,
+    reason: scene.reason || undefined,
+    evidence: scene.evidence?.length ? scene.evidence : undefined
+  };
+  return `${JSON.stringify(content, null, 2)}\n`;
+}
+
+function localSceneStats(
+  scope: "kin" | "group",
+  selectedEntity: KinSummary | GroupSummary | null,
+  scene: LocalSceneStateSummary | null
+): DetailStat[] {
+  const entityId = scope === "group" ? state.selectedGroupId : state.selectedKinId;
+  return [
+    { label: scope === "group" ? "Group" : "Kin", value: selectedEntity?.name || entityId || "Unknown" },
+    { label: "Updated", value: scene?.updatedAt ? formatSceneTimestamp(scene.updatedAt) : "None" },
+    { label: "Source", value: scene?.sourceDocumentId || "Unavailable" },
+    { label: "Mode", value: "Local only" }
+  ];
+}
+
+function formatSceneTimestamp(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+}
+
 function isKinTab(tab: string): boolean {
   return [
     "backstory",
@@ -1500,6 +1593,7 @@ function isKinTab(tab: string): boolean {
     "scene",
     "background",
     "profile",
+    "local-scene",
     "journal",
     "hermes",
     "voice",
@@ -1516,6 +1610,7 @@ function isGroupTab(tab: string): boolean {
     "group-scene-suggestion",
     "group-members",
     "group-profile",
+    "group-local-scene",
     "group-audio",
     "group-export"
   ].includes(tab);

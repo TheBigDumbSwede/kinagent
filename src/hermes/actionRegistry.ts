@@ -9,6 +9,7 @@ import type { DedupeStore } from "../state/dedupeStore.js";
 import type { AppConfig } from "../config/types.js";
 import type { Logger } from "../util/logger.js";
 import { ChatDynamismActionHandler } from "./chatDynamismActionHandler.js";
+import { LocalSceneActionHandler } from "./localSceneActionHandler.js";
 import {
   AmbientContextActionHandler,
   isAmbientContextSender,
@@ -21,6 +22,7 @@ import {
   type KindroidSceneUpdater
 } from "./currentSceneActionHandler.js";
 import { JournalSuggestionActionHandler } from "./journalSuggestionActionHandler.js";
+import { type LocalSceneState, type LocalSceneStateStore } from "../localScene/localSceneStore.js";
 import {
   SoundscapeActionHandler,
   type ScopedSoundscapeUpdate,
@@ -30,6 +32,8 @@ import {
 export interface HermesActionRegistryOptions {
   journalSuggestions?: JournalSuggestionStore;
   onJournalSuggestionCreated?: (suggestion: JournalSuggestion) => void;
+  localScenes?: LocalSceneStateStore;
+  onLocalSceneUpdated?: (state: LocalSceneState) => void;
   chatDynamismSuggestions?: ChatDynamismSuggestionStore;
   onChatDynamismSuggestionCreated?: (suggestion: ChatDynamismSuggestion) => void;
   isChatDynamismEnabled?: (aiId: string) => boolean;
@@ -56,6 +60,13 @@ export interface HermesActionRegistryEntry {
 }
 
 export const hermesActionRegistryEntries: HermesActionRegistryEntry[] = [
+  {
+    actionTypes: ["update_local_scene_state", "update_group_local_scene_state"],
+    handler: "LocalSceneActionHandler",
+    enabledWhen: "bridge runtime provides a LocalSceneStateStore",
+    execution: "immediate",
+    scope: "Stores local-only backstage scene metadata for the same direct Kin or group chat."
+  },
   {
     actionTypes: ["update_current_scene", "update_group_current_scene"],
     handler: "CurrentSceneActionHandler",
@@ -124,6 +135,10 @@ export function createHermesActionRegistry(input: {
 
   if (options.onSoundscapeUpdated) {
     handlers.push(new SoundscapeActionHandler(input.logger, options.onSoundscapeUpdated, options.isSoundscapeEnabled));
+  }
+
+  if (options.localScenes) {
+    handlers.push(new LocalSceneActionHandler(input.logger, options.localScenes, options.onLocalSceneUpdated));
   }
 
   if (options.journalSuggestions) {

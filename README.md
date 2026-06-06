@@ -23,7 +23,8 @@ Working in this first milestone:
 - Kindroid outbound client using the documented `kn_` API-key flow when configured, including direct sends, group sends,
   public chat-history export, current-scene updates, and low-level chat break/rewind helpers.
 - SQLite-backed outbound dedupe for recent bridge-originated messages.
-- Hermes chat adapter for the local Cadence Hermes gateway, including a narrow `current_scene` action executor.
+- Hermes chat adapter for the local Cadence Hermes gateway, including narrow Kindroid `current_scene` updates and
+  local-only scene metadata.
 - Experimental desktop-only procedural soundscape controls using local Web Audio synthesis.
 
 Not complete yet:
@@ -47,8 +48,8 @@ Kindroid browser login
   -> Firestore listener: Users/{uid}/AIs/{ai_id}/ChatMessages
   -> decrypted chat event
   -> HermesAdapter
-  -> optional current-scene action
-  -> KindroidClient POST /v1/update-info or /v1/groupchats-update
+  -> optional current-scene action or local scene metadata action
+  -> KindroidClient POST /v1/update-info or /v1/groupchats-update, or local scene-state JSON
 
 Outbound:
 Hermes or CLI
@@ -67,6 +68,16 @@ Runtime or CLI
   -> KindroidClient
   -> GET /v1/get-chat-messages
   -> bounded recent-message context
+
+Local scene state:
+Runtime
+  -> KindroidClient
+  -> GET /v1/get-chat-messages
+  -> bounded recent-message context
+  -> Hermes
+  -> update_local_scene_state or update_group_local_scene_state
+  -> ./data/local-scene-state.json
+  -> desktop Kin or Group Scene tab
 ```
 
 Kindroid domain access is organized behind `KindroidApiClient` resource modules:
@@ -271,6 +282,16 @@ $env:HERMES_BASE_URL = "http://127.0.0.1:8642/v1"
 $env:HERMES_API_KEY = "<local Hermes API key>"
 npm run daemon
 ```
+
+Hermes may also maintain local scene metadata for Kinagent without changing Kindroid-visible content. The local scene
+state is stored per direct Kin or group and can capture compact backstage context such as location, time of day, mood,
+activity, tension, privacy, soundscape hints, visual palette hints, and supporting evidence. Group local scene state is
+keyed by the group rather than by an owner Kin; the latest speaker Kin is recorded only as metadata. The desktop Kin or
+Group `Scene` tab shows the current local snapshot. Use Kindroid `current_scene` when the saved Kindroid scene should
+change; use local scene state for inspectable app-owned context that should remain inside Kinagent.
+
+Local scene prewarm is separate from soundscape prewarm. It uses the same documented `/v1/get-chat-messages` API for
+bounded recent context, but runs through its own coordinator and only executes local scene actions.
 
 Enable desktop-only voice sidecar playback for new AI messages:
 

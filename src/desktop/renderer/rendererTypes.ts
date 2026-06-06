@@ -134,6 +134,27 @@ export interface JournalSuggestionSummary {
   sourceInvalidationReason?: string | null;
 }
 
+export interface LocalSceneStateSummary {
+  scope?: "kin" | "group" | string;
+  kinId?: string | null;
+  groupId?: string | null;
+  latestSpeakerKinId?: string | null;
+  updatedAt?: string | null;
+  sourceDocumentId?: string | null;
+  sourceTimestamp?: string | null;
+  location?: string | null;
+  timeOfDay?: string | null;
+  mood?: string | null;
+  activity?: string | null;
+  tension?: number | null;
+  privacy?: string | null;
+  soundscape?: Record<string, unknown> | null;
+  visualPalette?: Record<string, unknown> | null;
+  suggestedUiAccent?: string | null;
+  evidence?: unknown[];
+  reason?: string | null;
+}
+
 export interface CapturedHistoryEntry {
   hash?: string | null;
   shortHash?: string | null;

@@ -19,7 +19,27 @@ export type HermesSoundscapePrewarmRequest =
       soundscapeContext: unknown;
     };
 
+export type HermesLocalScenePrewarmRequest =
+  | {
+      scope: "kin";
+      kinId: string;
+      documentId: string;
+      timestamp: string;
+      text: string;
+      localSceneContext: unknown;
+    }
+  | {
+      scope: "group";
+      groupId: string;
+      aiId?: string | null;
+      documentId: string;
+      timestamp: string;
+      text: string;
+      localSceneContext: unknown;
+    };
+
 export interface HermesAdapter {
   handleChatChanged(notification: KindroidChatNotification): Promise<void>;
   prewarmSoundscape?(request: HermesSoundscapePrewarmRequest): Promise<void>;
+  prewarmLocalScene?(request: HermesLocalScenePrewarmRequest): Promise<void>;
 }

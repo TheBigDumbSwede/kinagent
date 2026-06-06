@@ -7,6 +7,7 @@ import {
 import { type JournalSuggestion, type JournalSuggestionStore } from "../journal/journalSuggestionStore.js";
 import type { JournalSuggestionContext } from "../journal/journalContext.js";
 import { KindroidClient } from "../kindroid/kindroidClient.js";
+import { type LocalSceneState, type LocalSceneStateStore } from "../localScene/localSceneStore.js";
 import type { DedupeStore } from "../state/dedupeStore.js";
 import type { Logger } from "../util/logger.js";
 import {
@@ -17,7 +18,7 @@ import {
 import { createHermesActionRegistry } from "./actionRegistry.js";
 import type { AmbientContextPreference, AmbientContextSentEvent } from "./ambientContextActionHandler.js";
 import type { ScopedSoundscapeUpdate, SoundscapePreference } from "./soundscapeActionHandler.js";
-import type { HermesAdapter, HermesSoundscapePrewarmRequest } from "./types.js";
+import type { HermesAdapter, HermesLocalScenePrewarmRequest, HermesSoundscapePrewarmRequest } from "./types.js";
 
 interface HermesChatCompletionResult {
   choices?: Array<{
@@ -32,6 +33,8 @@ export type { KindroidSceneUpdater } from "./currentSceneActionHandler.js";
 export interface HermesChatAdapterOptions {
   journalSuggestions?: JournalSuggestionStore;
   onJournalSuggestionCreated?: (suggestion: JournalSuggestion) => void;
+  localScenes?: LocalSceneStateStore;
+  onLocalSceneUpdated?: (state: LocalSceneState) => void;
   chatDynamismSuggestions?: ChatDynamismSuggestionStore;
   onChatDynamismSuggestionCreated?: (suggestion: ChatDynamismSuggestion) => void;
   isChatDynamismEnabled?: (aiId: string) => boolean;
@@ -55,6 +58,15 @@ export class LoggingHermesAdapter implements HermesAdapter {
 
   async prewarmSoundscape(request: HermesSoundscapePrewarmRequest): Promise<void> {
     this.logger.info("Hermes soundscape prewarm skipped because Hermes chat adapter is not active.", {
+      scope: request.scope,
+      kinId: "kinId" in request ? request.kinId : undefined,
+      groupId: "groupId" in request ? request.groupId : undefined,
+      documentId: request.documentId
+    });
+  }
+
+  async prewarmLocalScene(request: HermesLocalScenePrewarmRequest): Promise<void> {
+    this.logger.info("Hermes local scene prewarm skipped because Hermes chat adapter is not active.", {
       scope: request.scope,
       kinId: "kinId" in request ? request.kinId : undefined,
       groupId: "groupId" in request ? request.groupId : undefined,
@@ -145,12 +157,38 @@ export class HermesChatAdapter implements HermesAdapter {
     }
   }
 
+  async prewarmLocalScene(request: HermesLocalScenePrewarmRequest): Promise<void> {
+    const notification = toLocalScenePrewarmNotification(request);
+    this.logger.info("Forwarding local scene prewarm request to Hermes.", safeNotificationMeta(notification));
+
+    try {
+      const decision = await this.requestDecision(notification, {
+        localSceneContext: request.localSceneContext
+      });
+      const actions = this.normalizeActions(decision).filter(({ action }) => isLocalSceneAction(action));
+      this.logger.info("Hermes local scene prewarm decision received.", {
+        ...safeNotificationMeta(notification),
+        actionCount: actions.length,
+        actionTypes: [...new Set(actions.map(({ action }) => actionType(action)))]
+      });
+      for (const { handler, action } of actions) {
+        await handler.handle(notification, action);
+      }
+    } catch (error) {
+      this.logger.warn("Hermes local scene prewarm failed.", {
+        ...safeNotificationMeta(notification),
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
+
   private async requestDecision(
     notification: KindroidChatNotification,
     overrides: {
       journalContext?: JournalSuggestionContext;
       chatDynamismContext?: unknown;
       soundscapeContext?: unknown;
+      localSceneContext?: unknown;
     } = {}
   ): Promise<HermesActionDecision> {
     const journalContext = overrides.journalContext ?? (await this.journalContextProvider?.(notification));
@@ -158,6 +196,7 @@ export class HermesChatAdapter implements HermesAdapter {
       overrides.chatDynamismContext ?? (await this.options.chatDynamismContextProvider?.(notification));
     const soundscapeContext =
       overrides.soundscapeContext ?? (await this.options.soundscapeContextProvider?.(notification));
+    const localSceneContext = overrides.localSceneContext ? { localSceneContext: overrides.localSceneContext } : {};
     const response = await fetch(`${normalizeBaseUrl(this.config.hermes.baseUrl)}/chat/completions`, {
       method: "POST",
       headers: {
@@ -173,7 +212,10 @@ export class HermesChatAdapter implements HermesAdapter {
           },
           {
             role: "user",
-            content: JSON.stringify(toHermesEvent(notification, journalContext, chatDynamismContext, soundscapeContext))
+            content: JSON.stringify({
+              ...toHermesEvent(notification, journalContext, chatDynamismContext, soundscapeContext),
+              ...localSceneContext
+            })
           }
         ]
       })
@@ -203,6 +245,7 @@ export class HermesChatAdapter implements HermesAdapter {
       "Use soundscape actions only when soundscapeContext.enabledForSource is true.",
       "For group soundscapes, enabledForSource refers to the group preference, not ownership by the most recent speaker Kin.",
       "For kindroid.soundscape.prewarm events, return a conservative soundscape action when recent context gives enough venue, weather, machinery, room tone, crowd, vehicle, or tension clues. Do not return non-soundscape actions for prewarm events.",
+      "For kindroid.local_scene.prewarm events, return a conservative local scene action when recent context establishes the scene. Do not return non-local-scene actions for local scene prewarm events.",
       `Keep current_scene under ${this.config.hermes.currentSceneUpdates.maxLength} characters.`,
       'Never invent a different ai_id or group_id. If unsure, return {"actions":[]}.'
     ].join("\n");
@@ -265,6 +308,37 @@ function toPrewarmNotification(request: HermesSoundscapePrewarmRequest): Kindroi
   };
 }
 
+function toLocalScenePrewarmNotification(request: HermesLocalScenePrewarmRequest): KindroidChatNotification {
+  if (request.scope === "group") {
+    return {
+      type: "kindroid.group_chat.changed",
+      groupId: request.groupId,
+      aiId: request.aiId ?? null,
+      documentId: request.documentId,
+      timestamp: request.timestamp,
+      text: request.text,
+      textEncrypted: false,
+      textDecrypted: true,
+      sender: "system",
+      role: "local-scene-prewarm",
+      source: "local-scene-prewarm"
+    };
+  }
+
+  return {
+    type: "kindroid.chat.changed",
+    kinId: request.kinId,
+    documentId: request.documentId,
+    timestamp: request.timestamp,
+    text: request.text,
+    textEncrypted: false,
+    textDecrypted: true,
+    sender: "system",
+    role: "local-scene-prewarm",
+    source: "local-scene-prewarm"
+  };
+}
+
 function normalizeBaseUrl(value: string): string {
   return value.replace(/\/+$/, "");
 }
@@ -315,7 +389,7 @@ function toHermesEvent(
   if (notification.type === "kindroid.chat.changed") {
     return {
       agentId: "kindroid",
-      type: notification.source === "soundscape-prewarm" ? "kindroid.soundscape.prewarm" : "kindroid.chat.message",
+      type: hermesEventType(notification.source, "kindroid.chat.message"),
       chatKind: "direct",
       aiId: notification.kinId,
       documentId: notification.documentId,
@@ -331,7 +405,7 @@ function toHermesEvent(
 
   return {
     agentId: "kindroid",
-    type: notification.source === "soundscape-prewarm" ? "kindroid.soundscape.prewarm" : "kindroid.group_chat.message",
+    type: hermesEventType(notification.source, "kindroid.group_chat.message"),
     chatKind: "group",
     groupId: notification.groupId,
     aiId: notification.aiId,
@@ -346,6 +420,16 @@ function toHermesEvent(
   };
 }
 
+function hermesEventType(source: KindroidChatNotification["source"], fallback: string): string {
+  if (source === "soundscape-prewarm") {
+    return "kindroid.soundscape.prewarm";
+  }
+  if (source === "local-scene-prewarm") {
+    return "kindroid.local_scene.prewarm";
+  }
+  return fallback;
+}
+
 function actionType(action: unknown): string {
   return action && typeof action === "object" && "type" in action && typeof action.type === "string"
     ? action.type
@@ -355,6 +439,11 @@ function actionType(action: unknown): string {
 function isSoundscapeAction(action: unknown): boolean {
   const type = actionType(action);
   return type === "update_soundscape" || type === "update_group_soundscape";
+}
+
+function isLocalSceneAction(action: unknown): boolean {
+  const type = actionType(action);
+  return type === "update_local_scene_state" || type === "update_group_local_scene_state";
 }
 
 function safeNotificationMeta(notification: KindroidChatNotification) {

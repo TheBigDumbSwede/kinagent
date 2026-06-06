@@ -4,12 +4,15 @@ import { ChatDynamismSuggestionStore } from "../src/chatDynamism/chatDynamismSug
 import { createHermesActionRegistry, hermesActionRegistryEntries } from "../src/hermes/actionRegistry.js";
 import type { KindroidSceneUpdater } from "../src/hermes/hermesAdapter.js";
 import { JournalSuggestionStore } from "../src/journal/journalSuggestionStore.js";
+import { LocalSceneStateStore } from "../src/localScene/localSceneStore.js";
 import { InMemoryDedupeStore } from "../src/state/dedupeStore.js";
 import type { Logger } from "../src/util/logger.js";
 
 describe("Hermes action registry", () => {
   it("documents the currently implemented Hermes action types", () => {
     expect(hermesActionRegistryEntries.flatMap((entry) => entry.actionTypes)).toEqual([
+      "update_local_scene_state",
+      "update_group_local_scene_state",
       "update_current_scene",
       "update_group_current_scene",
       "update_soundscape",
@@ -67,6 +70,24 @@ describe("Hermes action registry", () => {
     expect(prompt).toContain("update_soundscape");
     expect(prompt).toContain("update_group_soundscape");
     expect(prompt).toContain("control-plane metadata");
+  });
+
+  it("registers local scene actions when local scene storage is available", () => {
+    const registry = createHermesActionRegistry({
+      config: testConfig(),
+      logger: testLogger,
+      kindroidClient: testSceneUpdater,
+      options: {
+        localScenes: LocalSceneStateStore.fromConfig(testConfig())
+      }
+    });
+
+    const prompt = registry.handlers.flatMap((handler) => handler.promptLines()).join("\n");
+    expect(registry.handlers).toHaveLength(2);
+    expect(prompt).toContain("update_local_scene_state");
+    expect(prompt).toContain("update_group_local_scene_state");
+    expect(prompt).toContain("backstage Kinagent state only");
+    expect(prompt).toContain("must not write Kindroid memory");
   });
 
   it("registers journal suggestion actions when storage is available", () => {

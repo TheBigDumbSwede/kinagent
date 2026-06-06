@@ -24,6 +24,7 @@ import { JournalSuggestionStore, type JournalSuggestion } from "../journal/journ
 import { KindroidApiClient, type KindroidGroup, type KindroidKin } from "../kindroid/client/index.js";
 import { groupChatMessagesPath, kinChatMessagesPath } from "../kindroid/client/firestorePaths.js";
 import { KindroidClient } from "../kindroid/kindroidClient.js";
+import { LocalSceneStateStore, type LocalSceneState } from "../localScene/localSceneStore.js";
 import type { Logger } from "../util/logger.js";
 import { GroupSubscriptionSupervisor, type GroupSubscriptionStatus } from "./groupSubscriptionSupervisor.js";
 import { KindroidSessionKeepAlive, type KindroidSessionKeepAliveEvent } from "./kindroidSessionKeepAlive.js";
@@ -32,6 +33,7 @@ import {
   type KinMonitorStopReason,
   type KinSubscriptionStatus
 } from "./kinSubscriptionSupervisor.js";
+import { LocalScenePrewarmCoordinator } from "./localScenePrewarmCoordinator.js";
 import { SoundscapePrewarmCoordinator } from "./soundscapePrewarmCoordinator.js";
 import { VoiceRuntime, voiceProviderConfigured } from "../voice/voiceRuntime.js";
 import type { VoicePlaybackChunk } from "../voice/types.js";
@@ -56,6 +58,7 @@ export type BridgeRuntimeEvent =
   | { channel: "journal-suggestion-created"; payload: JournalSuggestion }
   | { channel: "journal-suggestions-updated"; payload: JournalSuggestion[] }
   | { channel: "chat-dynamism-suggestion-created"; payload: ChatDynamismSuggestion }
+  | { channel: "local-scene-updated"; payload: LocalSceneState }
   | { channel: "soundscape-updated"; payload: ScopedSoundscapeUpdate }
   | { channel: "identity-capture-completed"; payload: CaptureKindroidStateResult }
   | { channel: "identity-capture-failed"; payload: { error: string } };
@@ -72,10 +75,12 @@ export class BridgeRuntime {
   readonly hermes: HermesAdapter;
   readonly voice: VoiceRuntime;
   readonly journalSuggestions: JournalSuggestionStore;
+  readonly localScenes: LocalSceneStateStore;
   readonly chatDynamismSuggestions: ChatDynamismSuggestionStore;
   private readonly sessionKeepAlive: KindroidSessionKeepAlive;
   private readonly kinSubscriptionSupervisor: KinSubscriptionSupervisor;
   private readonly groupSubscriptionSupervisor: GroupSubscriptionSupervisor;
+  private readonly localScenePrewarm: LocalScenePrewarmCoordinator;
   private readonly soundscapePrewarm: SoundscapePrewarmCoordinator;
   private started = false;
   private startupCaptureStarted = false;
@@ -85,6 +90,7 @@ export class BridgeRuntime {
     private readonly dedupeStore: DedupeStore
   ) {
     this.journalSuggestions = JournalSuggestionStore.fromConfig(options.config);
+    this.localScenes = LocalSceneStateStore.fromConfig(options.config);
     this.chatDynamismSuggestions = ChatDynamismSuggestionStore.fromConfig(options.config);
     this.hermes = createHermesAdapter(options.config, options.logger, {
       dedupeStore,
@@ -117,6 +123,11 @@ export class BridgeRuntime {
         this.emit({ channel: "journal-suggestion-created", payload: suggestion });
         this.emit({ channel: "journal-suggestions-updated", payload: this.pendingJournalSuggestions() });
       },
+      localScenes: this.localScenes,
+      onLocalSceneUpdated: (state) => {
+        this.localScenePrewarm.markReady(state);
+        this.emit({ channel: "local-scene-updated", payload: state });
+      },
       chatDynamismSuggestions: options.config.hermes.chatDynamism.suggestions.enabled
         ? this.chatDynamismSuggestions
         : undefined,
@@ -135,6 +146,11 @@ export class BridgeRuntime {
       },
       chatDynamismContextProvider: async (notification) => this.chatDynamismContext(notification),
       soundscapeContextProvider: async (notification) => this.soundscapePrewarm.context(notification)
+    });
+    this.localScenePrewarm = new LocalScenePrewarmCoordinator({
+      config: options.config,
+      logger: options.logger,
+      hermes: this.hermes
     });
     this.soundscapePrewarm = new SoundscapePrewarmCoordinator({
       config: options.config,
@@ -178,6 +194,7 @@ export class BridgeRuntime {
       },
       onMonitorStarted: (kin) => {
         this.emit({ channel: "monitor-started", payload: { kinId: kin.aiId, kinName: kin.name } });
+        void this.localScenePrewarm.prewarmKin(kin, "monitor-started");
         void this.soundscapePrewarm.prewarmKin(kin, "monitor-started");
       },
       onMonitorStopped: (kinId, reason) => {
@@ -209,6 +226,7 @@ export class BridgeRuntime {
       },
       onMonitorStarted: (group) => {
         this.emit({ channel: "group-monitor-started", payload: { groupId: group.groupId, groupName: group.name } });
+        void this.localScenePrewarm.prewarmGroup(group, null, "monitor-started");
       },
       onMonitorStopped: (groupId, reason) => {
         this.emit({ channel: "group-monitor-stopped", payload: { groupId, reason } });
@@ -479,7 +497,8 @@ export class BridgeRuntime {
         ...voiceProviderConfigured(this.options.config),
         desktopPlayback: Boolean(this.options.onVoicePlayback)
       },
-      journalSuggestions: this.pendingJournalSuggestions()
+      journalSuggestions: this.pendingJournalSuggestions(),
+      localScenes: this.localScenes.list()
     };
   }
 
@@ -503,6 +522,7 @@ export class BridgeRuntime {
         }
 
         this.emit({ channel: "monitor-line", payload: { ...message, kinName: kin.name } });
+        void this.localScenePrewarm.prewarmKin(kin, "activity");
         void this.soundscapePrewarm.prewarmKin(kin, "activity");
         this.voice.enqueue({
           id: message.id,
@@ -594,6 +614,7 @@ export class BridgeRuntime {
             source: "firestore"
           }
         });
+        void this.localScenePrewarm.prewarmGroup(group, notification, "activity");
         void this.soundscapePrewarm.prewarmGroup(group, notification, "activity");
         this.voice.enqueue({
           id: message.id,
@@ -913,6 +934,7 @@ export interface BridgeRuntimeStatus {
   groupRefresh: ReturnType<GroupSubscriptionSupervisor["refreshState"]>;
   voice: ReturnType<typeof voiceProviderConfigured> & { desktopPlayback: boolean };
   journalSuggestions: JournalSuggestion[];
+  localScenes: LocalSceneState[];
 }
 
 export interface KinAmbientContextPreference {

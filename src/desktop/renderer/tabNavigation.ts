@@ -7,10 +7,10 @@ const groupSettingTabKeys = new Set([
   "group-members",
   "group-profile"
 ]);
-const kinModes = ["settings", "journal", "hermes", "voice", "analyze", "export"];
-const groupModes = ["settings", "group-audio", "group-export"];
-const directModes = ["journal", "hermes", "voice", "analyze", "export"];
-const groupDirectModes = ["group-audio", "group-export"];
+const kinModes = ["settings", "local-scene", "journal", "hermes", "voice", "analyze", "export"];
+const groupModes = ["settings", "group-local-scene", "group-audio", "group-export"];
+const directModes = ["local-scene", "journal", "hermes", "voice", "analyze", "export"];
+const groupDirectModes = ["group-local-scene", "group-audio", "group-export"];
 
 export interface TabNavigationState {
   activeTab: string;
@@ -154,6 +154,10 @@ export function tabLabelFor(context: Pick<TabNavigationContext, "state" | "eleme
     return "Journal";
   }
 
+  if (tab === "local-scene" || tab === "group-local-scene") {
+    return "Scene";
+  }
+
   if (tab === "hermes") {
     return "Hermes";
   }
@@ -247,6 +251,10 @@ export function subtitleForDetailMode(mode: string): string {
 
   if (mode === "group-audio") {
     return "Group audio configuration";
+  }
+
+  if (mode === "local-scene" || mode === "group-local-scene") {
+    return "Local scene metadata";
   }
 
   if (mode === "hermes") {
