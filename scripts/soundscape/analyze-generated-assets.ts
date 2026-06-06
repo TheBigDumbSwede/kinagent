@@ -8,12 +8,12 @@ import {
   summarizeSoundscapeAnalysis,
   type SoundscapeAssetAnalysis,
   type SoundscapeAssetMetrics
-} from "../../src/soundscapeGeneration/audioAnalysis.js";
+} from "../../src/soundscape/generation/audioAnalysis.js";
 import {
   readGeneratedCatalog,
   writeJsonAtomic,
   type GeneratedSoundscapeCatalog
-} from "../../src/soundscapeGeneration/palette.js";
+} from "../../src/soundscape/generation/palette.js";
 
 interface CliOptions {
   outDir: string;

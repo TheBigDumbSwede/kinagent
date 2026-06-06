@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { writeJsonAtomic } from "../../src/soundscapeGeneration/palette.js";
+import { writeJsonAtomic } from "../../src/soundscape/generation/palette.js";
 
 interface SoundscapeAssetAnalysis {
   file: string;

@@ -3,8 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { parseArgs, resolveElevenLabsApiKey } from "../scripts/soundscape/generate-elevenlabs-palette.js";
-import { analyzeSoundscapeAsset, summarizeSoundscapeAnalysis } from "../src/soundscapeGeneration/audioAnalysis.js";
-import { generateElevenLabsSound } from "../src/soundscapeGeneration/elevenLabsProvider.js";
+import { analyzeSoundscapeAsset, summarizeSoundscapeAnalysis } from "../src/soundscape/generation/audioAnalysis.js";
+import { generateElevenLabsSound } from "../src/soundscape/generation/elevenLabsProvider.js";
 import {
   catalogEntryFromPlanItem,
   createGenerationPlan,
@@ -18,7 +18,7 @@ import {
   type GeneratedSoundscapeCatalog,
   type SoundscapePaletteDefinition,
   type SoundscapePaletteItem
-} from "../src/soundscapeGeneration/palette.js";
+} from "../src/soundscape/generation/palette.js";
 
 const originalEnv = { ...process.env };
 

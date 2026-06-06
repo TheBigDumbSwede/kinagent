@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { loadConfig } from "../../src/config/loadConfig.js";
-import { generateElevenLabsSound } from "../../src/soundscapeGeneration/elevenLabsProvider.js";
+import { generateElevenLabsSound } from "../../src/soundscape/generation/elevenLabsProvider.js";
 import {
   catalogEntryFromPlanItem,
   createGenerationPlan,
@@ -17,7 +17,7 @@ import {
   validatePaletteDefinition,
   writeJsonAtomic,
   type GeneratedSoundscapeCatalog
-} from "../../src/soundscapeGeneration/palette.js";
+} from "../../src/soundscape/generation/palette.js";
 
 interface CliOptions {
   dryRun: boolean;
