@@ -32,7 +32,10 @@ describe("decryptKindroidValue", () => {
   });
 
   it("leaves encrypted values intact when the passphrase does not decrypt to UTF-8 plaintext", () => {
-    const ciphertext = `!enc:${CryptoJS.AES.encrypt("private message", "firebase-uid").toString()}`;
+    const deterministicSalt = CryptoJS.enc.Hex.parse("0001020304050607");
+    const ciphertext = `!enc:${CryptoJS.AES.encrypt("private message", "firebase-uid", {
+      salt: deterministicSalt
+    }).toString()}`;
     const result = decryptKindroidValue(ciphertext, "wrong-uid");
 
     expect(result.encrypted).toBe(true);
