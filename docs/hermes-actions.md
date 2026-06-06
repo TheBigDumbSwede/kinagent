@@ -16,14 +16,71 @@ disabled features are ignored.
 
 The active registry is built by `createHermesActionRegistry(...)`.
 
-| Action types                                                 | Handler                          | Execution | Scope                                                                                                  |
-| ------------------------------------------------------------ | -------------------------------- | --------- | ------------------------------------------------------------------------------------------------------ |
-| `update_local_scene_state`, `update_group_local_scene_state` | `LocalSceneActionHandler`        | Immediate | Stores local-only backstage scene metadata for the same direct Kin or group chat.                      |
-| `update_current_scene`, `update_group_current_scene`         | `CurrentSceneActionHandler`      | Immediate | Updates Kindroid `current_scene` for the same direct Kin or group chat.                                |
-| `update_soundscape`, `update_group_soundscape`               | `SoundscapeActionHandler`        | Immediate | Emits local procedural soundscape metadata for the same direct Kin or group chat.                      |
-| `send_ambient_context_turn`                                  | `AmbientContextActionHandler`    | Immediate | Sends a direct Kin ambient visible message with hidden `internet_response` context.                    |
-| `propose_journal_entry`, `delete_journal_entry`              | `JournalSuggestionActionHandler` | Reviewed  | Creates pending desktop review items. Kindroid journals are changed only after user acceptance.        |
-| `propose_chat_dynamism_adjustment`                           | `ChatDynamismActionHandler`      | Reviewed  | Creates pending direct-Kin Chat Dynamism suggestions. No Kindroid mutation is performed automatically. |
+| Action types                                                     | Handler                          | Execution | Scope                                                                                                  |
+| ---------------------------------------------------------------- | -------------------------------- | --------- | ------------------------------------------------------------------------------------------------------ |
+| `update_previously_on_brief`, `update_group_previously_on_brief` | `PreviouslyOnActionHandler`      | Immediate | Stores local-only continuity recap metadata for the same direct Kin or group chat.                     |
+| `update_local_scene_state`, `update_group_local_scene_state`     | `LocalSceneActionHandler`        | Immediate | Stores local-only backstage scene metadata for the same direct Kin or group chat.                      |
+| `update_current_scene`, `update_group_current_scene`             | `CurrentSceneActionHandler`      | Immediate | Updates Kindroid `current_scene` for the same direct Kin or group chat.                                |
+| `update_soundscape`, `update_group_soundscape`                   | `SoundscapeActionHandler`        | Immediate | Emits local procedural soundscape metadata for the same direct Kin or group chat.                      |
+| `send_ambient_context_turn`                                      | `AmbientContextActionHandler`    | Immediate | Sends a direct Kin ambient visible message with hidden `internet_response` context.                    |
+| `propose_journal_entry`, `delete_journal_entry`                  | `JournalSuggestionActionHandler` | Reviewed  | Creates pending desktop review items. Kindroid journals are changed only after user acceptance.        |
+| `propose_chat_dynamism_adjustment`                               | `ChatDynamismActionHandler`      | Reviewed  | Creates pending direct-Kin Chat Dynamism suggestions. No Kindroid mutation is performed automatically. |
+
+## Previously On Briefs
+
+Previously On briefs are local Kinagent continuity notes. They are stored per direct Kin or group and surfaced above the
+Scene tab's structured local scene metadata. They help the user re-enter the chat with narrative and emotional
+continuity, but they do not mutate Kindroid or automatically inject prompt text.
+
+Direct Kin request:
+
+```json
+{
+  "type": "update_previously_on_brief",
+  "ai_id": "<same direct chat ai_id>",
+  "facts": ["<known recent fact>"],
+  "inferredTone": "<brief inferred tone>",
+  "unresolvedThreads": ["<open thread>"],
+  "suggestedOpeningFrame": "<small practical next frame>",
+  "recap": "<short user-readable recap>",
+  "confidence": "low|medium|high"
+}
+```
+
+Group request:
+
+```json
+{
+  "type": "update_group_previously_on_brief",
+  "group_id": "<same group_id>",
+  "facts": ["<known recent fact>"],
+  "inferredTone": "<brief inferred tone>",
+  "unresolvedThreads": ["<open thread>"],
+  "suggestedOpeningFrame": "<small practical next frame>",
+  "recap": "<short user-readable recap>",
+  "confidence": "low|medium|high"
+}
+```
+
+Guardrails:
+
+- The handler rejects mismatched `ai_id` or `group_id`.
+- Keep facts grounded in recent readable chat. Put mood or subtext in `inferredTone`, not in facts.
+- Keep the brief short and practical; this is a continuity aid, not a transcript summary.
+- This action does not call Kindroid and must not write Kindroid memory, `current_scene`, journals, chat text, or user
+  replies.
+- `suggestedOpeningFrame` is optional user-facing guidance and must not be auto-sent or hidden-injected into Kindroid.
+
+Prewarm:
+
+- Previously On prewarm is handled by `PreviouslyOnPrewarmCoordinator`, separately from local scene and soundscape
+  prewarm.
+- It loads bounded recent-message context through Kindroid's documented `/v1/get-chat-messages` API.
+- It is gated by the shared per-Kin or per-group prewarm watermark, so cached-ready sources are not re-fetched on
+  restart unless newer live chat activity arrives or the user explicitly refreshes the recap from the desktop Scene tab.
+- It emits `kindroid.previously_on.prewarm` to Hermes and executes only `update_previously_on_brief` or
+  `update_group_previously_on_brief` actions from the response.
+- It does not execute local scene, soundscape, `current_scene`, journal, ambient-context, or Chat Dynamism actions.
 
 ## Local Scene State
 

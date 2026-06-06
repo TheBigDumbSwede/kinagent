@@ -54,6 +54,19 @@ describe("PrewarmStateStore", () => {
     ).toBe(true);
   });
 
+  it("tracks Previously On readiness independently", () => {
+    const store = testStore();
+    const source = { scope: "group" as const, id: "group-1" };
+
+    store.markReady("previouslyOn", source, {
+      documentId: "message-1",
+      timestamp: "2026-06-01T12:00:00.000Z"
+    });
+
+    expect(store.shouldPrewarm("previouslyOn", source, {})).toBe(false);
+    expect(store.shouldPrewarm("soundscape", source, {})).toBe(true);
+  });
+
   it("persists readiness across store instances", () => {
     const filePath = testStorePath();
     const source = { scope: "kin" as const, id: "kin-1" };

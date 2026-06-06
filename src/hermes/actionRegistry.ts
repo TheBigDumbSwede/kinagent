@@ -23,6 +23,8 @@ import {
 } from "./currentSceneActionHandler.js";
 import { JournalSuggestionActionHandler } from "./journalSuggestionActionHandler.js";
 import { type LocalSceneState, type LocalSceneStateStore } from "../localScene/localSceneStore.js";
+import { type PreviouslyOnBrief, type PreviouslyOnStore } from "../previouslyOn/previouslyOnStore.js";
+import { PreviouslyOnActionHandler } from "./previouslyOnActionHandler.js";
 import {
   SoundscapeActionHandler,
   type ScopedSoundscapeUpdate,
@@ -34,6 +36,8 @@ export interface HermesActionRegistryOptions {
   onJournalSuggestionCreated?: (suggestion: JournalSuggestion) => void;
   localScenes?: LocalSceneStateStore;
   onLocalSceneUpdated?: (state: LocalSceneState) => void;
+  previouslyOn?: PreviouslyOnStore;
+  onPreviouslyOnUpdated?: (brief: PreviouslyOnBrief) => void;
   chatDynamismSuggestions?: ChatDynamismSuggestionStore;
   onChatDynamismSuggestionCreated?: (suggestion: ChatDynamismSuggestion) => void;
   isChatDynamismEnabled?: (aiId: string) => boolean;
@@ -60,6 +64,13 @@ export interface HermesActionRegistryEntry {
 }
 
 export const hermesActionRegistryEntries: HermesActionRegistryEntry[] = [
+  {
+    actionTypes: ["update_previously_on_brief", "update_group_previously_on_brief"],
+    handler: "PreviouslyOnActionHandler",
+    enabledWhen: "bridge runtime provides a PreviouslyOnStore",
+    execution: "immediate",
+    scope: "Stores local-only continuity recap metadata for the same direct Kin or group chat."
+  },
   {
     actionTypes: ["update_local_scene_state", "update_group_local_scene_state"],
     handler: "LocalSceneActionHandler",
@@ -139,6 +150,10 @@ export function createHermesActionRegistry(input: {
 
   if (options.localScenes) {
     handlers.push(new LocalSceneActionHandler(input.logger, options.localScenes, options.onLocalSceneUpdated));
+  }
+
+  if (options.previouslyOn) {
+    handlers.push(new PreviouslyOnActionHandler(input.logger, options.previouslyOn, options.onPreviouslyOnUpdated));
   }
 
   if (options.journalSuggestions) {

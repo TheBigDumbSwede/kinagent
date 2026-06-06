@@ -45,6 +45,7 @@ export interface KinagentApi {
   }): Promise<GroupSoundscapePreferenceResult>;
   forceLocalScenePrewarm(input: { scope: "kin" | "group"; id: string }): Promise<{ ok: boolean }>;
   forceSoundscapePrewarm(input: { scope: "kin" | "group"; id: string }): Promise<{ ok: boolean }>;
+  forcePreviouslyOnPrewarm(input: { scope: "kin" | "group"; id: string }): Promise<{ ok: boolean }>;
   setKinAmbientPreference(input: {
     kinId: string;
     enabled: boolean;
@@ -155,6 +156,22 @@ export interface LocalSceneStateSummary {
   suggestedUiAccent?: string | null;
   evidence?: unknown[];
   reason?: string | null;
+}
+
+export interface PreviouslyOnBriefSummary {
+  scope?: "kin" | "group" | string;
+  kinId?: string | null;
+  groupId?: string | null;
+  latestSpeakerKinId?: string | null;
+  updatedAt?: string | null;
+  sourceDocumentId?: string | null;
+  sourceTimestamp?: string | null;
+  facts?: unknown[];
+  inferredTone?: string | null;
+  unresolvedThreads?: unknown[];
+  suggestedOpeningFrame?: string | null;
+  recap?: string | null;
+  confidence?: "low" | "medium" | "high" | string | null;
 }
 
 export interface CapturedHistoryEntry {

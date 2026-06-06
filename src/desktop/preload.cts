@@ -29,6 +29,7 @@ const kinagentApi = {
   setGroupSoundscapePreference: (input: unknown) => ipcRenderer.invoke("soundscape:set-group-preference", input),
   forceLocalScenePrewarm: (input: unknown) => ipcRenderer.invoke("prewarm:local-scene", input),
   forceSoundscapePrewarm: (input: unknown) => ipcRenderer.invoke("prewarm:soundscape", input),
+  forcePreviouslyOnPrewarm: (input: unknown) => ipcRenderer.invoke("prewarm:previously-on", input),
   getKinAmbientPreference: (input: unknown) => ipcRenderer.invoke("ambient:get-kin-preference", input),
   setKinAmbientPreference: (input: unknown) => ipcRenderer.invoke("ambient:set-kin-preference", input),
   exportKinChat: (input: unknown) => ipcRenderer.invoke("chat-export:kin", input),

@@ -6,6 +6,7 @@ import type { AppConfig } from "../src/config/types.js";
 import { HermesChatAdapter } from "../src/hermes/hermesAdapter.js";
 import { JournalSuggestionStore } from "../src/journal/journalSuggestionStore.js";
 import { LocalSceneStateStore } from "../src/localScene/localSceneStore.js";
+import { PreviouslyOnStore } from "../src/previouslyOn/previouslyOnStore.js";
 import { InMemoryDedupeStore } from "../src/state/dedupeStore.js";
 import type { Logger } from "../src/util/logger.js";
 
@@ -403,6 +404,82 @@ describe("HermesChatAdapter", () => {
         location: "closed library",
         mood: "quiet and watchful",
         sourceDocumentId: "local-scene-prewarm:kin-1"
+      })
+    );
+  });
+
+  it("prewarms Previously On without executing non-Previously-On actions", async () => {
+    const kindroid = testKindroidUpdater();
+    const onPreviouslyOnUpdated = vi.fn();
+    const onLocalSceneUpdated = vi.fn();
+    const previouslyOn = testPreviouslyOnStore();
+    const localScenes = testLocalSceneStateStore();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  actions: [
+                    {
+                      type: "update_current_scene",
+                      ai_id: "kin-1",
+                      current_scene: "Inside a closed library after rain."
+                    },
+                    {
+                      type: "update_local_scene_state",
+                      ai_id: "kin-1",
+                      location: "closed library"
+                    },
+                    {
+                      type: "update_previously_on_brief",
+                      ai_id: "kin-1",
+                      facts: ["Bruce joked to avoid admitting he was exhausted."],
+                      inferredTone: "quiet and affectionate",
+                      suggestedOpeningFrame: "Alexis makes tea and asks one direct question.",
+                      confidence: "high"
+                    }
+                  ]
+                })
+              }
+            }
+          ]
+        })
+      )
+    );
+
+    const adapter = new HermesChatAdapter(testConfig(), logger, kindroid, {
+      localScenes,
+      onLocalSceneUpdated,
+      previouslyOn,
+      onPreviouslyOnUpdated
+    });
+    await adapter.prewarmPreviouslyOn({
+      scope: "kin",
+      kinId: "kin-1",
+      documentId: "previously-on-prewarm:kin-1",
+      timestamp: "2026-06-01T12:00:00.000Z",
+      text: "PREVIOUSLY_ON_PREWARM_REQUEST\nRecent messages mention exhaustion and tea.",
+      previouslyOnContext: {
+        prewarm: true,
+        sourceScope: "direct",
+        sourceKinId: "kin-1",
+        mutation: "local-kinagent-only"
+      }
+    });
+
+    expect(kindroid.updateCurrentScene).not.toHaveBeenCalled();
+    expect(kindroid.updateGroupCurrentScene).not.toHaveBeenCalled();
+    expect(onLocalSceneUpdated).not.toHaveBeenCalled();
+    expect(onPreviouslyOnUpdated).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scope: "kin",
+        kinId: "kin-1",
+        facts: ["Bruce joked to avoid admitting he was exhausted."],
+        inferredTone: "quiet and affectionate",
+        sourceDocumentId: "previously-on-prewarm:kin-1"
       })
     );
   });
@@ -1235,6 +1312,12 @@ function testLocalSceneStateStore() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "kinagent-local-scenes-"));
   tempDirs.push(dir);
   return new LocalSceneStateStore(path.join(dir, "local-scenes.json"));
+}
+
+function testPreviouslyOnStore() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "kinagent-previously-on-"));
+  tempDirs.push(dir);
+  return new PreviouslyOnStore(path.join(dir, "previously-on.json"));
 }
 
 function testConfig(): AppConfig {

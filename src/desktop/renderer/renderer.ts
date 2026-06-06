@@ -71,7 +71,8 @@ import type {
   KinVoicePreference,
   KinSubscriptionSummary,
   KinVoicePreferenceResult,
-  LocalSceneStateSummary
+  LocalSceneStateSummary,
+  PreviouslyOnBriefSummary
 } from "./rendererTypes.js";
 import type { MonitorMessage } from "./monitorMessages.js";
 
@@ -117,7 +118,9 @@ interface RendererState {
   selectedKinAmbient: KinAmbientPreferenceResult | null;
   journalSuggestions: JournalSuggestionSummary[];
   localScenes: LocalSceneStateSummary[];
+  previouslyOnBriefs: PreviouslyOnBriefSummary[];
   localSceneForceSaving: boolean;
+  previouslyOnForceSaving: boolean;
   journalSavingId: string | null;
   journalError: string | null;
   captureLoading: boolean;
@@ -171,6 +174,7 @@ interface RendererElements {
   kinDetailContent: HTMLElement;
   detailStats: HTMLElement;
   journalSuggestionPanel: HTMLElement;
+  previouslyOnPanel: HTMLElement;
   fieldContent: HTMLElement;
   localSceneActions: HTMLElement;
   appSettingsForm: HTMLFormElement;
@@ -266,6 +270,7 @@ interface DesktopStatus {
   groupSubscriptions?: GroupSubscriptionSummary[];
   journalSuggestions?: JournalSuggestionSummary[];
   localScenes?: LocalSceneStateSummary[];
+  previouslyOn?: PreviouslyOnBriefSummary[];
   soundscapes?: ScopedSoundscapeUpdate[];
   monitorRunning?: boolean;
   session?: {
@@ -330,6 +335,7 @@ interface RendererApi {
   analyzeKin(input: { kinId: string }): Promise<KinAnalysisResult>;
   forceLocalScenePrewarm(input: { scope: "kin" | "group"; id: string }): Promise<{ ok: boolean }>;
   forceSoundscapePrewarm(input: { scope: "kin" | "group"; id: string }): Promise<{ ok: boolean }>;
+  forcePreviouslyOnPrewarm(input: { scope: "kin" | "group"; id: string }): Promise<{ ok: boolean }>;
   readSoundscapeAsset(input: { path: string }): Promise<ArrayBuffer | Uint8Array | number[]>;
   onEvent(callback: (message: RendererEvent) => void): () => void;
 }
@@ -390,7 +396,9 @@ const state: RendererState = {
   selectedKinAmbient: null,
   journalSuggestions: [],
   localScenes: [],
+  previouslyOnBriefs: [],
   localSceneForceSaving: false,
+  previouslyOnForceSaving: false,
   journalSavingId: null,
   journalError: null,
   captureLoading: false,
@@ -454,6 +462,7 @@ const elements: RendererElements = {
   kinDetailContent: query<HTMLElement>("#kinDetailContent"),
   detailStats: query<HTMLElement>("#detailStats"),
   journalSuggestionPanel: query<HTMLElement>("#journalSuggestionPanel"),
+  previouslyOnPanel: query<HTMLElement>("#previouslyOnPanel"),
   fieldContent: query<HTMLElement>("#fieldContent"),
   localSceneActions: query<HTMLElement>("#localSceneActions"),
   appSettingsForm: query<HTMLFormElement>("#appSettingsForm"),
@@ -853,6 +862,12 @@ window.kinagent.onEvent((message) => {
     return;
   }
 
+  if (message.channel === "previously-on-updated") {
+    upsertPreviouslyOnBrief(message.payload as PreviouslyOnBriefSummary | undefined);
+    renderActivity();
+    return;
+  }
+
   if (message.channel === "journal-suggestions-updated") {
     state.journalSuggestions = Array.isArray(message.payload) ? (message.payload as JournalSuggestionSummary[]) : [];
     renderActivity();
@@ -984,6 +999,7 @@ function renderStatus(status: DesktopStatus): void {
   state.groupSubscriptions = status.groupSubscriptions || [];
   state.journalSuggestions = status.journalSuggestions || [];
   state.localScenes = status.localScenes || [];
+  state.previouslyOnBriefs = status.previouslyOn || [];
   state.soundscapeUpdates = soundscapeUpdatesFromList(status.soundscapes || []);
   state.monitorRunning = Boolean(status.monitorRunning);
   state.sessionAvailable = Boolean(status.session?.available);
@@ -1162,6 +1178,8 @@ async function loadAppSettings(): Promise<void> {
 }
 
 function renderActivity(): void {
+  elements.previouslyOnPanel.hidden = true;
+  elements.previouslyOnPanel.replaceChildren();
   elements.localSceneActions.hidden = true;
   elements.localSceneActions.replaceChildren();
   const activeTab = state.activeTab || "monitor";
@@ -1406,12 +1424,104 @@ function renderGroupAudioTab(selectedGroup: GroupSummary): void {
 
 function renderLocalSceneTab(scope: "kin" | "group", selectedEntity: KinSummary | GroupSummary | null): void {
   const scene = currentLocalScene(scope);
+  const brief = currentPreviouslyOnBrief(scope);
   renderCapturedDetailContent(capturedDetailContext(), {
     content: scene ? localSceneContent(scene) : "No local scene metadata has been captured yet.",
     history: [],
     stats: localSceneStats(scope, selectedEntity, scene)
   });
+  renderPreviouslyOnPanel(scope, selectedEntity, brief);
   renderLocalSceneForceButton(scope, selectedEntity);
+}
+
+function renderPreviouslyOnPanel(
+  scope: "kin" | "group",
+  selectedEntity: KinSummary | GroupSummary | null,
+  brief: PreviouslyOnBriefSummary | null
+): void {
+  if (!selectedEntity) {
+    return;
+  }
+
+  elements.previouslyOnPanel.hidden = false;
+  elements.previouslyOnPanel.replaceChildren();
+
+  const header = document.createElement("header");
+  const title = document.createElement("h3");
+  title.textContent =
+    `Previously On ${selectedEntity.name || (scope === "group" ? state.selectedGroupId : state.selectedKinId) || ""}`.trim();
+  const refreshButton = document.createElement("button");
+  refreshButton.type = "button";
+  refreshButton.className = "secondary compact";
+  refreshButton.textContent = state.previouslyOnForceSaving ? "Refreshing" : "Refresh Recap";
+  refreshButton.disabled = state.previouslyOnForceSaving;
+  refreshButton.addEventListener("click", () => {
+    void forceSelectedPreviouslyOnPrewarm(scope);
+  });
+  header.append(title, refreshButton);
+  elements.previouslyOnPanel.append(header);
+
+  if (!brief) {
+    const empty = document.createElement("p");
+    empty.className = "panel-note";
+    empty.textContent = "No continuity recap has been generated for this source yet.";
+    elements.previouslyOnPanel.append(empty);
+    return;
+  }
+
+  if (brief.recap) {
+    const recap = document.createElement("p");
+    recap.className = "previously-on-recap";
+    recap.textContent = brief.recap;
+    elements.previouslyOnPanel.append(recap);
+  }
+
+  appendBriefList("Known facts", stringItems(brief.facts));
+  appendBriefLine("Inferred tone", brief.inferredTone);
+  appendBriefList("Open threads", stringItems(brief.unresolvedThreads));
+  appendBriefLine("Suggested opening frame", brief.suggestedOpeningFrame);
+
+  const meta = document.createElement("p");
+  meta.className = "previously-on-meta";
+  meta.textContent = [
+    brief.updatedAt ? `Updated ${formatSceneTimestamp(brief.updatedAt)}` : null,
+    brief.confidence ? `Confidence ${brief.confidence}` : null
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  if (meta.textContent) {
+    elements.previouslyOnPanel.append(meta);
+  }
+
+  function appendBriefLine(label: string, value: string | null | undefined): void {
+    if (!value) {
+      return;
+    }
+    const row = document.createElement("p");
+    row.className = "previously-on-line";
+    const strong = document.createElement("strong");
+    strong.textContent = `${label}: `;
+    row.append(strong, value);
+    elements.previouslyOnPanel.append(row);
+  }
+
+  function appendBriefList(label: string, values: string[]): void {
+    if (values.length === 0) {
+      return;
+    }
+    const group = document.createElement("div");
+    group.className = "previously-on-list";
+    const heading = document.createElement("strong");
+    heading.textContent = label;
+    const list = document.createElement("ul");
+    for (const value of values) {
+      const item = document.createElement("li");
+      item.textContent = value;
+      list.append(item);
+    }
+    group.append(heading, list);
+    elements.previouslyOnPanel.append(group);
+  }
 }
 
 function renderLocalSceneForceButton(scope: "kin" | "group", selectedEntity: KinSummary | GroupSummary | null): void {
@@ -1448,6 +1558,26 @@ async function forceSelectedLocalScenePrewarm(scope: "kin" | "group"): Promise<v
     elements.monitorLine.textContent = errorMessage(error);
   } finally {
     state.localSceneForceSaving = false;
+    renderActivity();
+  }
+}
+
+async function forceSelectedPreviouslyOnPrewarm(scope: "kin" | "group"): Promise<void> {
+  const id = scope === "group" ? state.selectedGroupId : state.selectedKinId;
+  if (!id || state.previouslyOnForceSaving) {
+    return;
+  }
+
+  state.previouslyOnForceSaving = true;
+  renderActivity();
+  try {
+    await window.kinagent.forcePreviouslyOnPrewarm({ scope, id });
+    await refreshStatus();
+    elements.monitorLine.textContent = "Continuity recap refresh requested.";
+  } catch (error) {
+    elements.monitorLine.textContent = errorMessage(error);
+  } finally {
+    state.previouslyOnForceSaving = false;
     renderActivity();
   }
 }
@@ -1635,6 +1765,17 @@ function currentLocalScene(scope: "kin" | "group"): LocalSceneStateSummary | nul
   return state.localScenes.find((scene) => scene.scope === "kin" && scene.kinId === state.selectedKinId) || null;
 }
 
+function currentPreviouslyOnBrief(scope: "kin" | "group"): PreviouslyOnBriefSummary | null {
+  if (scope === "group") {
+    return (
+      state.previouslyOnBriefs.find((brief) => brief.scope === "group" && brief.groupId === state.selectedGroupId) ||
+      null
+    );
+  }
+
+  return state.previouslyOnBriefs.find((brief) => brief.scope === "kin" && brief.kinId === state.selectedKinId) || null;
+}
+
 function upsertLocalScene(scene: LocalSceneStateSummary | null | undefined): void {
   if (!scene?.scope) {
     return;
@@ -1645,6 +1786,22 @@ function upsertLocalScene(scene: LocalSceneStateSummary | null | undefined): voi
       ? current.scope === "group" && current.groupId === scene.groupId
       : current.scope === "kin" && current.kinId === scene.kinId;
   state.localScenes = [scene, ...state.localScenes.filter((current) => !sameSource(current))];
+}
+
+function upsertPreviouslyOnBrief(brief: PreviouslyOnBriefSummary | null | undefined): void {
+  if (!brief?.scope) {
+    return;
+  }
+
+  const sameSource = (current: PreviouslyOnBriefSummary): boolean =>
+    brief.scope === "group"
+      ? current.scope === "group" && current.groupId === brief.groupId
+      : current.scope === "kin" && current.kinId === brief.kinId;
+  state.previouslyOnBriefs = [brief, ...state.previouslyOnBriefs.filter((current) => !sameSource(current))];
+}
+
+function stringItems(values: unknown[] | null | undefined): string[] {
+  return (values ?? []).filter((value): value is string => typeof value === "string" && Boolean(value.trim()));
 }
 
 function localSceneContent(scene: LocalSceneStateSummary): string {

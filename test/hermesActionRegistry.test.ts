@@ -5,12 +5,15 @@ import { createHermesActionRegistry, hermesActionRegistryEntries } from "../src/
 import type { KindroidSceneUpdater } from "../src/hermes/hermesAdapter.js";
 import { JournalSuggestionStore } from "../src/journal/journalSuggestionStore.js";
 import { LocalSceneStateStore } from "../src/localScene/localSceneStore.js";
+import { PreviouslyOnStore } from "../src/previouslyOn/previouslyOnStore.js";
 import { InMemoryDedupeStore } from "../src/state/dedupeStore.js";
 import type { Logger } from "../src/util/logger.js";
 
 describe("Hermes action registry", () => {
   it("documents the currently implemented Hermes action types", () => {
     expect(hermesActionRegistryEntries.flatMap((entry) => entry.actionTypes)).toEqual([
+      "update_previously_on_brief",
+      "update_group_previously_on_brief",
       "update_local_scene_state",
       "update_group_local_scene_state",
       "update_current_scene",
@@ -87,6 +90,24 @@ describe("Hermes action registry", () => {
     expect(prompt).toContain("update_local_scene_state");
     expect(prompt).toContain("update_group_local_scene_state");
     expect(prompt).toContain("backstage Kinagent state only");
+    expect(prompt).toContain("must not write Kindroid memory");
+  });
+
+  it("registers Previously On actions when continuity storage is available", () => {
+    const registry = createHermesActionRegistry({
+      config: testConfig(),
+      logger: testLogger,
+      kindroidClient: testSceneUpdater,
+      options: {
+        previouslyOn: PreviouslyOnStore.fromConfig(testConfig())
+      }
+    });
+
+    const prompt = registry.handlers.flatMap((handler) => handler.promptLines()).join("\n");
+    expect(registry.handlers).toHaveLength(2);
+    expect(prompt).toContain("update_previously_on_brief");
+    expect(prompt).toContain("update_group_previously_on_brief");
+    expect(prompt).toContain("local Kinagent continuity notes only");
     expect(prompt).toContain("must not write Kindroid memory");
   });
 

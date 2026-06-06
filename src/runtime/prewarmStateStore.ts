@@ -3,7 +3,7 @@ import path from "node:path";
 import type { AppConfig } from "../config/types.js";
 import type { KindroidChatNotification } from "../firestore/types.js";
 
-export type PrewarmKind = "localScene" | "soundscape";
+export type PrewarmKind = "localScene" | "soundscape" | "previouslyOn";
 export type PrewarmScope = "kin" | "group";
 
 export interface PrewarmSourceKey {
@@ -22,8 +22,10 @@ export interface PrewarmSourceState {
   lastPrewarmTimestamp?: string | null;
   localSceneReady?: boolean;
   soundscapeReady?: boolean;
+  previouslyOnReady?: boolean;
   lastLocalScenePrewarmAt?: string;
   lastSoundscapePrewarmAt?: string;
+  lastPreviouslyOnPrewarmAt?: string;
   failureCount?: number;
   updatedAt: string;
 }
@@ -151,15 +153,26 @@ export function prewarmTriggerFromNotification(notification: KindroidChatNotific
 }
 
 function readyForKind(state: PrewarmSourceState | null, kind: PrewarmKind): boolean {
-  return kind === "localScene" ? Boolean(state?.localSceneReady) : Boolean(state?.soundscapeReady);
+  if (kind === "localScene") {
+    return Boolean(state?.localSceneReady);
+  }
+  return kind === "soundscape" ? Boolean(state?.soundscapeReady) : Boolean(state?.previouslyOnReady);
 }
 
-function readyField(kind: PrewarmKind): "localSceneReady" | "soundscapeReady" {
-  return kind === "localScene" ? "localSceneReady" : "soundscapeReady";
+function readyField(kind: PrewarmKind): "localSceneReady" | "soundscapeReady" | "previouslyOnReady" {
+  if (kind === "localScene") {
+    return "localSceneReady";
+  }
+  return kind === "soundscape" ? "soundscapeReady" : "previouslyOnReady";
 }
 
-function lastPrewarmField(kind: PrewarmKind): "lastLocalScenePrewarmAt" | "lastSoundscapePrewarmAt" {
-  return kind === "localScene" ? "lastLocalScenePrewarmAt" : "lastSoundscapePrewarmAt";
+function lastPrewarmField(
+  kind: PrewarmKind
+): "lastLocalScenePrewarmAt" | "lastSoundscapePrewarmAt" | "lastPreviouslyOnPrewarmAt" {
+  if (kind === "localScene") {
+    return "lastLocalScenePrewarmAt";
+  }
+  return kind === "soundscape" ? "lastSoundscapePrewarmAt" : "lastPreviouslyOnPrewarmAt";
 }
 
 function watermarkFields(

@@ -25,6 +25,7 @@ import { KindroidApiClient, type KindroidGroup, type KindroidKin } from "../kind
 import { groupChatMessagesPath, kinChatMessagesPath } from "../kindroid/client/firestorePaths.js";
 import { KindroidClient } from "../kindroid/kindroidClient.js";
 import { LocalSceneStateStore, type LocalSceneState } from "../localScene/localSceneStore.js";
+import { PreviouslyOnStore, type PreviouslyOnBrief } from "../previouslyOn/previouslyOnStore.js";
 import { SoundscapeStateStore, type StoredSoundscapeUpdate } from "../soundscape/soundscapeStateStore.js";
 import type { Logger } from "../util/logger.js";
 import { GroupSubscriptionSupervisor, type GroupSubscriptionStatus } from "./groupSubscriptionSupervisor.js";
@@ -36,6 +37,7 @@ import {
 } from "./kinSubscriptionSupervisor.js";
 import { LocalScenePrewarmCoordinator } from "./localScenePrewarmCoordinator.js";
 import { PrewarmStateStore, prewarmTriggerFromNotification } from "./prewarmStateStore.js";
+import { PreviouslyOnPrewarmCoordinator } from "./previouslyOnPrewarmCoordinator.js";
 import { SoundscapePrewarmCoordinator } from "./soundscapePrewarmCoordinator.js";
 import { VoiceRuntime, voiceProviderConfigured } from "../voice/voiceRuntime.js";
 import type { VoicePlaybackChunk } from "../voice/types.js";
@@ -61,6 +63,7 @@ export type BridgeRuntimeEvent =
   | { channel: "journal-suggestions-updated"; payload: JournalSuggestion[] }
   | { channel: "chat-dynamism-suggestion-created"; payload: ChatDynamismSuggestion }
   | { channel: "local-scene-updated"; payload: LocalSceneState }
+  | { channel: "previously-on-updated"; payload: PreviouslyOnBrief }
   | { channel: "soundscape-updated"; payload: ScopedSoundscapeUpdate }
   | { channel: "identity-capture-completed"; payload: CaptureKindroidStateResult }
   | { channel: "identity-capture-failed"; payload: { error: string } };
@@ -78,6 +81,7 @@ export class BridgeRuntime {
   readonly voice: VoiceRuntime;
   readonly journalSuggestions: JournalSuggestionStore;
   readonly localScenes: LocalSceneStateStore;
+  readonly previouslyOn: PreviouslyOnStore;
   readonly soundscapes: SoundscapeStateStore;
   readonly chatDynamismSuggestions: ChatDynamismSuggestionStore;
   private readonly prewarmState: PrewarmStateStore;
@@ -85,6 +89,7 @@ export class BridgeRuntime {
   private readonly kinSubscriptionSupervisor: KinSubscriptionSupervisor;
   private readonly groupSubscriptionSupervisor: GroupSubscriptionSupervisor;
   private readonly localScenePrewarm: LocalScenePrewarmCoordinator;
+  private readonly previouslyOnPrewarm: PreviouslyOnPrewarmCoordinator;
   private readonly soundscapePrewarm: SoundscapePrewarmCoordinator;
   private started = false;
   private startupCaptureStarted = false;
@@ -95,6 +100,7 @@ export class BridgeRuntime {
   ) {
     this.journalSuggestions = JournalSuggestionStore.fromConfig(options.config);
     this.localScenes = LocalSceneStateStore.fromConfig(options.config);
+    this.previouslyOn = PreviouslyOnStore.fromConfig(options.config);
     this.soundscapes = SoundscapeStateStore.fromConfig(options.config);
     this.prewarmState = PrewarmStateStore.fromConfig(options.config);
     this.chatDynamismSuggestions = ChatDynamismSuggestionStore.fromConfig(options.config);
@@ -134,6 +140,11 @@ export class BridgeRuntime {
         this.localScenePrewarm.markReady(state);
         this.emit({ channel: "local-scene-updated", payload: state });
       },
+      previouslyOn: this.previouslyOn,
+      onPreviouslyOnUpdated: (brief) => {
+        this.previouslyOnPrewarm.markReady(brief);
+        this.emit({ channel: "previously-on-updated", payload: brief });
+      },
       chatDynamismSuggestions: options.config.hermes.chatDynamism.suggestions.enabled
         ? this.chatDynamismSuggestions
         : undefined,
@@ -155,6 +166,12 @@ export class BridgeRuntime {
       soundscapeContextProvider: async (notification) => this.soundscapePrewarm.context(notification)
     });
     this.localScenePrewarm = new LocalScenePrewarmCoordinator({
+      config: options.config,
+      logger: options.logger,
+      hermes: this.hermes,
+      prewarmState: this.prewarmState
+    });
+    this.previouslyOnPrewarm = new PreviouslyOnPrewarmCoordinator({
       config: options.config,
       logger: options.logger,
       hermes: this.hermes,
@@ -396,6 +413,18 @@ export class BridgeRuntime {
     return { ok: true };
   }
 
+  async forcePreviouslyOnPrewarm(input: { scope: "kin" | "group"; id: string }): Promise<{ ok: true }> {
+    if (input.scope === "kin") {
+      const kin = this.resolveKin(input.id);
+      await this.previouslyOnPrewarm.prewarmKin(kin, "manual-force", { force: true });
+      return { ok: true };
+    }
+
+    const group = this.resolveGroup(input.id);
+    await this.previouslyOnPrewarm.prewarmGroup(group, null, "manual-force", { force: true });
+    return { ok: true };
+  }
+
   async forceSoundscapePrewarm(input: { scope: "kin" | "group"; id: string }): Promise<{ ok: true }> {
     if (input.scope === "kin") {
       const kin = this.resolveKin(input.id);
@@ -544,6 +573,7 @@ export class BridgeRuntime {
       },
       journalSuggestions: this.pendingJournalSuggestions(),
       localScenes: this.localScenes.list(),
+      previouslyOn: this.previouslyOn.list(),
       soundscapes: this.soundscapes.list()
     };
   }
@@ -551,6 +581,9 @@ export class BridgeRuntime {
   private hydratePrewarmReadiness(): void {
     for (const scene of this.localScenes.list()) {
       this.localScenePrewarm.markReady(scene);
+    }
+    for (const brief of this.previouslyOn.list()) {
+      this.previouslyOnPrewarm.markReady(brief);
     }
     for (const soundscape of this.soundscapes.list()) {
       this.soundscapePrewarm.markReady(soundscape);
@@ -593,6 +626,7 @@ export class BridgeRuntime {
 
         this.emit({ channel: "monitor-line", payload: { ...message, kinName: kin.name } });
         void this.localScenePrewarm.prewarmKin(kin, "activity", { trigger });
+        void this.previouslyOnPrewarm.prewarmKin(kin, "activity", { trigger });
         void this.soundscapePrewarm.prewarmKin(kin, "activity", { trigger });
         this.voice.enqueue({
           id: message.id,
@@ -674,6 +708,7 @@ export class BridgeRuntime {
         });
         const trigger = prewarmTriggerFromNotification(notification);
         void this.localScenePrewarm.prewarmGroup(group, notification, "activity", { trigger });
+        void this.previouslyOnPrewarm.prewarmGroup(group, notification, "activity", { trigger });
         void this.soundscapePrewarm.prewarmGroup(group, notification, "activity", { trigger });
         this.voice.enqueue({
           id: message.id,
@@ -1018,6 +1053,7 @@ export interface BridgeRuntimeStatus {
   voice: ReturnType<typeof voiceProviderConfigured> & { desktopPlayback: boolean };
   journalSuggestions: JournalSuggestion[];
   localScenes: LocalSceneState[];
+  previouslyOn: PreviouslyOnBrief[];
   soundscapes: StoredSoundscapeUpdate[];
 }
 

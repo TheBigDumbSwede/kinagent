@@ -81,6 +81,17 @@ Runtime
   -> ./data/local-scene-state.json
   -> ./data/prewarm-state.json freshness watermark
   -> desktop Kin or Group Scene tab
+
+Previously On briefs:
+Runtime
+  -> KindroidClient
+  -> GET /v1/get-chat-messages
+  -> bounded recent-message context
+  -> Hermes
+  -> update_previously_on_brief or update_group_previously_on_brief
+  -> ./data/previously-on-state.json
+  -> ./data/prewarm-state.json freshness watermark
+  -> desktop Kin or Group Scene tab
 ```
 
 Kindroid domain access is organized behind `KindroidApiClient` resource modules:
@@ -298,6 +309,11 @@ bounded recent context, but runs through its own coordinator and only executes l
 per-Kin or per-group prewarm watermark, so app restart hydrates existing local scene state without re-fetching every
 monitored source. A live chat event advances the source watermark and may trigger a fresh prewarm; the Scene tab also
 has a per-source Force Prewarm button for cases where the user chatted while Kinagent was not running.
+
+The same Scene tab may show a local `Previously On` continuity brief above the structured scene JSON. This recap is
+stored separately in `previously-on-state.json`; it is short user-facing continuity context, not Kindroid memory, not
+`current_scene`, and not automatically injected into chat. Its prewarm path uses the documented `/v1/get-chat-messages`
+API, the shared prewarm freshness watermark, and a separate Hermes action contract from local scene state.
 
 Enable desktop-only voice sidecar playback for new AI messages:
 

@@ -23,7 +23,7 @@ export interface KindroidChatChangeNotification {
   textDecryptionError?: string;
   sender: string | null;
   role: string | null;
-  source: "firestore" | "soundscape-prewarm" | "local-scene-prewarm";
+  source: "firestore" | "soundscape-prewarm" | "local-scene-prewarm" | "previously-on-prewarm";
 }
 
 export interface KindroidGroupChatChangeNotification {
@@ -38,7 +38,7 @@ export interface KindroidGroupChatChangeNotification {
   textDecryptionError?: string;
   sender: string | null;
   role: string | null;
-  source: "firestore" | "soundscape-prewarm" | "local-scene-prewarm";
+  source: "firestore" | "soundscape-prewarm" | "local-scene-prewarm" | "previously-on-prewarm";
 }
 
 export type KindroidChatNotification = KindroidChatChangeNotification | KindroidGroupChatChangeNotification;

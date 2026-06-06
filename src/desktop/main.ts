@@ -296,6 +296,9 @@ function registerIpcHandlers(): void {
   ipcMain.handle("prewarm:soundscape", async (_event, input: { scope?: "kin" | "group"; id?: string } = {}) =>
     forceSoundscapePrewarm(input.scope, input.id ?? "")
   );
+  ipcMain.handle("prewarm:previously-on", async (_event, input: { scope?: "kin" | "group"; id?: string } = {}) =>
+    forcePreviouslyOnPrewarm(input.scope, input.id ?? "")
+  );
   ipcMain.handle("ambient:get-kin-preference", async (_event, input: { kinId?: string } = {}) =>
     getKinAmbientPreference(input.kinId ?? "")
   );
@@ -591,6 +594,13 @@ async function forceSoundscapePrewarm(scope: "kin" | "group" | undefined, id: st
     throw new Error("Select a Kin or Group before forcing soundscape prewarm.");
   }
   return requireRuntime().forceSoundscapePrewarm({ scope, id });
+}
+
+async function forcePreviouslyOnPrewarm(scope: "kin" | "group" | undefined, id: string) {
+  if (scope !== "kin" && scope !== "group") {
+    throw new Error("Select a Kin or Group before refreshing Previously On.");
+  }
+  return requireRuntime().forcePreviouslyOnPrewarm({ scope, id });
 }
 
 function getKinAmbientPreference(kinId: string) {

@@ -38,8 +38,28 @@ export type HermesLocalScenePrewarmRequest =
       localSceneContext: unknown;
     };
 
+export type HermesPreviouslyOnPrewarmRequest =
+  | {
+      scope: "kin";
+      kinId: string;
+      documentId: string;
+      timestamp: string;
+      text: string;
+      previouslyOnContext: unknown;
+    }
+  | {
+      scope: "group";
+      groupId: string;
+      aiId?: string | null;
+      documentId: string;
+      timestamp: string;
+      text: string;
+      previouslyOnContext: unknown;
+    };
+
 export interface HermesAdapter {
   handleChatChanged(notification: KindroidChatNotification): Promise<void>;
   prewarmSoundscape?(request: HermesSoundscapePrewarmRequest): Promise<void>;
   prewarmLocalScene?(request: HermesLocalScenePrewarmRequest): Promise<void>;
+  prewarmPreviouslyOn?(request: HermesPreviouslyOnPrewarmRequest): Promise<void>;
 }
