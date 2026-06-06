@@ -71,12 +71,12 @@ Direct Kin request:
     "enabled": true,
     "environment": "rainy motel room",
     "mood": "uneasy",
-    "intensity": 0.35,
+    "intensity": 0.4,
     "transition": "fade",
     "layers": [
-      { "type": "rain", "volume": 0.25, "density": 0.7 },
-      { "type": "roomTone", "volume": 0.12 },
-      { "type": "lowDrone", "volume": 0.08, "pitch": 72 }
+      { "type": "rain", "volume": 0.52, "density": 0.7 },
+      { "type": "roomTone", "volume": 0.4 },
+      { "type": "lowDrone", "volume": 0.14, "pitch": 72 }
     ]
   }
 }
@@ -96,8 +96,8 @@ Group request:
     "intensity": 0.5,
     "transition": "swell",
     "layers": [
-      { "type": "hum", "volume": 0.25, "pitch": 58 },
-      { "type": "static", "volume": 0.1, "density": 0.4 }
+      { "type": "hum", "volume": 0.3, "pitch": 58 },
+      { "type": "lowDrone", "volume": 0.18, "pitch": 58 }
     ]
   }
 }
@@ -111,7 +111,10 @@ Guardrails:
 - Use this only when venue, weather, machinery, environmental texture, tension, or a major scene event materially changes.
 - Do not update on every turn.
 - Allowed layer types are `rain`, `wind`, `roomTone`, `lowDrone`, `hum`, `tensionPulse`, and `static`.
-- Keep layer volumes conservative. The renderer applies an additional low master volume.
+- Use cached-sample mixer volumes, not tiny procedural-test values: primary beds usually `0.35-0.55`, weather
+  `0.4-0.65`, and hum/drone usually `0.15-0.3`.
+- Use `static` only for explicit radio, signal, comms, scanner, television, or interference scenes. Do not use it for
+  generic office, lobby, tension, or machinery ambience.
 - This action must not include Kin-visible text, soundtrack instructions, Foley requests, or durable memory content.
 - It does not call Kindroid and does not write `current_scene`.
 

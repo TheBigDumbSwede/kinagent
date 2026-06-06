@@ -44,6 +44,7 @@ import {
   syncChatDynamismRangeLabels
 } from "./voiceHermesForms.js";
 import { SoundscapeController } from "./SoundscapeController.js";
+import { describeSoundscapeLayerSample } from "./SoundscapeSampleSelection.js";
 import { silentSoundscapeState, type SoundscapeState } from "../../soundscape/SoundscapeState.js";
 import type {
   AppSettingsResult,
@@ -288,6 +289,7 @@ interface RendererApi {
   exportKinChat(input: ChatExportRequest & { kinId: string }): Promise<ChatExportResult>;
   exportGroupChat(input: ChatExportRequest & { groupId: string }): Promise<ChatExportResult>;
   analyzeKin(input: { kinId: string }): Promise<KinAnalysisResult>;
+  readSoundscapeAsset(input: { path: string }): Promise<ArrayBuffer | Uint8Array | number[]>;
   onEvent(callback: (message: RendererEvent) => void): () => void;
 }
 
@@ -303,6 +305,20 @@ function query<T extends Element>(selector: string): T {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function bytesToArrayBuffer(value: ArrayBuffer | Uint8Array | number[]): ArrayBuffer {
+  if (value instanceof ArrayBuffer) {
+    return value.slice(0);
+  }
+
+  if (value instanceof Uint8Array) {
+    const copy = new Uint8Array(value.byteLength);
+    copy.set(value);
+    return copy.buffer as ArrayBuffer;
+  }
+
+  return Uint8Array.from(value).buffer as ArrayBuffer;
 }
 
 function payloadText(payload: EventPayload | undefined, fallback: string): string {
@@ -466,6 +482,9 @@ const elements: RendererElements = {
 };
 
 const soundscapeController = new SoundscapeController({
+  async loadSample(relativePath: string) {
+    return bytesToArrayBuffer(await window.kinagent.readSoundscapeAsset({ path: relativePath }));
+  },
   onStatus(message: string) {
     if (state.activeTab === "voice") {
       elements.monitorLine.textContent = message;
@@ -527,7 +546,7 @@ function voiceHermesContext() {
       renderSoundscapeStatus();
     },
     renderSoundscapeLayers: (container: HTMLElement, kinId: string) => {
-      renderSoundscapeLayerList(container, state.soundscapeUpdates[`kin:${kinId}`]?.state?.layers ?? []);
+      renderSoundscapeLayerList(container, state.soundscapeUpdates[`kin:${kinId}`]?.state);
     }
   };
 }
@@ -1319,11 +1338,12 @@ function renderSoundscapeStatus(): void {
   }
 
   const key = `kin:${state.selectedKinId}`;
-  renderSoundscapeLayerList(elements.soundscapeLayerList, state.soundscapeUpdates[key]?.state?.layers ?? []);
+  renderSoundscapeLayerList(elements.soundscapeLayerList, state.soundscapeUpdates[key]?.state);
 }
 
-function renderSoundscapeLayerList(container: HTMLElement, layers: Array<{ type: string; volume: number }>): void {
+function renderSoundscapeLayerList(container: HTMLElement, soundscape: SoundscapeState | undefined): void {
   container.replaceChildren();
+  const layers = soundscape?.layers ?? [];
   if (layers.length === 0) {
     const item = document.createElement("li");
     item.textContent = "silent";
@@ -1333,7 +1353,8 @@ function renderSoundscapeLayerList(container: HTMLElement, layers: Array<{ type:
 
   for (const layer of layers) {
     const item = document.createElement("li");
-    item.textContent = `${layer.type} ${Math.round(layer.volume * 100)}%`;
+    const sample = soundscape ? describeSoundscapeLayerSample(soundscape, layer) : null;
+    item.textContent = `${layer.type} ${Math.round(layer.volume * 100)}%${sample ? ` · ${sample}` : ""}`;
     container.append(item);
   }
 }

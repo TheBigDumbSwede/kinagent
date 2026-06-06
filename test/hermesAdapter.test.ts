@@ -194,7 +194,11 @@ describe("HermesChatAdapter", () => {
           environment: "stormy motel room",
           mood: "uneasy",
           intensity: 0.42,
-          layers: expect.arrayContaining([expect.objectContaining({ type: "rain", volume: 0.3 })])
+          layers: expect.arrayContaining([
+            expect.objectContaining({ type: "rain", volume: 0.35 }),
+            expect.objectContaining({ type: "roomTone", volume: 0.35 }),
+            expect.objectContaining({ type: "lowDrone", volume: 0.12 })
+          ])
         })
       })
     );

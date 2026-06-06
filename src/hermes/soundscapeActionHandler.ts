@@ -56,12 +56,13 @@ export class SoundscapeActionHandler implements HermesActionHandler<SoundscapeAc
 
   promptLines(): string[] {
     return [
-      'For direct Kin local ambience, you may request: {"type":"update_soundscape","ai_id":"<same direct chat ai_id>","reason":"<short reason>","soundscape":{"enabled":true,"environment":"<brief place or ambience>","mood":"<calm|melancholy|uneasy|tense|...>","intensity":0.35,"transition":"fade","layers":[{"type":"rain","volume":0.2,"density":0.5,"warmth":0.4,"movement":0.3}]}}.',
-      'For group local ambience, you may request: {"type":"update_group_soundscape","group_id":"<same group_id>","reason":"<short reason>","soundscape":{"enabled":true,"environment":"<brief group scene ambience>","mood":"<mood>","intensity":0.35,"transition":"fade","layers":[...]}}.',
+      'For direct Kin local ambience, you may request: {"type":"update_soundscape","ai_id":"<same direct chat ai_id>","reason":"<short reason>","soundscape":{"enabled":true,"environment":"<brief place or ambience>","mood":"<calm|melancholy|uneasy|tense|...>","intensity":0.4,"transition":"fade","layers":[{"type":"rain","volume":0.45,"density":0.5,"warmth":0.4,"movement":0.3},{"type":"roomTone","volume":0.4}]}}.',
+      'For group local ambience, you may request: {"type":"update_group_soundscape","group_id":"<same group_id>","reason":"<short reason>","soundscape":{"enabled":true,"environment":"<brief group scene ambience>","mood":"<mood>","intensity":0.4,"transition":"fade","layers":[...]}}.',
       "Soundscape actions are local control-plane metadata only. They do not write Kindroid memory, current_scene, chat text, or Kin-visible instructions.",
       "Use soundscape actions only when soundscapeContext.enabledForSource is true.",
       "Use soundscape actions only when venue, weather, machinery, environmental texture, tension, or a major scene event materially changes. Do not update on every turn.",
-      "Allowed layer types: rain, wind, roomTone, lowDrone, hum, tensionPulse, static. Keep volumes conservative; Kinagent applies an additional low master volume."
+      "Allowed layer types: rain, wind, roomTone, lowDrone, hum, tensionPulse, static. Use audible cached-sample mixer volumes: primary beds usually 0.35-0.55, weather 0.4-0.65, and drones/hum usually 0.15-0.3.",
+      "Use static only for explicit radio, signal, comms, scanner, television, or interference scenes. Do not use static for generic office, lobby, tension, or machinery ambience."
     ];
   }
 
@@ -227,13 +228,52 @@ function parseLayer(value: unknown): ProceduralLayerDescriptor[] {
   return [
     {
       type: record.type as ProceduralLayerType,
-      volume: numericValue(record.volume, 0.1),
+      volume: layerVolume(record.type as ProceduralLayerType, record.volume),
       density: optionalNumericValue(record.density),
       pitch: typeof record.pitch === "number" || typeof record.pitch === "string" ? record.pitch : undefined,
       warmth: optionalNumericValue(record.warmth),
       movement: optionalNumericValue(record.movement)
     }
   ];
+}
+
+function layerVolume(type: ProceduralLayerType, value: unknown): number {
+  const parsed = numericValue(value, defaultLayerVolume(type));
+  if (parsed <= 0) {
+    return 0;
+  }
+  return Math.max(parsed, minimumLayerVolume(type));
+}
+
+function defaultLayerVolume(type: ProceduralLayerType): number {
+  switch (type) {
+    case "rain":
+    case "wind":
+      return 0.45;
+    case "roomTone":
+      return 0.4;
+    case "hum":
+      return 0.24;
+    case "lowDrone":
+    case "static":
+    case "tensionPulse":
+      return 0.18;
+  }
+}
+
+function minimumLayerVolume(type: ProceduralLayerType): number {
+  switch (type) {
+    case "rain":
+    case "wind":
+    case "roomTone":
+      return 0.35;
+    case "hum":
+      return 0.18;
+    case "lowDrone":
+    case "static":
+    case "tensionPulse":
+      return 0.12;
+  }
 }
 
 function numericValue(value: unknown, fallback: number): number {

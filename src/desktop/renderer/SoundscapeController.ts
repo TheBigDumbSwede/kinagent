@@ -1,12 +1,15 @@
 import { normalizeSoundscapeState } from "../../soundscape/ProceduralLayers.js";
-import type {
-  ProceduralLayerDescriptor,
-  ProceduralLayerType,
-  SoundscapeState
-} from "../../soundscape/SoundscapeState.js";
+import type { ProceduralLayerDescriptor, SoundscapeState } from "../../soundscape/SoundscapeState.js";
+import {
+  chooseSampleLoop,
+  layerVoiceKey,
+  playableLayerDescriptors,
+  soundscapeLayerSummary
+} from "./SoundscapeSampleSelection.js";
 
 interface SoundscapeControllerOptions {
   onStatus?: (message: string) => void;
+  loadSample?: (relativePath: string) => Promise<ArrayBuffer>;
 }
 
 interface LayerVoice {
@@ -16,15 +19,24 @@ interface LayerVoice {
   update: (descriptor: ProceduralLayerDescriptor, intensity: number, at: number) => void;
 }
 
+interface LoopRegion {
+  start: number;
+  end: number;
+}
+
 const fadeSeconds = 1.2;
 const stopFadeSeconds = 0.18;
-const masterVolume = 0.08;
+const masterVolume = 1;
 const duckedVolumeMultiplier = 0.32;
+const sampleAssetRoot = "../assets/soundscape-normalized/loops";
+const samplePresenceFloor = 0.8;
+const samplePlaybackBoost = 1.6;
 
 export class SoundscapeController {
   private context: AudioContext | null = null;
   private masterGain: GainNode | null = null;
-  private layers = new Map<ProceduralLayerType, LayerVoice>();
+  private layers = new Map<string, LayerVoice>();
+  private sampleCache = new Map<string, Promise<AudioBuffer>>();
   private currentState: SoundscapeState | null = null;
   private userInteractionReady = false;
   private duckedUntil = 0;
@@ -107,24 +119,28 @@ export class SoundscapeController {
     }
 
     const now = context.currentTime;
-    const nextTypes = new Set(state.layers.map((layer) => layer.type));
-    for (const [type, voice] of this.layers.entries()) {
-      if (!nextTypes.has(type)) {
+    const nextLayers = playableLayerDescriptors(state).map((descriptor) => ({
+      descriptor,
+      key: layerVoiceKey(state, descriptor)
+    }));
+    const nextKeys = new Set(nextLayers.map((layer) => layer.key));
+    for (const [key, voice] of this.layers.entries()) {
+      if (!nextKeys.has(key)) {
         fadeGain(voice.output.gain, 0, now, fadeSeconds);
         voice.stop(now + fadeSeconds + 0.05);
-        this.layers.delete(type);
+        this.layers.delete(key);
       }
     }
 
-    for (const descriptor of state.layers) {
-      const existing = this.layers.get(descriptor.type);
+    for (const { descriptor, key } of nextLayers) {
+      const existing = this.layers.get(key);
       if (existing) {
         existing.update(descriptor, state.intensity, now);
       } else {
-        const voice = createLayerVoice(context, descriptor, state.intensity);
+        const voice = await this.createLayerVoice(context, state, descriptor);
         voice.output.connect(masterGain);
-        fadeGain(voice.output.gain, targetLayerGain(descriptor, state.intensity), now, fadeSeconds);
-        this.layers.set(descriptor.type, voice);
+        voice.update(descriptor, state.intensity, now);
+        this.layers.set(key, voice);
       }
     }
 
@@ -133,7 +149,47 @@ export class SoundscapeController {
       now,
       state.transition === "swell" ? 2.4 : fadeSeconds
     );
-    this.options.onStatus?.(`Soundscape: ${state.environment} (${state.layers.length} layers).`);
+    this.options.onStatus?.(`Soundscape: ${state.environment} (${soundscapeLayerSummary(state)}).`);
+  }
+
+  private async createLayerVoice(
+    context: AudioContext,
+    state: SoundscapeState,
+    descriptor: ProceduralLayerDescriptor
+  ): Promise<LayerVoice> {
+    const sample = chooseSampleLoop(state, descriptor);
+    if (!sample) {
+      return createProceduralLayerVoice(context, descriptor, state.intensity);
+    }
+
+    try {
+      const buffer = await this.loadSampleBuffer(context, sample.path);
+      return createSampleLayerVoice(context, descriptor, buffer, sample.baseGain);
+    } catch (error) {
+      this.options.onStatus?.(`Soundscape sample unavailable: ${errorMessage(error)}`);
+      return createProceduralLayerVoice(context, descriptor, state.intensity);
+    }
+  }
+
+  private loadSampleBuffer(context: AudioContext, relativePath: string): Promise<AudioBuffer> {
+    const url = new URL(`${sampleAssetRoot}/${relativePath}`, window.location.href).href;
+    const cached = this.sampleCache.get(url);
+    if (cached) {
+      return cached;
+    }
+
+    const promise = (
+      this.options.loadSample
+        ? this.options.loadSample(relativePath)
+        : fetch(url).then((response) => {
+            if (!response.ok) {
+              throw new Error(`Unable to load soundscape sample: ${relativePath}`);
+            }
+            return response.arrayBuffer();
+          })
+    ).then((audio) => context.decodeAudioData(audio.slice(0)));
+    this.sampleCache.set(url, promise);
+    return promise;
   }
 
   private ensureContext(): AudioContext {
@@ -157,7 +213,11 @@ export class SoundscapeController {
   }
 }
 
-function createLayerVoice(context: AudioContext, descriptor: ProceduralLayerDescriptor, intensity: number): LayerVoice {
+function createProceduralLayerVoice(
+  context: AudioContext,
+  descriptor: ProceduralLayerDescriptor,
+  intensity: number
+): LayerVoice {
   switch (descriptor.type) {
     case "rain":
       return createNoiseLayer(context, descriptor, intensity, { highpass: 700, lowpass: 5400 });
@@ -174,6 +234,39 @@ function createLayerVoice(context: AudioContext, descriptor: ProceduralLayerDesc
     case "tensionPulse":
       return createTensionPulseLayer(context, descriptor);
   }
+}
+
+function createSampleLayerVoice(
+  context: AudioContext,
+  descriptor: ProceduralLayerDescriptor,
+  buffer: AudioBuffer,
+  baseGain: number
+): LayerVoice {
+  const source = context.createBufferSource();
+  const loopRegion = detectLoopRegion(buffer);
+  source.buffer = buffer;
+  source.loop = true;
+  source.loopStart = loopRegion.start;
+  source.loopEnd = loopRegion.end;
+  const output = context.createGain();
+  output.gain.value = 0;
+  source.connect(output);
+  source.start(0, loopRegion.start);
+
+  return {
+    descriptor,
+    output,
+    update(next, nextIntensity, at) {
+      fadeGain(output.gain, targetSampleLayerGain(next, nextIntensity, baseGain), at, 0.7);
+    },
+    stop(at) {
+      source.stop(at);
+      scheduleCleanup(context, at, () => {
+        source.disconnect();
+        output.disconnect();
+      });
+    }
+  };
 }
 
 function createNoiseLayer(
@@ -369,6 +462,58 @@ function targetLayerGain(descriptor: ProceduralLayerDescriptor, intensity: numbe
   return Math.max(0, descriptor.volume) * (0.35 + intensity * 0.65);
 }
 
+function targetSampleLayerGain(descriptor: ProceduralLayerDescriptor, intensity: number, baseGain: number): number {
+  const layerGain = targetLayerGain(descriptor, intensity);
+  if (layerGain <= 0) {
+    return 0;
+  }
+
+  return (samplePresenceFloor + layerGain * (1 - samplePresenceFloor)) * baseGain * samplePlaybackBoost;
+}
+
+function detectLoopRegion(buffer: AudioBuffer): LoopRegion {
+  const threshold = 0.001;
+  const guardFrames = Math.floor(buffer.sampleRate * 0.005);
+  const channelData = Array.from({ length: buffer.numberOfChannels }, (_value, channel) =>
+    buffer.getChannelData(channel)
+  );
+  let first = 0;
+  let last = buffer.length - 1;
+
+  for (let frame = 0; frame < buffer.length; frame += 1) {
+    if (isAudibleFrame(channelData, frame, threshold)) {
+      first = Math.max(0, frame - guardFrames);
+      break;
+    }
+  }
+
+  for (let frame = buffer.length - 1; frame >= 0; frame -= 1) {
+    if (isAudibleFrame(channelData, frame, threshold)) {
+      last = Math.min(buffer.length - 1, frame + guardFrames);
+      break;
+    }
+  }
+
+  if (last - first < buffer.sampleRate) {
+    return { start: 0, end: buffer.duration };
+  }
+
+  return {
+    start: first / buffer.sampleRate,
+    end: (last + 1) / buffer.sampleRate
+  };
+}
+
+function isAudibleFrame(channelData: Float32Array[], frame: number, threshold: number): boolean {
+  for (const channel of channelData) {
+    if (Math.abs(channel[frame] ?? 0) > threshold) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 function targetMasterGain(intensity: number, ducked: boolean): number {
   const gain = masterVolume * (0.45 + intensity * 0.55);
   return ducked ? gain * duckedVolumeMultiplier : gain;
@@ -408,4 +553,8 @@ function windFrequency(descriptor: ProceduralLayerDescriptor): number {
 
 function scheduleCleanup(context: AudioContext, at: number, cleanup: () => void): void {
   window.setTimeout(cleanup, Math.max(0, (at - context.currentTime) * 1000 + 20));
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

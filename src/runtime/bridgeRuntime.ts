@@ -1142,7 +1142,7 @@ function buildSoundscapePrewarmText(input: {
     `Build an initial local soundscape for this ${input.scope} chat before waiting for a future scene-change turn.`,
     `Source: ${input.displayName}.`,
     "Infer the current venue, room tone, weather, machinery, crowd, vehicle, outdoor texture, and tension from recent context.",
-    "Return update_soundscape or update_group_soundscape when a plausible ambience can be inferred. Use conservative volume and intensity. Return no non-soundscape actions.",
+    "Return update_soundscape or update_group_soundscape when a plausible ambience can be inferred. Use audible cached-sample mixer volumes: primary beds usually 0.35-0.55, weather 0.4-0.65, and hum/drone/static usually 0.15-0.3. Return no non-soundscape actions.",
     "Recent messages, oldest to newest:",
     ...readableMessages.map((message) => `${prewarmMessagePrefix(message)} ${truncatePrewarmText(message.text ?? "")}`)
   ].join("\n");

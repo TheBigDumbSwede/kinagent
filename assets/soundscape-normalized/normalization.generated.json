@@ -1,0 +1,746 @@
+{
+  "version": 1,
+  "generatedAt": "2026-06-06T02:08:19.211Z",
+  "sourceDir": "C:\\Codex\\kinagent\\assets\\soundscape",
+  "analysisPath": "C:\\Codex\\kinagent\\assets\\soundscape\\analysis.generated.json",
+  "entries": [
+    {
+      "source": "assets\\soundscape\\cues\\book_close_soft_01_v1.mp3",
+      "output": "assets\\soundscape-normalized\\cues\\book_close_soft_01_v1.mp3",
+      "kind": "oneShot",
+      "status": "weak",
+      "requestedGainDb": 11.5,
+      "appliedGainDb": 11.5,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\cues\\book_close_soft_01_v2.mp3",
+      "output": "assets\\soundscape-normalized\\cues\\book_close_soft_01_v2.mp3",
+      "kind": "oneShot",
+      "status": "weak",
+      "requestedGainDb": 10.1,
+      "appliedGainDb": 10.1,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\cues\\cloth_rustle_soft_01_v1.mp3",
+      "output": "assets\\soundscape-normalized\\cues\\cloth_rustle_soft_01_v1.mp3",
+      "kind": "oneShot",
+      "status": "weak",
+      "requestedGainDb": 9.2,
+      "appliedGainDb": 9.2,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\cues\\drawer_open_soft_01_v2.mp3",
+      "output": "assets\\soundscape-normalized\\cues\\drawer_open_soft_01_v2.mp3",
+      "kind": "oneShot",
+      "status": "weak",
+      "requestedGainDb": 8,
+      "appliedGainDb": 8,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\cues\\footstep_tile_soft_01_v1.mp3",
+      "output": "assets\\soundscape-normalized\\cues\\footstep_tile_soft_01_v1.mp3",
+      "kind": "oneShot",
+      "status": "weak",
+      "requestedGainDb": 18,
+      "appliedGainDb": 18,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\cues\\footstep_tile_soft_01_v3.mp3",
+      "output": "assets\\soundscape-normalized\\cues\\footstep_tile_soft_01_v3.mp3",
+      "kind": "oneShot",
+      "status": "weak",
+      "requestedGainDb": 8.5,
+      "appliedGainDb": 8.5,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\cues\\footstep_wood_soft_01_v2.mp3",
+      "output": "assets\\soundscape-normalized\\cues\\footstep_wood_soft_01_v2.mp3",
+      "kind": "oneShot",
+      "status": "weak",
+      "requestedGainDb": 18,
+      "appliedGainDb": 18,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\cues\\mechanical_tick_soft_01_v2.mp3",
+      "output": "assets\\soundscape-normalized\\cues\\mechanical_tick_soft_01_v2.mp3",
+      "kind": "oneShot",
+      "status": "weak",
+      "requestedGainDb": 9,
+      "appliedGainDb": 9,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\cues\\office_footsteps_passing_soft_01_v2.mp3",
+      "output": "assets\\soundscape-normalized\\cues\\office_footsteps_passing_soft_01_v2.mp3",
+      "kind": "oneShot",
+      "status": "weak",
+      "requestedGainDb": 13.1,
+      "appliedGainDb": 12.9,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\cues\\office_murmur_passby_soft_01_v2.mp3",
+      "output": "assets\\soundscape-normalized\\cues\\office_murmur_passby_soft_01_v2.mp3",
+      "kind": "oneShot",
+      "status": "weak",
+      "requestedGainDb": 11.5,
+      "appliedGainDb": 11.5,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\cues\\paper_rustle_soft_01_v1.mp3",
+      "output": "assets\\soundscape-normalized\\cues\\paper_rustle_soft_01_v1.mp3",
+      "kind": "oneShot",
+      "status": "weak",
+      "requestedGainDb": 13.4,
+      "appliedGainDb": 13.4,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\cues\\window_tap_rain_01_v1.mp3",
+      "output": "assets\\soundscape-normalized\\cues\\window_tap_rain_01_v1.mp3",
+      "kind": "oneShot",
+      "status": "weak",
+      "requestedGainDb": 8.7,
+      "appliedGainDb": 8.7,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\cues\\window_tap_rain_01_v2.mp3",
+      "output": "assets\\soundscape-normalized\\cues\\window_tap_rain_01_v2.mp3",
+      "kind": "oneShot",
+      "status": "weak",
+      "requestedGainDb": 14.1,
+      "appliedGainDb": 14.1,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\loops\\car_backseat_night_01.mp3",
+      "output": "assets\\soundscape-normalized\\loops\\car_backseat_night_01.mp3",
+      "kind": "loop",
+      "status": "weak",
+      "requestedGainDb": 9.3,
+      "appliedGainDb": 9.3,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\loops\\fireplace_soft_01.mp3",
+      "output": "assets\\soundscape-normalized\\loops\\fireplace_soft_01.mp3",
+      "kind": "loop",
+      "status": "weak",
+      "requestedGainDb": 9.6,
+      "appliedGainDb": 9.6,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\loops\\forest_night_soft_01.mp3",
+      "output": "assets\\soundscape-normalized\\loops\\forest_night_soft_01.mp3",
+      "kind": "loop",
+      "status": "weak",
+      "requestedGainDb": 9.4,
+      "appliedGainDb": 9.4,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\loops\\haunted_house_subtle_01.mp3",
+      "output": "assets\\soundscape-normalized\\loops\\haunted_house_subtle_01.mp3",
+      "kind": "loop",
+      "status": "weak",
+      "requestedGainDb": 18,
+      "appliedGainDb": 18,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\loops\\office_coworker_murmur_soft_01.mp3",
+      "output": "assets\\soundscape-normalized\\loops\\office_coworker_murmur_soft_01.mp3",
+      "kind": "loop",
+      "status": "weak",
+      "requestedGainDb": 14,
+      "appliedGainDb": 14,
+      "skipped": false
+    },
+    {
+      "source": "assets\\soundscape\\loops\\office_hallway_passing_01.mp3",
+      "output": "assets\\soundscape-normalized\\loops\\office_hallway_passing_01.mp3",
+      "kind": "loop",
+      "status": "weak",
+      "requestedGainDb": 18,
+      "appliedGainDb": 18,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\loops\\old_library_soft_01.mp3",
+      "output": "assets\\soundscape-normalized\\loops\\old_library_soft_01.mp3",
+      "kind": "loop",
+      "status": "weak",
+      "requestedGainDb": 14.9,
+      "appliedGainDb": 10.2,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\loops\\radio_static_soft_01.mp3",
+      "output": "assets\\soundscape-normalized\\loops\\radio_static_soft_01.mp3",
+      "kind": "loop",
+      "status": "weak",
+      "requestedGainDb": 14.5,
+      "appliedGainDb": 14.5,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\loops\\rain_window_heavy_01.mp3",
+      "output": "assets\\soundscape-normalized\\loops\\rain_window_heavy_01.mp3",
+      "kind": "loop",
+      "status": "weak",
+      "requestedGainDb": 12.5,
+      "appliedGainDb": 12.5,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\loops\\rain_window_soft_01.mp3",
+      "output": "assets\\soundscape-normalized\\loops\\rain_window_soft_01.mp3",
+      "kind": "loop",
+      "status": "weak",
+      "requestedGainDb": 12,
+      "appliedGainDb": 12,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\loops\\room_tone_empty_01.mp3",
+      "output": "assets\\soundscape-normalized\\loops\\room_tone_empty_01.mp3",
+      "kind": "loop",
+      "status": "weak",
+      "requestedGainDb": 18,
+      "appliedGainDb": 18,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\loops\\room_tone_warm_01.mp3",
+      "output": "assets\\soundscape-normalized\\loops\\room_tone_warm_01.mp3",
+      "kind": "loop",
+      "status": "weak",
+      "requestedGainDb": 16.3,
+      "appliedGainDb": 16.3,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\loops\\server_room_soft_01.mp3",
+      "output": "assets\\soundscape-normalized\\loops\\server_room_soft_01.mp3",
+      "kind": "loop",
+      "status": "weak",
+      "requestedGainDb": 9.3,
+      "appliedGainDb": 9.3,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\cues\\cup_clink_soft_01_v1.mp3",
+      "output": "assets\\soundscape-normalized\\cues\\cup_clink_soft_01_v1.mp3",
+      "kind": "oneShot",
+      "status": "hot",
+      "requestedGainDb": -12,
+      "appliedGainDb": -12,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\cues\\cup_clink_soft_01_v3.mp3",
+      "output": "assets\\soundscape-normalized\\cues\\cup_clink_soft_01_v3.mp3",
+      "kind": "oneShot",
+      "status": "hot",
+      "requestedGainDb": -8.9,
+      "appliedGainDb": -8.9,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\cues\\door_close_soft_01_v1.mp3",
+      "output": "assets\\soundscape-normalized\\cues\\door_close_soft_01_v1.mp3",
+      "kind": "oneShot",
+      "status": "hot",
+      "requestedGainDb": -12,
+      "appliedGainDb": -12,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\cues\\elevator_doors_soft_01_v2.mp3",
+      "output": "assets\\soundscape-normalized\\cues\\elevator_doors_soft_01_v2.mp3",
+      "kind": "oneShot",
+      "status": "hot",
+      "requestedGainDb": -12,
+      "appliedGainDb": -12,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\cues\\mechanical_tick_soft_01_v1.mp3",
+      "output": "assets\\soundscape-normalized\\cues\\mechanical_tick_soft_01_v1.mp3",
+      "kind": "oneShot",
+      "status": "hot",
+      "requestedGainDb": -3.8,
+      "appliedGainDb": -3.8,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\cues\\office_phone_ring_brief_01_v1.mp3",
+      "output": "assets\\soundscape-normalized\\cues\\office_phone_ring_brief_01_v1.mp3",
+      "kind": "oneShot",
+      "status": "hot",
+      "requestedGainDb": -12,
+      "appliedGainDb": -12,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\cues\\office_phone_ring_brief_01_v2.mp3",
+      "output": "assets\\soundscape-normalized\\cues\\office_phone_ring_brief_01_v2.mp3",
+      "kind": "oneShot",
+      "status": "hot",
+      "requestedGainDb": -11.9,
+      "appliedGainDb": -11.9,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\cues\\office_phone_ring_distant_01_v1.mp3",
+      "output": "assets\\soundscape-normalized\\cues\\office_phone_ring_distant_01_v1.mp3",
+      "kind": "oneShot",
+      "status": "hot",
+      "requestedGainDb": -12,
+      "appliedGainDb": -12,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\cues\\office_phone_ring_distant_01_v2.mp3",
+      "output": "assets\\soundscape-normalized\\cues\\office_phone_ring_distant_01_v2.mp3",
+      "kind": "oneShot",
+      "status": "hot",
+      "requestedGainDb": -12,
+      "appliedGainDb": -12,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\cues\\paper_rustle_soft_01_v2.mp3",
+      "output": "assets\\soundscape-normalized\\cues\\paper_rustle_soft_01_v2.mp3",
+      "kind": "oneShot",
+      "status": "hot",
+      "requestedGainDb": -5.2,
+      "appliedGainDb": -5.2,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\cues\\chair_shift_soft_01_v1.mp3",
+      "output": "assets\\soundscape-normalized\\cues\\chair_shift_soft_01_v1.mp3",
+      "kind": "oneShot",
+      "status": "ok",
+      "requestedGainDb": 1.6,
+      "appliedGainDb": 1.6,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\cues\\chair_shift_soft_01_v2.mp3",
+      "output": "assets\\soundscape-normalized\\cues\\chair_shift_soft_01_v2.mp3",
+      "kind": "oneShot",
+      "status": "ok",
+      "requestedGainDb": -9.2,
+      "appliedGainDb": -9.2,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\cues\\cloth_rustle_soft_01_v2.mp3",
+      "output": "assets\\soundscape-normalized\\cues\\cloth_rustle_soft_01_v2.mp3",
+      "kind": "oneShot",
+      "status": "ok",
+      "requestedGainDb": 4.4,
+      "appliedGainDb": 4.4,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\cues\\cup_clink_soft_01_v2.mp3",
+      "output": "assets\\soundscape-normalized\\cues\\cup_clink_soft_01_v2.mp3",
+      "kind": "oneShot",
+      "status": "ok",
+      "requestedGainDb": -5.7,
+      "appliedGainDb": -5.7,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\cues\\distant_thunder_soft_01_v1.mp3",
+      "output": "assets\\soundscape-normalized\\cues\\distant_thunder_soft_01_v1.mp3",
+      "kind": "oneShot",
+      "status": "ok",
+      "requestedGainDb": -6.2,
+      "appliedGainDb": -6.2,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\cues\\distant_thunder_soft_01_v2.mp3",
+      "output": "assets\\soundscape-normalized\\cues\\distant_thunder_soft_01_v2.mp3",
+      "kind": "oneShot",
+      "status": "ok",
+      "requestedGainDb": -1.9,
+      "appliedGainDb": -1.9,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\cues\\door_close_soft_01_v2.mp3",
+      "output": "assets\\soundscape-normalized\\cues\\door_close_soft_01_v2.mp3",
+      "kind": "oneShot",
+      "status": "ok",
+      "requestedGainDb": -10.4,
+      "appliedGainDb": -10.4,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\cues\\door_creak_soft_01_v1.mp3",
+      "output": "assets\\soundscape-normalized\\cues\\door_creak_soft_01_v1.mp3",
+      "kind": "oneShot",
+      "status": "ok",
+      "requestedGainDb": -12,
+      "appliedGainDb": -12,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\cues\\door_creak_soft_01_v2.mp3",
+      "output": "assets\\soundscape-normalized\\cues\\door_creak_soft_01_v2.mp3",
+      "kind": "oneShot",
+      "status": "ok",
+      "requestedGainDb": -1.5,
+      "appliedGainDb": -1.5,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\cues\\drawer_open_soft_01_v1.mp3",
+      "output": "assets\\soundscape-normalized\\cues\\drawer_open_soft_01_v1.mp3",
+      "kind": "oneShot",
+      "status": "ok",
+      "requestedGainDb": -6,
+      "appliedGainDb": -6,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\cues\\elevator_ding_soft_01_v1.mp3",
+      "output": "assets\\soundscape-normalized\\cues\\elevator_ding_soft_01_v1.mp3",
+      "kind": "oneShot",
+      "status": "ok",
+      "requestedGainDb": -6.6,
+      "appliedGainDb": -6.6,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\cues\\elevator_ding_soft_01_v2.mp3",
+      "output": "assets\\soundscape-normalized\\cues\\elevator_ding_soft_01_v2.mp3",
+      "kind": "oneShot",
+      "status": "ok",
+      "requestedGainDb": -12,
+      "appliedGainDb": -12,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\cues\\elevator_doors_soft_01_v1.mp3",
+      "output": "assets\\soundscape-normalized\\cues\\elevator_doors_soft_01_v1.mp3",
+      "kind": "oneShot",
+      "status": "ok",
+      "requestedGainDb": -12,
+      "appliedGainDb": -12,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\cues\\floorboard_creak_soft_01_v1.mp3",
+      "output": "assets\\soundscape-normalized\\cues\\floorboard_creak_soft_01_v1.mp3",
+      "kind": "oneShot",
+      "status": "ok",
+      "requestedGainDb": -7,
+      "appliedGainDb": -7,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\cues\\floorboard_creak_soft_01_v2.mp3",
+      "output": "assets\\soundscape-normalized\\cues\\floorboard_creak_soft_01_v2.mp3",
+      "kind": "oneShot",
+      "status": "ok",
+      "requestedGainDb": -4.1,
+      "appliedGainDb": -4.1,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\cues\\footstep_tile_soft_01_v2.mp3",
+      "output": "assets\\soundscape-normalized\\cues\\footstep_tile_soft_01_v2.mp3",
+      "kind": "oneShot",
+      "status": "ok",
+      "requestedGainDb": 7.5,
+      "appliedGainDb": 7.5,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\cues\\footstep_wood_soft_01_v1.mp3",
+      "output": "assets\\soundscape-normalized\\cues\\footstep_wood_soft_01_v1.mp3",
+      "kind": "oneShot",
+      "status": "ok",
+      "requestedGainDb": -7.4,
+      "appliedGainDb": -7.4,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\cues\\footstep_wood_soft_01_v3.mp3",
+      "output": "assets\\soundscape-normalized\\cues\\footstep_wood_soft_01_v3.mp3",
+      "kind": "oneShot",
+      "status": "ok",
+      "requestedGainDb": -7.4,
+      "appliedGainDb": -7.4,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\cues\\glass_set_down_soft_01_v1.mp3",
+      "output": "assets\\soundscape-normalized\\cues\\glass_set_down_soft_01_v1.mp3",
+      "kind": "oneShot",
+      "status": "ok",
+      "requestedGainDb": -2.5,
+      "appliedGainDb": -2.5,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\cues\\glass_set_down_soft_01_v2.mp3",
+      "output": "assets\\soundscape-normalized\\cues\\glass_set_down_soft_01_v2.mp3",
+      "kind": "oneShot",
+      "status": "ok",
+      "requestedGainDb": 1.2,
+      "appliedGainDb": 1.2,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\cues\\key_jingle_soft_01_v1.mp3",
+      "output": "assets\\soundscape-normalized\\cues\\key_jingle_soft_01_v1.mp3",
+      "kind": "oneShot",
+      "status": "ok",
+      "requestedGainDb": -0.2,
+      "appliedGainDb": -0.2,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\cues\\key_jingle_soft_01_v2.mp3",
+      "output": "assets\\soundscape-normalized\\cues\\key_jingle_soft_01_v2.mp3",
+      "kind": "oneShot",
+      "status": "ok",
+      "requestedGainDb": -2.6,
+      "appliedGainDb": -2.6,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\cues\\office_footsteps_passing_soft_01_v1.mp3",
+      "output": "assets\\soundscape-normalized\\cues\\office_footsteps_passing_soft_01_v1.mp3",
+      "kind": "oneShot",
+      "status": "ok",
+      "requestedGainDb": 6,
+      "appliedGainDb": 6,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\cues\\office_murmur_passby_soft_01_v1.mp3",
+      "output": "assets\\soundscape-normalized\\cues\\office_murmur_passby_soft_01_v1.mp3",
+      "kind": "oneShot",
+      "status": "ok",
+      "requestedGainDb": -2.8,
+      "appliedGainDb": -2.8,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\cues\\radio_static_burst_soft_01_v1.mp3",
+      "output": "assets\\soundscape-normalized\\cues\\radio_static_burst_soft_01_v1.mp3",
+      "kind": "oneShot",
+      "status": "ok",
+      "requestedGainDb": -6.4,
+      "appliedGainDb": -6.4,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\cues\\radio_static_burst_soft_01_v2.mp3",
+      "output": "assets\\soundscape-normalized\\cues\\radio_static_burst_soft_01_v2.mp3",
+      "kind": "oneShot",
+      "status": "ok",
+      "requestedGainDb": -1.5,
+      "appliedGainDb": -1.5,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\cues\\relay_click_soft_01_v1.mp3",
+      "output": "assets\\soundscape-normalized\\cues\\relay_click_soft_01_v1.mp3",
+      "kind": "oneShot",
+      "status": "ok",
+      "requestedGainDb": -3.9,
+      "appliedGainDb": -3.9,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\cues\\relay_click_soft_01_v2.mp3",
+      "output": "assets\\soundscape-normalized\\cues\\relay_click_soft_01_v2.mp3",
+      "kind": "oneShot",
+      "status": "ok",
+      "requestedGainDb": 2.6,
+      "appliedGainDb": 2.3,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\loops\\cafe_murmur_indistinct_soft_01.mp3",
+      "output": "assets\\soundscape-normalized\\loops\\cafe_murmur_indistinct_soft_01.mp3",
+      "kind": "loop",
+      "status": "ok",
+      "requestedGainDb": 6.5,
+      "appliedGainDb": 6.5,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\loops\\car_idle_interior_01.mp3",
+      "output": "assets\\soundscape-normalized\\loops\\car_idle_interior_01.mp3",
+      "kind": "loop",
+      "status": "ok",
+      "requestedGainDb": 0.4,
+      "appliedGainDb": 0.4,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\loops\\car_interior_city_drive_01.mp3",
+      "output": "assets\\soundscape-normalized\\loops\\car_interior_city_drive_01.mp3",
+      "kind": "loop",
+      "status": "ok",
+      "requestedGainDb": -5.2,
+      "appliedGainDb": -5.2,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\loops\\car_interior_highway_01.mp3",
+      "output": "assets\\soundscape-normalized\\loops\\car_interior_highway_01.mp3",
+      "kind": "loop",
+      "status": "ok",
+      "requestedGainDb": -6.5,
+      "appliedGainDb": -6.5,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\loops\\car_interior_rain_drive_01.mp3",
+      "output": "assets\\soundscape-normalized\\loops\\car_interior_rain_drive_01.mp3",
+      "kind": "loop",
+      "status": "ok",
+      "requestedGainDb": 0.8,
+      "appliedGainDb": 0.8,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\loops\\cave_air_soft_01.mp3",
+      "output": "assets\\soundscape-normalized\\loops\\cave_air_soft_01.mp3",
+      "kind": "loop",
+      "status": "ok",
+      "requestedGainDb": 4.1,
+      "appliedGainDb": 4.1,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\loops\\city_distant_night_01.mp3",
+      "output": "assets\\soundscape-normalized\\loops\\city_distant_night_01.mp3",
+      "kind": "loop",
+      "status": "ok",
+      "requestedGainDb": 3.8,
+      "appliedGainDb": 3.8,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\loops\\crowd_murmur_distant_soft_01.mp3",
+      "output": "assets\\soundscape-normalized\\loops\\crowd_murmur_distant_soft_01.mp3",
+      "kind": "loop",
+      "status": "ok",
+      "requestedGainDb": -2.4,
+      "appliedGainDb": -2.4,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\loops\\dream_space_soft_01.mp3",
+      "output": "assets\\soundscape-normalized\\loops\\dream_space_soft_01.mp3",
+      "kind": "loop",
+      "status": "ok",
+      "requestedGainDb": -0.7,
+      "appliedGainDb": -0.7,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\loops\\elevator_car_idle_01.mp3",
+      "output": "assets\\soundscape-normalized\\loops\\elevator_car_idle_01.mp3",
+      "kind": "loop",
+      "status": "ok",
+      "requestedGainDb": 1.1,
+      "appliedGainDb": 1.1,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\loops\\elevator_lobby_sparse_01.mp3",
+      "output": "assets\\soundscape-normalized\\loops\\elevator_lobby_sparse_01.mp3",
+      "kind": "loop",
+      "status": "ok",
+      "requestedGainDb": 4.4,
+      "appliedGainDb": 4.4,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\loops\\market_murmur_distant_soft_01.mp3",
+      "output": "assets\\soundscape-normalized\\loops\\market_murmur_distant_soft_01.mp3",
+      "kind": "loop",
+      "status": "ok",
+      "requestedGainDb": -0.3,
+      "appliedGainDb": -0.3,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\loops\\neon_alley_soft_01.mp3",
+      "output": "assets\\soundscape-normalized\\loops\\neon_alley_soft_01.mp3",
+      "kind": "loop",
+      "status": "ok",
+      "requestedGainDb": 7.4,
+      "appliedGainDb": 7.4,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\loops\\ocean_distant_soft_01.mp3",
+      "output": "assets\\soundscape-normalized\\loops\\ocean_distant_soft_01.mp3",
+      "kind": "loop",
+      "status": "ok",
+      "requestedGainDb": 1,
+      "appliedGainDb": 1,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\loops\\party_muffled_through_wall_01.mp3",
+      "output": "assets\\soundscape-normalized\\loops\\party_muffled_through_wall_01.mp3",
+      "kind": "loop",
+      "status": "ok",
+      "requestedGainDb": 6,
+      "appliedGainDb": 6,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\loops\\spaceship_crew_murmur_indistinct_01.mp3",
+      "output": "assets\\soundscape-normalized\\loops\\spaceship_crew_murmur_indistinct_01.mp3",
+      "kind": "loop",
+      "status": "ok",
+      "requestedGainDb": 6.5,
+      "appliedGainDb": 6.5,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\loops\\spaceship_hum_idle_01.mp3",
+      "output": "assets\\soundscape-normalized\\loops\\spaceship_hum_idle_01.mp3",
+      "kind": "loop",
+      "status": "ok",
+      "requestedGainDb": 0.6,
+      "appliedGainDb": 0.6,
+      "skipped": true
+    },
+    {
+      "source": "assets\\soundscape\\loops\\wind_open_field_soft_01.mp3",
+      "output": "assets\\soundscape-normalized\\loops\\wind_open_field_soft_01.mp3",
+      "kind": "loop",
+      "status": "ok",
+      "requestedGainDb": -6.9,
+      "appliedGainDb": -6.9,
+      "skipped": true
+    }
+  ]
+}

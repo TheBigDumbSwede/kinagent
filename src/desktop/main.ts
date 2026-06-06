@@ -297,6 +297,9 @@ function registerIpcHandlers(): void {
     ) => exportGroupChat(input)
   );
   ipcMain.handle("kin-analyze:run", async (_event, input: { kinId?: string } = {}) => analyzeKin(input.kinId ?? ""));
+  ipcMain.handle("soundscape:read-asset", async (_event, input: { path?: string } = {}) =>
+    readSoundscapeAsset(input.path ?? "")
+  );
 }
 
 async function getDesktopStatus() {
@@ -746,6 +749,21 @@ function cleanupChatExportTempFiles(): void {
 
 function sendVoicePlayback(chunk: unknown): void {
   sendRendererEvent("voice-audio", chunk);
+}
+
+function readSoundscapeAsset(relativePath: string): ArrayBuffer {
+  if (!/^[a-z0-9_]+\.mp3$/i.test(relativePath)) {
+    throw new Error("Invalid soundscape asset path.");
+  }
+
+  const baseDir = path.resolve(__dirname, "assets", "soundscape-normalized", "loops");
+  const assetPath = path.resolve(baseDir, relativePath);
+  if (!assetPath.startsWith(`${baseDir}${path.sep}`)) {
+    throw new Error("Invalid soundscape asset path.");
+  }
+
+  const bytes = fs.readFileSync(assetPath);
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
 }
 
 function requireRuntime(): BridgeRuntime {

@@ -29,6 +29,7 @@ const kinagentApi = {
   exportKinChat: (input: unknown) => ipcRenderer.invoke("chat-export:kin", input),
   exportGroupChat: (input: unknown) => ipcRenderer.invoke("chat-export:group", input),
   analyzeKin: (input: unknown) => ipcRenderer.invoke("kin-analyze:run", input),
+  readSoundscapeAsset: (input: unknown) => ipcRenderer.invoke("soundscape:read-asset", input),
   onEvent: (callback: RendererEventCallback) => {
     const listener = (_event: IpcRendererEvent, message: unknown) => callback(message);
     ipcRenderer.on("app:event", listener);

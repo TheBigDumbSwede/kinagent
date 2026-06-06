@@ -39,10 +39,20 @@ for (const entry of fs.readdirSync(rendererSource, { withFileTypes: true })) {
   fs.copyFileSync(path.join(rendererSource, entry.name), path.join(rendererTarget, entry.name));
 }
 
-for (const entry of fs.readdirSync(assetsSource, { withFileTypes: true })) {
-  if (!entry.isFile()) {
-    continue;
-  }
+copyDirectory(assetsSource, assetsTarget);
 
-  fs.copyFileSync(path.join(assetsSource, entry.name), path.join(assetsTarget, entry.name));
+function copyDirectory(source, target) {
+  fs.mkdirSync(target, { recursive: true });
+  for (const entry of fs.readdirSync(source, { withFileTypes: true })) {
+    const sourcePath = path.join(source, entry.name);
+    const targetPath = path.join(target, entry.name);
+    if (entry.isDirectory()) {
+      copyDirectory(sourcePath, targetPath);
+      continue;
+    }
+
+    if (entry.isFile()) {
+      fs.copyFileSync(sourcePath, targetPath);
+    }
+  }
 }
