@@ -1584,15 +1584,17 @@ async function saveSelectedGroupSoundscape(): Promise<void> {
     return;
   }
 
+  const preference: GroupSoundscapePreference = {
+    enabled: elements.groupSoundscapeEnabledInput.checked
+  };
+
   state.groupSoundscapeSaving = true;
   state.groupSoundscapeError = null;
   renderActivity();
   try {
     const saved = await window.kinagent.setGroupSoundscapePreference({
       groupId: state.selectedGroupId,
-      preference: {
-        enabled: elements.groupSoundscapeEnabledInput.checked
-      }
+      preference
     });
     state.selectedGroupSoundscape = saved;
     state.groupSubscriptions = state.groupSubscriptions.map((subscription) =>
