@@ -58,7 +58,12 @@ import type {
   ChatExportProgress,
   ChatExportRequest,
   ChatExportResult,
+  CampaignPackImportResult,
   DetailStat,
+  CampaignPackSummary,
+  GroupGamingPreference,
+  GroupGamingPreferenceResult,
+  GroupCampaignStateSummary,
   GroupSoundscapePreference,
   GroupSoundscapePreferenceResult,
   GroupSubscriptionSummary,
@@ -117,6 +122,7 @@ interface RendererState {
   selectedGroupCapture: CapturedGroupResult | null;
   selectedKinVoice: KinVoicePreferenceResult | null;
   selectedGroupSoundscape: GroupSoundscapePreferenceResult | null;
+  selectedGroupGaming: GroupGamingPreferenceResult | null;
   selectedKinAmbient: KinAmbientPreferenceResult | null;
   journalSuggestions: JournalSuggestionSummary[];
   localScenes: LocalSceneStateSummary[];
@@ -133,6 +139,11 @@ interface RendererState {
   groupSoundscapeSaving: boolean;
   groupSoundscapeForceSaving: boolean;
   groupSoundscapeError: string | null;
+  groupGamingLoading: boolean;
+  groupGamingSaving: boolean;
+  groupGamingApproving: boolean;
+  groupGamingImporting: boolean;
+  groupGamingError: string | null;
   voiceError: string | null;
   voiceSaving: boolean;
   soundscapeForceSaving: boolean;
@@ -212,6 +223,17 @@ interface RendererElements {
   groupSoundscapeLayerList: HTMLElement;
   groupSoundscapeSaveButton: HTMLButtonElement;
   groupSoundscapeForcePrewarmButton: HTMLButtonElement;
+  groupGamingPanel: HTMLElement;
+  groupGamingEnabledInput: HTMLInputElement;
+  groupGamingCampaignInput: HTMLSelectElement;
+  groupGamingMysteryInput: HTMLSelectElement;
+  groupGamingAutomationInput: HTMLSelectElement;
+  groupGamingStatusLine: HTMLElement;
+  groupGamingCampaignSummary: HTMLElement;
+  groupGamingStateList: HTMLElement;
+  groupGamingSaveButton: HTMLButtonElement;
+  groupGamingApproveButton: HTMLButtonElement;
+  groupGamingImportButton: HTMLButtonElement;
   kinHermesForm: HTMLFormElement;
   ambientContextEnabledInput: HTMLInputElement;
   chatDynamismCurrentValue: HTMLElement;
@@ -328,6 +350,13 @@ interface RendererApi {
     groupId: string;
     preference: GroupSoundscapePreference;
   }): Promise<GroupSoundscapePreferenceResult>;
+  getGroupGamingPreference(input: { groupId: string }): Promise<GroupGamingPreferenceResult>;
+  setGroupGamingPreference(input: {
+    groupId: string;
+    preference: GroupGamingPreference;
+  }): Promise<GroupGamingPreferenceResult>;
+  approveGroupGamingKeeperSuggestion(input: { groupId: string }): Promise<GroupGamingPreferenceResult>;
+  importCampaignPack(): Promise<CampaignPackImportResult>;
   getKinAmbientPreference(input: { kinId: string }): Promise<KinAmbientPreferenceResult>;
   setKinAmbientPreference(input: {
     kinId: string;
@@ -397,6 +426,7 @@ const state: RendererState = {
   selectedGroupCapture: null,
   selectedKinVoice: null,
   selectedGroupSoundscape: null,
+  selectedGroupGaming: null,
   selectedKinAmbient: null,
   journalSuggestions: [],
   localScenes: [],
@@ -413,6 +443,11 @@ const state: RendererState = {
   groupSoundscapeSaving: false,
   groupSoundscapeForceSaving: false,
   groupSoundscapeError: null,
+  groupGamingLoading: false,
+  groupGamingSaving: false,
+  groupGamingApproving: false,
+  groupGamingImporting: false,
+  groupGamingError: null,
   voiceError: null,
   voiceSaving: false,
   soundscapeForceSaving: false,
@@ -502,6 +537,17 @@ const elements: RendererElements = {
   groupSoundscapeLayerList: query<HTMLElement>("#groupSoundscapeLayerList"),
   groupSoundscapeSaveButton: query<HTMLButtonElement>("#groupSoundscapeSaveButton"),
   groupSoundscapeForcePrewarmButton: query<HTMLButtonElement>("#groupSoundscapeForcePrewarmButton"),
+  groupGamingPanel: query<HTMLElement>("#groupGamingPanel"),
+  groupGamingEnabledInput: query<HTMLInputElement>("#groupGamingEnabledInput"),
+  groupGamingCampaignInput: query<HTMLSelectElement>("#groupGamingCampaignInput"),
+  groupGamingMysteryInput: query<HTMLSelectElement>("#groupGamingMysteryInput"),
+  groupGamingAutomationInput: query<HTMLSelectElement>("#groupGamingAutomationInput"),
+  groupGamingStatusLine: query<HTMLElement>("#groupGamingStatusLine"),
+  groupGamingCampaignSummary: query<HTMLElement>("#groupGamingCampaignSummary"),
+  groupGamingStateList: query<HTMLElement>("#groupGamingStateList"),
+  groupGamingSaveButton: query<HTMLButtonElement>("#groupGamingSaveButton"),
+  groupGamingApproveButton: query<HTMLButtonElement>("#groupGamingApproveButton"),
+  groupGamingImportButton: query<HTMLButtonElement>("#groupGamingImportButton"),
   kinHermesForm: query<HTMLFormElement>("#kinHermesForm"),
   ambientContextEnabledInput: query<HTMLInputElement>("#ambientContextEnabledInput"),
   chatDynamismCurrentValue: query<HTMLElement>("#chatDynamismCurrentValue"),
@@ -789,6 +835,30 @@ elements.groupSoundscapeEnabledInput.addEventListener("change", () => {
 elements.groupSoundscapeSaveButton.addEventListener("click", () => {
   void saveSelectedGroupSoundscape();
 });
+elements.groupGamingCampaignInput.addEventListener("change", () => {
+  const selectedCampaign = selectedCampaignFor(
+    elements.groupGamingCampaignInput.value,
+    state.selectedGroupGaming?.campaigns || []
+  );
+  renderMysteryOptions(selectedCampaign, selectedCampaign?.mysteries[0]?.id);
+  renderCampaignSummary(selectedCampaign, selectedCampaign?.mysteries[0]);
+});
+elements.groupGamingMysteryInput.addEventListener("change", () => {
+  const selectedCampaign = selectedCampaignFor(
+    elements.groupGamingCampaignInput.value,
+    state.selectedGroupGaming?.campaigns || []
+  );
+  renderCampaignSummary(selectedCampaign, selectedMysteryFor(elements.groupGamingMysteryInput.value, selectedCampaign));
+});
+elements.groupGamingSaveButton.addEventListener("click", () => {
+  void saveSelectedGroupGaming();
+});
+elements.groupGamingApproveButton.addEventListener("click", () => {
+  void approveGroupGamingKeeperSuggestion();
+});
+elements.groupGamingImportButton.addEventListener("click", () => {
+  void importGroupCampaignPack();
+});
 elements.soundscapeForcePrewarmButton.addEventListener("click", () => {
   void forceSelectedSoundscapePrewarm("kin");
 });
@@ -869,6 +939,12 @@ window.kinagent.onEvent((message) => {
 
   if (message.channel === "previously-on-updated") {
     upsertPreviouslyOnBrief(message.payload as PreviouslyOnBriefSummary | undefined);
+    renderActivity();
+    return;
+  }
+
+  if (message.channel === "game-campaign-state-updated") {
+    upsertGroupCampaignState(message.payload as GroupCampaignStateSummary | undefined);
     renderActivity();
     return;
   }
@@ -1059,6 +1135,7 @@ async function selectKin(kinId: string): Promise<void> {
   state.selectedGroupCapture = null;
   state.selectedKinVoice = null;
   state.selectedGroupSoundscape = null;
+  state.selectedGroupGaming = null;
   state.selectedKinAmbient = null;
   state.journalError = null;
   state.voiceError = null;
@@ -1099,12 +1176,15 @@ function selectGroup(groupId: string): void {
   state.selectedGroupCapture = null;
   state.selectedKinVoice = null;
   state.selectedGroupSoundscape = null;
+  state.selectedGroupGaming = null;
   state.selectedKinAmbient = null;
   state.voiceError = null;
   state.groupSoundscapeError = null;
+  state.groupGamingError = null;
   state.ambientError = null;
   state.voiceLoading = false;
   state.groupSoundscapeLoading = false;
+  state.groupGamingLoading = false;
   state.ambientLoading = false;
   resetKinActionPlaceholders();
   renderKinSubscriptions(subscriptionListContext());
@@ -1112,6 +1192,7 @@ function selectGroup(groupId: string): void {
   renderMonitorState(monitorPanelContext());
   renderActivity();
   void loadGroupSoundscape(groupId);
+  void loadGroupGaming(groupId);
 
   void (async () => {
     try {
@@ -1159,6 +1240,21 @@ async function loadGroupSoundscape(groupId: string): Promise<void> {
   }
 }
 
+async function loadGroupGaming(groupId: string): Promise<void> {
+  state.groupGamingLoading = true;
+  state.groupGamingError = null;
+  renderActivity();
+
+  try {
+    state.selectedGroupGaming = await window.kinagent.getGroupGamingPreference({ groupId });
+  } catch (error) {
+    state.groupGamingError = errorMessage(error);
+  } finally {
+    state.groupGamingLoading = false;
+    renderActivity();
+  }
+}
+
 async function loadKinAmbient(kinId: string): Promise<void> {
   state.ambientLoading = true;
   state.ambientError = null;
@@ -1201,6 +1297,7 @@ function renderActivity(): void {
   const isLocalScene = activeMode === "local-scene";
   const isGroupLocalScene = activeMode === "group-local-scene";
   const isGroupAudio = activeMode === "group-audio";
+  const isGroupGaming = activeMode === "group-gaming";
   const isHermes = activeMode === "hermes";
   const isAnalyze = activeMode === "analyze";
   const isExport = activeMode === "export";
@@ -1241,6 +1338,13 @@ function renderActivity(): void {
     elements.activityTitle.textContent = `${selectedGroup.name || "Group"} · Audio`;
     elements.monitorLine.textContent = subtitleForDetailMode(activeMode);
     renderGroupAudioTab(selectedGroup);
+    return;
+  }
+
+  if (selectedGroup && isGroupGaming) {
+    elements.activityTitle.textContent = `${selectedGroup.name || "Group"} · Gaming`;
+    elements.monitorLine.textContent = subtitleForDetailMode(activeMode);
+    renderGroupGamingTab(selectedGroup);
     return;
   }
 
@@ -1409,6 +1513,7 @@ function renderGroupAudioTab(selectedGroup: GroupSummary): void {
   elements.appSettingsForm.hidden = true;
   elements.voiceForm.hidden = true;
   elements.groupAudioPanel.hidden = false;
+  elements.groupGamingPanel.hidden = true;
   elements.kinHermesForm.hidden = true;
   elements.kinAnalyzePanel.hidden = true;
   elements.chatExportPanel.hidden = true;
@@ -1434,6 +1539,171 @@ function renderGroupAudioTab(selectedGroup: GroupSummary): void {
   ]);
 }
 
+function renderGroupGamingTab(selectedGroup: GroupSummary): void {
+  if (state.groupGamingLoading) {
+    renderDetailEmpty("Loading Gaming settings.");
+    return;
+  }
+
+  if (state.groupGamingError) {
+    renderDetailEmpty(state.groupGamingError);
+    return;
+  }
+
+  const preference = state.selectedGroupGaming?.preference || {
+    enabled: false,
+    automationMode: "observe"
+  };
+  const campaigns = state.selectedGroupGaming?.campaigns || [];
+  const selectedCampaign = selectedCampaignFor(preference.campaignId, campaigns);
+  const selectedMystery = selectedMysteryFor(preference.mysteryId, selectedCampaign);
+
+  elements.kinDetailEmpty.hidden = true;
+  elements.kinDetailContent.hidden = false;
+  elements.kinDetailContent.classList.remove("app-settings-content", "scene-detail-content");
+  elements.kinDetailContent.classList.add("form-detail-content");
+  elements.fieldContent.hidden = true;
+  elements.journalSuggestionPanel.hidden = true;
+  elements.appSettingsForm.hidden = true;
+  elements.voiceForm.hidden = true;
+  elements.groupAudioPanel.hidden = true;
+  elements.groupGamingPanel.hidden = false;
+  elements.kinHermesForm.hidden = true;
+  elements.kinAnalyzePanel.hidden = true;
+  elements.chatExportPanel.hidden = true;
+  elements.timeline.hidden = true;
+
+  renderCampaignOptions(campaigns, selectedCampaign?.id);
+  renderMysteryOptions(selectedCampaign, selectedMystery?.id);
+  elements.groupGamingEnabledInput.checked = Boolean(preference.enabled);
+  elements.groupGamingAutomationInput.value = preference.automationMode || "observe";
+  elements.groupGamingSaveButton.disabled = state.groupGamingSaving || campaigns.length === 0;
+  elements.groupGamingApproveButton.disabled =
+    state.groupGamingApproving || !state.selectedGroupGaming?.activeState?.pendingDecision?.keeperMessage;
+  elements.groupGamingImportButton.disabled = state.groupGamingImporting;
+  elements.groupGamingStatusLine.textContent = preference.enabled
+    ? "Gaming is enabled for this Group. State changes stay local; Suggest waits for approval before sending Keeper messages."
+    : "Gaming is disabled for this Group.";
+  renderCampaignSummary(selectedCampaign, selectedMystery);
+  renderGroupGamingState();
+  renderDetailStats([
+    { label: "Group", value: selectedGroup.name || state.selectedGroupId || "Unknown" },
+    { label: "Gaming", value: preference.enabled ? "Enabled" : "Off" },
+    { label: "Automation", value: automationModeLabel(preference.automationMode) }
+  ]);
+}
+
+function renderCampaignOptions(campaigns: CampaignPackSummary[], selectedCampaignId: string | undefined): void {
+  elements.groupGamingCampaignInput.replaceChildren();
+  for (const campaign of campaigns) {
+    const option = document.createElement("option");
+    option.value = campaign.id;
+    option.textContent = campaign.title;
+    option.selected = campaign.id === selectedCampaignId;
+    elements.groupGamingCampaignInput.append(option);
+  }
+}
+
+function renderMysteryOptions(campaign: CampaignPackSummary | undefined, selectedMysteryId: string | undefined): void {
+  elements.groupGamingMysteryInput.replaceChildren();
+  for (const mystery of campaign?.mysteries ?? []) {
+    const option = document.createElement("option");
+    option.value = mystery.id;
+    option.textContent = mystery.title;
+    option.selected = mystery.id === selectedMysteryId;
+    elements.groupGamingMysteryInput.append(option);
+  }
+}
+
+function renderCampaignSummary(
+  campaign: CampaignPackSummary | undefined,
+  mystery: CampaignPackSummary["mysteries"][number] | undefined
+): void {
+  elements.groupGamingCampaignSummary.replaceChildren();
+  const rows = campaign
+    ? [
+        { label: "Campaign", value: campaign.title },
+        { label: "Mystery", value: mystery?.title || "First mystery" },
+        { label: "Ruleset", value: campaign.rulesetStyle },
+        { label: "Threats", value: String(mystery?.threatCount ?? campaign.threatCount) },
+        { label: "License", value: campaign.license },
+        { label: "Warnings", value: (campaign.contentWarnings || []).join(", ") || "None listed" }
+      ]
+    : [{ label: "Campaign", value: "No campaign packs found" }];
+
+  for (const row of rows) {
+    const wrapper = document.createElement("div");
+    const label = document.createElement("dt");
+    const value = document.createElement("dd");
+    label.textContent = row.label;
+    value.textContent = row.value;
+    wrapper.append(label, value);
+    elements.groupGamingCampaignSummary.append(wrapper);
+  }
+}
+
+function renderGroupGamingState(): void {
+  elements.groupGamingStateList.replaceChildren();
+  const campaignState = state.selectedGroupGaming?.activeState;
+  if (!campaignState) {
+    elements.groupGamingStateList.append(gamingStatePill("No active state"));
+    return;
+  }
+
+  elements.groupGamingStateList.append(
+    gamingStatePill(`State: ${campaignState.status}`),
+    gamingStatePill(`Countdown: ${campaignState.currentCountdownIndex}`),
+    gamingStatePill(`Clues: ${campaignState.discoveredClueIds.length}`),
+    gamingStatePill(`Threats: ${campaignState.revealedThreatIds?.length ?? 0}`),
+    gamingStatePill(`NPCs: ${campaignState.revealedNpcIds.length}`),
+    gamingStatePill(`Locations: ${campaignState.visitedLocationIds.length}`),
+    gamingStatePill(campaignState.pendingDecision ? "Keeper: Pending" : "Keeper: Clear")
+  );
+  if (campaignState.lastKeeperMessage?.sentAt) {
+    elements.groupGamingStateList.append(
+      gamingStatePill(`Last sent: ${formatSceneTimestamp(campaignState.lastKeeperMessage.sentAt)}`)
+    );
+  }
+  if (campaignState.pendingDecision?.keeperMessage) {
+    elements.groupGamingStateList.append(
+      gamingStatePill(`Keeper suggestion: ${campaignState.pendingDecision.keeperMessage}`)
+    );
+  }
+}
+
+function gamingStatePill(text: string): HTMLLIElement {
+  const item = document.createElement("li");
+  item.textContent = text;
+  return item;
+}
+
+function selectedCampaignFor(
+  campaignId: string | undefined,
+  campaigns: CampaignPackSummary[]
+): CampaignPackSummary | undefined {
+  return (campaignId ? campaigns.find((campaign) => campaign.id === campaignId) : campaigns[0]) ?? campaigns[0];
+}
+
+function selectedMysteryFor(
+  mysteryId: string | undefined,
+  campaign: CampaignPackSummary | undefined
+): CampaignPackSummary["mysteries"][number] | undefined {
+  return (
+    (mysteryId ? campaign?.mysteries.find((mystery) => mystery.id === mysteryId) : campaign?.mysteries[0]) ??
+    campaign?.mysteries[0]
+  );
+}
+
+function automationModeLabel(value: string | undefined): string {
+  if (value === "autonomous") {
+    return "Autonomous";
+  }
+  if (value === "suggest") {
+    return "Suggest";
+  }
+  return "Observe";
+}
+
 function renderLocalSceneTab(scope: "kin" | "group", selectedEntity: KinSummary | GroupSummary | null): void {
   const scene = currentLocalScene(scope);
   const brief = currentPreviouslyOnBrief(scope);
@@ -1454,6 +1724,7 @@ function renderLocalSceneContent(content: string, input: { stats: Array<{ label:
   elements.appSettingsForm.hidden = true;
   elements.voiceForm.hidden = true;
   elements.groupAudioPanel.hidden = true;
+  elements.groupGamingPanel.hidden = true;
   elements.kinHermesForm.hidden = true;
   elements.kinAnalyzePanel.hidden = true;
   elements.chatExportPanel.hidden = true;
@@ -1616,6 +1887,91 @@ async function saveSelectedGroupSoundscape(): Promise<void> {
   }
 }
 
+async function saveSelectedGroupGaming(): Promise<void> {
+  if (!state.selectedGroupId || state.groupGamingSaving) {
+    return;
+  }
+
+  const preference: GroupGamingPreference = {
+    enabled: elements.groupGamingEnabledInput.checked,
+    campaignId: elements.groupGamingCampaignInput.value,
+    mysteryId: elements.groupGamingMysteryInput.value,
+    automationMode: groupGamingAutomationMode()
+  };
+
+  state.groupGamingSaving = true;
+  state.groupGamingError = null;
+  renderActivity();
+  try {
+    state.selectedGroupGaming = await window.kinagent.setGroupGamingPreference({
+      groupId: state.selectedGroupId,
+      preference
+    });
+    elements.monitorLine.textContent = "Group Gaming settings saved.";
+  } catch (error) {
+    state.groupGamingError = errorMessage(error);
+  } finally {
+    state.groupGamingSaving = false;
+    renderActivity();
+  }
+}
+
+async function approveGroupGamingKeeperSuggestion(): Promise<void> {
+  if (!state.selectedGroupId || state.groupGamingApproving) {
+    return;
+  }
+
+  state.groupGamingApproving = true;
+  state.groupGamingError = null;
+  renderActivity();
+  try {
+    state.selectedGroupGaming = await window.kinagent.approveGroupGamingKeeperSuggestion({
+      groupId: state.selectedGroupId
+    });
+    elements.monitorLine.textContent = "Keeper suggestion sent.";
+  } catch (error) {
+    state.groupGamingError = errorMessage(error);
+  } finally {
+    state.groupGamingApproving = false;
+    renderActivity();
+  }
+}
+
+async function importGroupCampaignPack(): Promise<void> {
+  if (state.groupGamingImporting) {
+    return;
+  }
+
+  state.groupGamingImporting = true;
+  state.groupGamingError = null;
+  renderActivity();
+  try {
+    const result = await window.kinagent.importCampaignPack();
+    if (result.canceled) {
+      return;
+    }
+    if (state.selectedGroupId) {
+      state.selectedGroupGaming = await window.kinagent.getGroupGamingPreference({ groupId: state.selectedGroupId });
+    }
+    elements.monitorLine.textContent = result.campaign
+      ? `Imported campaign: ${result.campaign.title}.`
+      : "Campaign pack imported.";
+  } catch (error) {
+    state.groupGamingError = errorMessage(error);
+  } finally {
+    state.groupGamingImporting = false;
+    renderActivity();
+  }
+}
+
+function groupGamingAutomationMode(): GroupGamingPreference["automationMode"] {
+  const value = elements.groupGamingAutomationInput.value;
+  if (value === "suggest" || value === "autonomous") {
+    return value;
+  }
+  return "observe";
+}
+
 function renderDetailStats(stats: Array<{ label: string; value: string }>): void {
   elements.detailStats.replaceChildren();
   for (const stat of stats) {
@@ -1773,6 +2129,17 @@ function upsertPreviouslyOnBrief(brief: PreviouslyOnBriefSummary | null | undefi
   state.previouslyOnBriefs = [brief, ...state.previouslyOnBriefs.filter((current) => !sameSource(current))];
 }
 
+function upsertGroupCampaignState(campaignState: GroupCampaignStateSummary | null | undefined): void {
+  if (!campaignState?.groupId || campaignState.groupId !== state.selectedGroupId || !state.selectedGroupGaming) {
+    return;
+  }
+
+  state.selectedGroupGaming = {
+    ...state.selectedGroupGaming,
+    activeState: campaignState
+  };
+}
+
 function upsertPrewarmState(prewarm: PrewarmSourceSummary | null | undefined): void {
   if (!prewarm?.sourceKey) {
     return;
@@ -1845,6 +2212,7 @@ function isGroupTab(tab: string): boolean {
     "group-profile",
     "group-local-scene",
     "group-audio",
+    "group-gaming",
     "group-export"
   ].includes(tab);
 }
@@ -1888,10 +2256,13 @@ function clearMissingSelectedGroup(): void {
     state.selectedGroupId = null;
     state.selectedGroupCapture = null;
     state.selectedGroupSoundscape = null;
+    state.selectedGroupGaming = null;
     state.captureError = null;
     state.groupSoundscapeError = null;
+    state.groupGamingError = null;
     state.captureLoading = false;
     state.groupSoundscapeLoading = false;
+    state.groupGamingLoading = false;
     resetKinActionPlaceholders();
     state.activeTab = "monitor";
     state.selectedHistoryHash = null;

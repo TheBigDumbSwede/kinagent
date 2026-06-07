@@ -146,7 +146,7 @@ describe("SoundscapePrewarmCoordinator", () => {
     expect(hermes.prewarmSoundscape).not.toHaveBeenCalled();
   });
 
-  it("skips persisted ready soundscapes until live chat advances the source watermark", async () => {
+  it("skips persisted ready soundscapes until live chat advances the source watermark and refresh interval", async () => {
     const fetchMock = vi.fn(async (_input: string | URL, _init?: RequestInit) =>
       Response.json({
         messages: [
@@ -193,6 +193,22 @@ describe("SoundscapePrewarmCoordinator", () => {
       },
       "activity",
       { trigger: { documentId: "message-2", timestamp: "2026-06-01T12:00:01.000Z" } }
+    );
+    await instance.prewarmGroup(
+      group("group-1", "Evening Group"),
+      {
+        type: "kindroid.group_chat.changed",
+        groupId: "group-1",
+        aiId: "kin-1",
+        documentId: "message-3",
+        timestamp: "2026-06-01T12:15:00.000Z",
+        text: "Later live message.",
+        sender: "ai",
+        role: "ai",
+        source: "firestore"
+      },
+      "activity",
+      { trigger: { documentId: "message-3", timestamp: "2026-06-01T12:15:00.000Z" } }
     );
 
     expect(fetchMock).toHaveBeenCalledTimes(1);

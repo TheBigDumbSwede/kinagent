@@ -26,6 +26,8 @@ Working in this first milestone:
 - Hermes chat adapter for the local Cadence Hermes gateway, including narrow Kindroid `current_scene` updates and
   local-only scene metadata.
 - Experimental desktop-only procedural soundscape controls using local Web Audio synthesis.
+- Opt-in group Gaming foundations for local original mystery campaign packs, initialized campaign state, contained Hermes
+  game decisions, and mode-gated Keeper message sends.
 
 Not complete yet:
 
@@ -81,6 +83,18 @@ Runtime
   -> ./data/local-scene-state.json
   -> ./data/prewarm-state.json freshness watermark
   -> desktop Kin or Group Scene tab
+
+Group Gaming:
+Desktop
+  -> Group Gaming tab
+  -> local campaign pack loader
+  -> ./data/game-groups.json
+  -> ./data/game-campaign-state.json
+Runtime
+  -> group chat event when Gaming is enabled
+  -> Hermes game decision
+  -> validated local campaign state changes
+  -> optional group send only in autonomous mode
 
 Previously On briefs:
 Runtime
@@ -314,6 +328,23 @@ The same Scene tab may show a local `Previously On` continuity brief above the s
 stored separately in `previously-on-state.json`; it is short user-facing continuity context, not Kindroid memory, not
 `current_scene`, and not automatically injected into chat. Its prewarm path uses the documented `/v1/get-chat-messages`
 API, the shared prewarm freshness watermark, and a separate Hermes action contract from local scene state.
+
+The Group `Gaming` tab is an opt-in foundation for original mystery campaign packs. It can select a campaign, a
+mystery, and an automation mode, then initializes local campaign state under `./data/game-campaign-state.json`. Group
+Gaming preferences are stored separately under `./data/game-groups.json`. Kinagent ships a tiny original sample campaign
+pack for development; user-authored local packs can be placed under `./data/campaigns/<pack>/` with a `campaign.json`
+manifest plus optional `mysteries/`, `threats/`, `npcs/`, `locations/`, `hooks/`, and `hermes/` folders. Packs provide
+static content and prompt hints only; they do not execute code. Mystery packs can model clues, structured countdown
+stages, and threat records, but the game runtime only accepts state changes that reference known pack ids.
+
+When Gaming is enabled for a monitored group, Kinagent can send group chat events to Hermes through a contained game
+runtime. Hermes returns a game decision with a Keeper message and validated local state changes. `observe` applies only
+local state changes, `suggest` stores pending Keeper decisions until reviewed from the Gaming tab, and `autonomous` may
+send the Keeper message through the existing group message path. Suggested Keeper messages can be approved with `Send
+Keeper`; approved and autonomous messages both use the same group send path and local scene sync. Autonomous Keeper
+speech is paced: Kinagent can still apply state changes from readable Kin turns, but visible Keeper messages are only
+sent after user/player turns and after a short cooldown from the prior Keeper message. The game runtime has its own
+decision schema and does not extend the generic Hermes action registry.
 
 Enable desktop-only voice sidecar playback for new AI messages:
 

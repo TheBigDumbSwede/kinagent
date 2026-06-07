@@ -43,6 +43,13 @@ export interface KinagentApi {
     groupId: string;
     preference: GroupSoundscapePreference;
   }): Promise<GroupSoundscapePreferenceResult>;
+  getGroupGamingPreference(input: { groupId: string }): Promise<GroupGamingPreferenceResult>;
+  setGroupGamingPreference(input: {
+    groupId: string;
+    preference: GroupGamingPreference;
+  }): Promise<GroupGamingPreferenceResult>;
+  approveGroupGamingKeeperSuggestion(input: { groupId: string }): Promise<GroupGamingPreferenceResult>;
+  importCampaignPack(): Promise<CampaignPackImportResult>;
   forceLocalScenePrewarm(input: { scope: "kin" | "group"; id: string }): Promise<{ ok: boolean }>;
   forceSoundscapePrewarm(input: { scope: "kin" | "group"; id: string }): Promise<{ ok: boolean }>;
   forcePreviouslyOnPrewarm(input: { scope: "kin" | "group"; id: string }): Promise<{ ok: boolean }>;
@@ -109,6 +116,82 @@ export interface GroupSubscriptionSummary {
   enabled?: boolean;
   running?: boolean;
   soundscape?: GroupSoundscapePreference;
+}
+
+export type GamingAutomationMode = "observe" | "suggest" | "autonomous";
+
+export interface GroupGamingPreference {
+  enabled: boolean;
+  campaignId?: string;
+  mysteryId?: string;
+  automationMode: GamingAutomationMode;
+}
+
+export interface CampaignPackSummary {
+  id: string;
+  title: string;
+  genre?: string;
+  tone?: string[];
+  rulesetStyle: string;
+  recommendedGroupSize?: string;
+  contentWarnings?: string[];
+  license: string;
+  attribution?: string;
+  source: "builtin" | "local";
+  mysteries: Array<{
+    id: string;
+    title: string;
+    hook: string;
+    countdownStages: number;
+    clueCount: number;
+    threatCount: number;
+  }>;
+  threatCount: number;
+}
+
+export interface GroupCampaignStateSummary {
+  groupId: string;
+  campaignId: string;
+  mysteryId: string;
+  status: "initialized" | "active" | "paused" | "completed";
+  initializedAt: string;
+  updatedAt: string;
+  currentCountdownIndex: number;
+  discoveredClueIds: string[];
+  revealedThreatIds: string[];
+  revealedNpcIds: string[];
+  visitedLocationIds: string[];
+  notes: string[];
+  pendingDecision?: {
+    sourceDocumentId: string;
+    createdAt: string;
+    automationMode: GamingAutomationMode;
+    keeperMessage?: string;
+    pressureCategory?: string;
+    confidence?: "low" | "medium" | "high";
+    reason?: string;
+  };
+  lastKeeperMessage?: {
+    text: string;
+    sentAt: string;
+    requestId: string;
+    idempotencyKey: string;
+    sourceDocumentId: string;
+  };
+}
+
+export interface GroupGamingPreferenceResult {
+  ok?: boolean;
+  preference?: GroupGamingPreference;
+  campaigns?: CampaignPackSummary[];
+  activeState?: GroupCampaignStateSummary | null;
+}
+
+export interface CampaignPackImportResult {
+  ok?: boolean;
+  canceled?: boolean;
+  campaign?: CampaignPackSummary;
+  installedPath?: string;
 }
 
 export interface JournalSuggestionSummary {

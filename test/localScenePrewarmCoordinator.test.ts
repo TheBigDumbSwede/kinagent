@@ -130,7 +130,7 @@ describe("LocalScenePrewarmCoordinator", () => {
     expect(hermes.prewarmLocalScene).not.toHaveBeenCalled();
   });
 
-  it("only fetches again when a live trigger moves past the persisted watermark", async () => {
+  it("only fetches again when a live trigger moves past the persisted watermark and refresh interval", async () => {
     const fetchMock = vi.fn(async (_input: string | URL, _init?: RequestInit) =>
       Response.json({
         messages: [
@@ -165,6 +165,9 @@ describe("LocalScenePrewarmCoordinator", () => {
     });
     await instance.prewarmKin(kin("kin-1", "Alexis"), "activity", {
       trigger: { documentId: "message-2", timestamp: "2026-06-01T12:00:01.000Z" }
+    });
+    await instance.prewarmKin(kin("kin-1", "Alexis"), "activity", {
+      trigger: { documentId: "message-3", timestamp: "2026-06-01T12:15:00.000Z" }
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);

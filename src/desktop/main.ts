@@ -290,6 +290,18 @@ function registerIpcHandlers(): void {
     async (_event, input: { groupId?: string; preference?: Partial<GroupSoundscapePreference> } = {}) =>
       setGroupSoundscapePreference(input.groupId ?? "", input.preference ?? {})
   );
+  ipcMain.handle("gaming:get-group-preference", async (_event, input: { groupId?: string } = {}) =>
+    getGroupGamingPreference(input.groupId ?? "")
+  );
+  ipcMain.handle(
+    "gaming:set-group-preference",
+    async (_event, input: { groupId?: string; preference?: Partial<GroupGamingPreference> } = {}) =>
+      setGroupGamingPreference(input.groupId ?? "", input.preference ?? {})
+  );
+  ipcMain.handle("gaming:approve-keeper-suggestion", async (_event, input: { groupId?: string } = {}) =>
+    approveGroupGamingKeeperSuggestion(input.groupId ?? "")
+  );
+  ipcMain.handle("gaming:import-campaign-pack", async () => importCampaignPackFromDialog());
   ipcMain.handle("prewarm:local-scene", async (_event, input: { scope?: "kin" | "group"; id?: string } = {}) =>
     forceLocalScenePrewarm(input.scope, input.id ?? "")
   );
@@ -528,6 +540,13 @@ interface GroupSoundscapePreference {
   enabled: boolean;
 }
 
+interface GroupGamingPreference {
+  enabled?: boolean;
+  campaignId?: string;
+  mysteryId?: string;
+  automationMode?: "observe" | "suggest" | "autonomous";
+}
+
 function setKinVoicePreference(kinId: string, preference: Partial<KinAudioPreference>) {
   if (!kinId) {
     throw new Error("Select a Kin before editing audio.");
@@ -580,6 +599,78 @@ function setGroupSoundscapePreference(groupId: string, preference: Partial<Group
     ok: true,
     soundscape: savedSoundscape
   };
+}
+
+function getGroupGamingPreference(groupId: string) {
+  if (!groupId) {
+    throw new Error("Select a Group before editing Gaming.");
+  }
+
+  return requireRuntime().getGroupGamingPreference(groupId);
+}
+
+function setGroupGamingPreference(groupId: string, preference: Partial<GroupGamingPreference>) {
+  if (!groupId) {
+    throw new Error("Select a Group before editing Gaming.");
+  }
+
+  const saved = requireRuntime().setGroupGamingPreference(groupId, preference);
+  logger.info("Saved Group Gaming preference.", {
+    groupId,
+    enabled: saved.preference.enabled,
+    campaignId: saved.preference.campaignId,
+    mysteryId: saved.preference.mysteryId,
+    automationMode: saved.preference.automationMode
+  });
+  return saved;
+}
+
+async function approveGroupGamingKeeperSuggestion(groupId: string) {
+  if (!groupId) {
+    throw new Error("Select a Group before sending a Keeper suggestion.");
+  }
+
+  const result = await requireRuntime().approveGroupGamingKeeperSuggestion(groupId);
+  logger.info("Approved Group Gaming Keeper suggestion.", {
+    groupId,
+    campaignId: result.preference.campaignId,
+    mysteryId: result.preference.mysteryId
+  });
+  return result;
+}
+
+async function importCampaignPackFromDialog() {
+  const result = mainWindow
+    ? await dialog.showOpenDialog(mainWindow, {
+        title: "Import campaign pack",
+        properties: ["openFile"],
+        filters: [
+          { name: "Campaign packs", extensions: ["zip", "json"] },
+          { name: "Zip archives", extensions: ["zip"] },
+          { name: "JSON campaign packs", extensions: ["json"] }
+        ]
+      })
+    : await dialog.showOpenDialog({
+        title: "Import campaign pack",
+        properties: ["openFile"],
+        filters: [
+          { name: "Campaign packs", extensions: ["zip", "json"] },
+          { name: "Zip archives", extensions: ["zip"] },
+          { name: "JSON campaign packs", extensions: ["json"] }
+        ]
+      });
+
+  if (result.canceled || !result.filePaths[0]) {
+    return { ok: false, canceled: true };
+  }
+
+  const imported = requireRuntime().importCampaignPack(result.filePaths[0]);
+  logger.info("Imported Group Gaming campaign pack.", {
+    campaignId: imported.campaign.id,
+    title: imported.campaign.title,
+    installedPath: imported.installedPath
+  });
+  return imported;
 }
 
 async function forceLocalScenePrewarm(scope: "kin" | "group" | undefined, id: string) {

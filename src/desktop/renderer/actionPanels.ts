@@ -17,6 +17,7 @@ export interface ActionPanelElements {
   appSettingsForm: HTMLElement;
   voiceForm: HTMLElement;
   groupAudioPanel: HTMLElement;
+  groupGamingPanel: HTMLElement;
   kinHermesForm: HTMLElement;
   kinAnalyzePanel: HTMLElement;
   kinAnalyzeButton: HTMLButtonElement;
@@ -75,6 +76,7 @@ function showActionPanel(elements: ActionPanelElements, panel: "analyze" | "expo
   elements.appSettingsForm.hidden = true;
   elements.voiceForm.hidden = true;
   elements.groupAudioPanel.hidden = true;
+  elements.groupGamingPanel.hidden = true;
   elements.kinHermesForm.hidden = true;
   elements.kinAnalyzePanel.hidden = panel !== "analyze";
   elements.chatExportPanel.hidden = panel !== "export";

@@ -15,6 +15,7 @@ export interface AppSettingsElements {
   journalSuggestionPanel: HTMLElement;
   voiceForm: HTMLElement;
   groupAudioPanel: HTMLElement;
+  groupGamingPanel: HTMLElement;
   kinHermesForm: HTMLElement;
   kinAnalyzePanel: HTMLElement;
   chatExportPanel: HTMLElement;
@@ -84,6 +85,7 @@ export function renderAppSettingsTab(context: AppSettingsContext): void {
   elements.journalSuggestionPanel.hidden = true;
   elements.voiceForm.hidden = true;
   elements.groupAudioPanel.hidden = true;
+  elements.groupGamingPanel.hidden = true;
   elements.kinHermesForm.hidden = true;
   elements.kinAnalyzePanel.hidden = true;
   elements.chatExportPanel.hidden = true;

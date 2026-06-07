@@ -64,7 +64,7 @@ export class PrewarmStateStore {
   shouldPrewarm(
     kind: PrewarmKind,
     source: PrewarmSourceKey,
-    input: { trigger?: PrewarmTrigger; force?: boolean }
+    input: { trigger?: PrewarmTrigger; force?: boolean; minRefreshIntervalMs?: number }
   ): boolean {
     if (input.force) {
       return true;
@@ -83,7 +83,10 @@ export class PrewarmStateStore {
       return true;
     }
 
-    return isTriggerNewer(input.trigger, state, kind);
+    return (
+      isTriggerNewer(input.trigger, state, kind) &&
+      refreshIntervalElapsed(kind, state, input.trigger, input.minRefreshIntervalMs ?? defaultPrewarmRefreshIntervalMs)
+    );
   }
 
   markAttempt(kind: PrewarmKind, source: PrewarmSourceKey, trigger?: PrewarmTrigger): PrewarmSourceState {
@@ -278,6 +281,34 @@ function isTriggerNewer(trigger: PrewarmTrigger, state: PrewarmSourceState, kind
   return Boolean(trigger.documentId && trigger.documentId !== stateMessageId);
 }
 
+function refreshIntervalElapsed(
+  kind: PrewarmKind,
+  state: PrewarmSourceState,
+  trigger: PrewarmTrigger,
+  minRefreshIntervalMs: number
+): boolean {
+  if (minRefreshIntervalMs <= 0) {
+    return true;
+  }
+
+  const triggerMs = trigger.timestamp ? Date.parse(trigger.timestamp) : NaN;
+  const previousMs = latestPrewarmActivityMs(kind, state);
+  return Number.isFinite(triggerMs) && Number.isFinite(previousMs) && triggerMs - previousMs >= minRefreshIntervalMs;
+}
+
+function latestPrewarmActivityMs(kind: PrewarmKind, state: PrewarmSourceState): number {
+  const values = [prewarmTimestampForKind(kind, state), lastPrewarmAtForKind(kind, state)].flatMap((value) => {
+    const parsed = value ? Date.parse(value) : NaN;
+    return Number.isFinite(parsed) ? [parsed] : [];
+  });
+  if (values.length > 0) {
+    return Math.max(...values);
+  }
+
+  const updatedAtMs = Date.parse(state.updatedAt);
+  return Number.isFinite(updatedAtMs) ? updatedAtMs : NaN;
+}
+
 function publicApiTimestampFromIso(value: string | null | undefined): number | undefined {
   if (!value) {
     return undefined;
@@ -287,6 +318,7 @@ function publicApiTimestampFromIso(value: string | null | undefined): number | u
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
+const defaultPrewarmRefreshIntervalMs = 15 * 60 * 1000;
 const allPrewarmKinds: PrewarmKind[] = ["localScene", "soundscape", "previouslyOn"];
 
 function prewarmMessageIdForKind(kind: PrewarmKind, state: PrewarmSourceState): string | undefined {
@@ -307,6 +339,16 @@ function prewarmTimestampForKind(kind: PrewarmKind, state: PrewarmSourceState): 
     return state.soundscapePrewarmTimestamp ?? (state.soundscapeReady ? state.lastPrewarmTimestamp : undefined);
   }
   return state.previouslyOnPrewarmTimestamp ?? (state.previouslyOnReady ? state.lastPrewarmTimestamp : undefined);
+}
+
+function lastPrewarmAtForKind(kind: PrewarmKind, state: PrewarmSourceState): string | undefined {
+  if (kind === "localScene") {
+    return state.lastLocalScenePrewarmAt;
+  }
+  if (kind === "soundscape") {
+    return state.lastSoundscapePrewarmAt;
+  }
+  return state.lastPreviouslyOnPrewarmAt;
 }
 
 function chatHistoryCursorForKind(kind: PrewarmKind, state: PrewarmSourceState): number | undefined {

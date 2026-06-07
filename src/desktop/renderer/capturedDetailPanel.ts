@@ -20,6 +20,7 @@ export interface CapturedDetailElements {
   appSettingsForm: HTMLElement;
   voiceForm: HTMLElement;
   groupAudioPanel: HTMLElement;
+  groupGamingPanel: HTMLElement;
   kinHermesForm: HTMLElement;
   kinAnalyzePanel: HTMLElement;
   chatExportPanel: HTMLElement;
@@ -49,6 +50,7 @@ export function renderDetailEmpty(context: Pick<CapturedDetailContext, "elements
   elements.appSettingsForm.hidden = true;
   elements.voiceForm.hidden = true;
   elements.groupAudioPanel.hidden = true;
+  elements.groupGamingPanel.hidden = true;
   elements.kinHermesForm.hidden = true;
   elements.kinAnalyzePanel.hidden = true;
   elements.chatExportPanel.hidden = true;
@@ -64,6 +66,7 @@ export function renderDetailContent(context: CapturedDetailContext, detail: Capt
   elements.appSettingsForm.hidden = true;
   elements.voiceForm.hidden = true;
   elements.groupAudioPanel.hidden = true;
+  elements.groupGamingPanel.hidden = true;
   elements.kinHermesForm.hidden = true;
   elements.kinAnalyzePanel.hidden = true;
   elements.chatExportPanel.hidden = true;

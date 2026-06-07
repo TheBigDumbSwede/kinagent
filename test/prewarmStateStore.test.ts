@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { PrewarmStateStore } from "../src/runtime/prewarmStateStore.js";
 
 describe("PrewarmStateStore", () => {
-  it("skips ready sources until the trigger watermark advances", () => {
+  it("skips ready sources until the trigger watermark advances past the refresh interval", () => {
     const store = testStore();
     const source = { scope: "kin" as const, id: "kin-1" };
 
@@ -22,6 +22,11 @@ describe("PrewarmStateStore", () => {
     expect(
       store.shouldPrewarm("localScene", source, {
         trigger: { documentId: "message-2", timestamp: "2026-06-01T12:00:01.000Z" }
+      })
+    ).toBe(false);
+    expect(
+      store.shouldPrewarm("localScene", source, {
+        trigger: { documentId: "message-3", timestamp: "2026-06-01T12:15:00.000Z" }
       })
     ).toBe(true);
   });

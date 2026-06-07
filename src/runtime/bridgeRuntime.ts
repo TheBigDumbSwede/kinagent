@@ -15,6 +15,16 @@ import { createHermesAdapter } from "../hermes/hermesAdapter.js";
 import type { ScopedSoundscapeUpdate } from "../hermes/soundscapeActionHandler.js";
 import type { HermesAdapter } from "../hermes/types.js";
 import {
+  loadCampaignPacks,
+  summarizeCampaignPack,
+  type CampaignPackSummary,
+  type LoadedCampaignPack
+} from "../game/campaignPack.js";
+import { importCampaignPack, type CampaignPackImportResult } from "../game/campaignPackImport.js";
+import { CampaignStateStore, type GroupCampaignState } from "../game/campaignStateStore.js";
+import { GameRuntime } from "../game/gameRuntime.js";
+import { GroupGamingPreferenceStore, type GroupGamingPreference } from "../game/groupGamingPreferences.js";
+import {
   defaultChatDynamismBounds,
   noticeableChatDynamismDelta,
   practicalChatDynamismBounds,
@@ -71,6 +81,7 @@ export type BridgeRuntimeEvent =
   | { channel: "local-scene-updated"; payload: LocalSceneState }
   | { channel: "previously-on-updated"; payload: PreviouslyOnBrief }
   | { channel: "soundscape-updated"; payload: ScopedSoundscapeUpdate }
+  | { channel: "game-campaign-state-updated"; payload: GroupCampaignState }
   | { channel: "prewarm-state-updated"; payload: PrewarmSourceState }
   | { channel: "identity-capture-completed"; payload: CaptureKindroidStateResult }
   | { channel: "identity-capture-failed"; payload: { error: string } };
@@ -91,6 +102,9 @@ export class BridgeRuntime {
   readonly previouslyOn: PreviouslyOnStore;
   readonly soundscapes: SoundscapeStateStore;
   readonly chatDynamismSuggestions: ChatDynamismSuggestionStore;
+  readonly campaignStates: CampaignStateStore;
+  readonly groupGamingPreferences: GroupGamingPreferenceStore;
+  readonly game: GameRuntime;
   private readonly prewarmState: PrewarmStateStore;
   private readonly sessionKeepAlive: KindroidSessionKeepAlive;
   private readonly kinSubscriptionSupervisor: KinSubscriptionSupervisor;
@@ -110,15 +124,65 @@ export class BridgeRuntime {
     this.localScenes = LocalSceneStateStore.fromConfig(options.config);
     this.previouslyOn = PreviouslyOnStore.fromConfig(options.config);
     this.soundscapes = SoundscapeStateStore.fromConfig(options.config);
+    this.campaignStates = CampaignStateStore.fromConfig(options.config);
+    this.groupGamingPreferences = GroupGamingPreferenceStore.fromConfig(options.config);
+    this.game = new GameRuntime({
+      config: options.config,
+      logger: options.logger,
+      preferences: this.groupGamingPreferences,
+      campaignStates: this.campaignStates,
+      dedupeStore,
+      onStateUpdated: (state) => {
+        this.emit({ channel: "game-campaign-state-updated", payload: state });
+      },
+      onPendingDecision: (state) => {
+        this.emit({
+          channel: "monitor-line",
+          payload: {
+            type: "kinagent.game.decision_pending",
+            id: `game-pending-${state.groupId}-${state.pendingDecision?.sourceDocumentId ?? state.updatedAt}`,
+            groupId: state.groupId,
+            timestamp: state.pendingDecision?.createdAt ?? state.updatedAt,
+            sender: "hermes",
+            role: "keeper",
+            text: state.pendingDecision?.keeperMessage ?? "Game decision pending review.",
+            source: "game"
+          }
+        });
+      },
+      onKeeperMessageSent: (event) => {
+        this.emit({
+          channel: "monitor-line",
+          payload: {
+            type: "kinagent.game.keeper_sent",
+            id: `game-sent-${event.requestId}`,
+            groupId: event.groupId,
+            groupName: event.groupName,
+            timestamp: new Date().toISOString(),
+            sender: "hermes",
+            role: "keeper",
+            text: event.text,
+            source: "game",
+            ok: event.result.ok,
+            status: event.result.status,
+            requestId: event.requestId,
+            idempotencyKey: event.idempotencyKey
+          }
+        });
+      }
+    });
     this.prewarmState = PrewarmStateStore.fromConfig(options.config);
     this.prewarmCoordinators = new PrewarmCoordinatorRegistry({
       logger: options.logger,
       prewarmState: this.prewarmState,
       resolveKin: (kinId) =>
-        this.kinSubscriptionSupervisor.statuses().find((subscription) => subscription.kin.aiId === kinId)?.kin ?? null,
+        this.kinSubscriptionSupervisor
+          .statuses()
+          .find((subscription) => subscription.enabled && subscription.kin.aiId === kinId)?.kin ?? null,
       resolveGroup: (groupId) =>
-        this.groupSubscriptionSupervisor.statuses().find((subscription) => subscription.group.groupId === groupId)
-          ?.group ?? null
+        this.groupSubscriptionSupervisor
+          .statuses()
+          .find((subscription) => subscription.enabled && subscription.group.groupId === groupId)?.group ?? null
     });
     this.chatDynamismSuggestions = ChatDynamismSuggestionStore.fromConfig(options.config);
     this.hermes = createHermesAdapter(options.config, options.logger, {
@@ -422,6 +486,36 @@ export class BridgeRuntime {
     return this.groupSubscriptionSupervisor.groupSoundscapePreference(groupId);
   }
 
+  getGroupGamingPreference(groupId: string): GroupGamingPreferenceResult {
+    if (!groupId) {
+      throw new Error("Select a Group before editing Gaming.");
+    }
+
+    return this.groupGamingPreferenceResult(groupId, this.groupGamingPreferences.get(groupId));
+  }
+
+  setGroupGamingPreference(groupId: string, preference: Partial<GroupGamingPreference>): GroupGamingPreferenceResult {
+    if (!groupId) {
+      throw new Error("Select a Group before editing Gaming.");
+    }
+
+    const saved = this.groupGamingPreferences.set(groupId, preference);
+    return this.groupGamingPreferenceResult(groupId, saved);
+  }
+
+  importCampaignPack(sourcePath: string): CampaignPackImportResult {
+    return importCampaignPack(this.options.config, sourcePath);
+  }
+
+  async approveGroupGamingKeeperSuggestion(groupId: string): Promise<GroupGamingPreferenceResult> {
+    if (!groupId) {
+      throw new Error("Select a Group before sending a Keeper suggestion.");
+    }
+
+    await this.game.approvePendingKeeperMessage(this.resolveGroup(groupId));
+    return this.groupGamingPreferenceResult(groupId, this.groupGamingPreferences.get(groupId));
+  }
+
   pendingJournalSuggestions(): JournalSuggestion[] {
     return this.journalSuggestions.listReviewable();
   }
@@ -456,6 +550,26 @@ export class BridgeRuntime {
 
     await this.prewarmCoordinators.forceGroup(kind, this.resolveGroup(input.id));
     return { ok: true };
+  }
+
+  private groupGamingPreferenceResult(groupId: string, preference: GroupGamingPreference): GroupGamingPreferenceResult {
+    const campaigns = loadCampaignPacks(this.options.config);
+    const activeCampaign = resolveCampaign(campaigns, preference.campaignId);
+    const activeState =
+      preference.enabled && activeCampaign
+        ? this.campaignStates.ensureInitialized({
+            groupId,
+            campaign: activeCampaign,
+            mysteryId: preference.mysteryId
+          })
+        : this.campaignStates.getForGroup(groupId);
+
+    return {
+      ok: true,
+      preference,
+      campaigns: campaigns.map(summarizeCampaignPack),
+      activeState
+    };
   }
 
   dismissJournalSuggestion(id: string): JournalSuggestion {
@@ -739,7 +853,25 @@ export class BridgeRuntime {
           textDecrypted: message.textDecrypted,
           textDecryptionError: message.textDecryptionError
         });
-        await this.hermes.handleChatChanged(notification);
+        let keeperMessageSent = false;
+        try {
+          const gameResult = await this.game.handleGroupChatChanged(group, notification);
+          keeperMessageSent = gameResult.keeperMessageSent;
+        } catch (error) {
+          this.options.logger.warn("Group Gaming event handling failed.", {
+            groupId: group.groupId,
+            documentId: message.id,
+            error: error instanceof Error ? error.message : String(error)
+          });
+        }
+        if (keeperMessageSent) {
+          this.options.logger.info("Skipping generic Hermes group event handling after autonomous Keeper message.", {
+            groupId: group.groupId,
+            documentId: message.id
+          });
+        } else {
+          await this.hermes.handleChatChanged(notification);
+        }
       },
       onDocumentDeleted: async (document) => {
         this.handleGroupMessageDeleted(group, document.id, document.readTime ?? null);
@@ -1093,9 +1225,24 @@ export interface GroupSoundscapePreference {
   enabled: boolean;
 }
 
+export interface GroupGamingPreferenceResult {
+  ok: true;
+  preference: GroupGamingPreference;
+  campaigns: CampaignPackSummary[];
+  activeState: GroupCampaignState | null;
+}
+
 export type BridgeSessionSummary =
   | (ReturnType<typeof summarizeSessionAuth> & { available: true })
   | { available: false; error: string };
+
+function resolveCampaign(campaigns: LoadedCampaignPack[], campaignId: string | undefined): LoadedCampaignPack | null {
+  if (campaignId) {
+    return campaigns.find((campaign) => campaign.id === campaignId) ?? null;
+  }
+
+  return campaigns[0] ?? null;
+}
 
 function fieldString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";

@@ -40,6 +40,7 @@ export interface VoiceHermesElements {
   appSettingsForm: HTMLElement;
   voiceForm: HTMLElement;
   groupAudioPanel: HTMLElement;
+  groupGamingPanel: HTMLElement;
   kinHermesForm: HTMLElement;
   kinAnalyzePanel: HTMLElement;
   chatExportPanel: HTMLElement;
@@ -278,6 +279,7 @@ function showFormPanel(elements: VoiceHermesElements, panel: "voice" | "hermes")
   elements.appSettingsForm.hidden = true;
   elements.voiceForm.hidden = panel !== "voice";
   elements.groupAudioPanel.hidden = true;
+  elements.groupGamingPanel.hidden = true;
   elements.kinHermesForm.hidden = panel !== "hermes";
   elements.kinAnalyzePanel.hidden = true;
   elements.chatExportPanel.hidden = true;

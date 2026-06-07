@@ -124,6 +124,9 @@
           <button class="detail-tab" type="button" data-mode="group-audio" role="tab" aria-selected="false">
             Audio
           </button>
+          <button class="detail-tab" type="button" data-mode="group-gaming" role="tab" aria-selected="false">
+            Gaming
+          </button>
           <button class="detail-tab" type="button" data-mode="group-export" role="tab" aria-selected="false">
             Export
           </button>
@@ -408,6 +411,41 @@
                       <button id="groupSoundscapeForcePrewarmButton" class="secondary" type="button">
                         Force Prewarm
                       </button>
+                    </div>
+                  </section>
+                </div>
+                <div id="groupGamingPanel" class="kin-action-panel" hidden>
+                  <section class="settings-section">
+                    <h2>Gaming</h2>
+                    <label class="checkbox-label">
+                      <input id="groupGamingEnabledInput" type="checkbox" />
+                      <span>Enable Gaming for this Group</span>
+                    </label>
+                    <div class="settings-grid two">
+                      <label>
+                        Campaign
+                        <select id="groupGamingCampaignInput"></select>
+                      </label>
+                      <label>
+                        Mystery
+                        <select id="groupGamingMysteryInput"></select>
+                      </label>
+                      <label>
+                        Automation
+                        <select id="groupGamingAutomationInput">
+                          <option value="observe">Observe</option>
+                          <option value="suggest">Suggest</option>
+                          <option value="autonomous">Autonomous</option>
+                        </select>
+                      </label>
+                    </div>
+                    <p id="groupGamingStatusLine" class="panel-note"></p>
+                    <dl id="groupGamingCampaignSummary" class="status-list compact-status"></dl>
+                    <ul id="groupGamingStateList" class="soundscape-layer-list"></ul>
+                    <div class="button-row form-action-row">
+                      <button id="groupGamingSaveButton" type="button">Save Gaming</button>
+                      <button id="groupGamingApproveButton" class="secondary" type="button">Send Keeper</button>
+                      <button id="groupGamingImportButton" class="secondary" type="button">Import Campaign</button>
                     </div>
                   </section>
                 </div>
