@@ -11,6 +11,7 @@ import type {
   UpdateKindroidCurrentSceneInput,
   UpdateKindroidChatDynamismInput,
   UpdateKindroidGroupCurrentSceneInput,
+  UpdateKindroidGroupTurnTakingInput,
   UpdateKindroidIdentityInput
 } from "./types.js";
 import { normalizeChatDynamismInput } from "./chatDynamism.js";
@@ -154,6 +155,17 @@ export function buildUpdateGroupCurrentScenePayload(
   return {
     group_id: input.groupId,
     current_scene: validateCurrentScene(input.currentScene)
+  };
+}
+
+export function buildUpdateGroupTurnTakingPayload(input: UpdateKindroidGroupTurnTakingInput): Record<string, unknown> {
+  if (!input.groupId) {
+    throw new Error("Missing Kindroid group_id for turn-taking update.");
+  }
+
+  return {
+    group_id: input.groupId,
+    use_manual_turntaking: input.useManualTurntaking
   };
 }
 

@@ -14,6 +14,7 @@ import type {
   GetKindroidChatMessagesInput,
   GetKindroidChatMessagesResult,
   GetKindroidGroupTurnInput,
+  GetKindroidGroupTurnResult,
   RewindKindroidMessagesInput,
   RewindKindroidMessagesResult,
   SendKindroidGroupMessageInput,
@@ -26,6 +27,8 @@ import type {
   UpdateKindroidChatDynamismResult,
   UpdateKindroidGroupCurrentSceneInput,
   UpdateKindroidGroupCurrentSceneResult,
+  UpdateKindroidGroupTurnTakingInput,
+  UpdateKindroidGroupTurnTakingResult,
   UpdateKindroidIdentityInput,
   UpdateKindroidIdentityResult
 } from "./types.js";
@@ -42,6 +45,7 @@ import {
   buildUpdateCurrentScenePayload,
   buildUpdateChatDynamismPayload,
   buildUpdateGroupCurrentScenePayload,
+  buildUpdateGroupTurnTakingPayload,
   buildUpdateIdentityPayload
 } from "./payloads.js";
 
@@ -158,12 +162,7 @@ export class KindroidClient {
     };
   }
 
-  private async getGroupTurn(input: GetKindroidGroupTurnInput): Promise<{
-    ok: boolean;
-    status: number;
-    aiId?: string;
-    responseText?: string;
-  }> {
+  async getGroupTurn(input: GetKindroidGroupTurnInput): Promise<GetKindroidGroupTurnResult> {
     const payload = buildGetGroupTurnPayload(input);
     const response = await fetch(groupGetTurnUrl, {
       method: "POST",
@@ -331,6 +330,31 @@ export class KindroidClient {
       ok: response.ok,
       groupId: input.groupId,
       field: "current_scene",
+      responseText: response.ok ? undefined : responseText.slice(0, 500)
+    });
+
+    return {
+      status: response.status,
+      ok: response.ok,
+      responseText: response.ok ? undefined : responseText.slice(0, 1000)
+    };
+  }
+
+  async updateGroupTurnTaking(input: UpdateKindroidGroupTurnTakingInput): Promise<UpdateKindroidGroupTurnTakingResult> {
+    const payload = buildUpdateGroupTurnTakingPayload(input);
+    const response = await fetch(updateGroupChatUrl, {
+      method: "POST",
+      headers: await this.authHeaders(),
+      body: JSON.stringify(payload)
+    });
+
+    const responseText = await response.text();
+    this.logger.info("Kindroid groupchats-update request completed.", {
+      status: response.status,
+      ok: response.ok,
+      groupId: input.groupId,
+      field: "use_manual_turntaking",
+      useManualTurntaking: input.useManualTurntaking,
       responseText: response.ok ? undefined : responseText.slice(0, 500)
     });
 

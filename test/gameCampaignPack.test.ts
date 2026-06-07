@@ -1173,6 +1173,174 @@ describe("game campaign foundations", () => {
     });
   });
 
+  it("temporarily switches automatic groups to manual at the user turn and resumes after Keeper sends", async () => {
+    const config = testConfig({ hermesEnabled: true });
+    const preferences = GroupGamingPreferenceStore.fromConfig(config);
+    preferences.set("group-a", {
+      enabled: true,
+      campaignId: "prairie-saints-and-municipal-ghosts",
+      mysteryId: "the-thing-in-the-floodway",
+      automationMode: "autonomous"
+    });
+    const store = CampaignStateStore.fromConfig(config);
+    const sends: unknown[] = [];
+    const turnChecks: unknown[] = [];
+    const turnTakingUpdates: unknown[] = [];
+    const runtime = testGameRuntime(config, preferences, store, hermesDecisionResponse(), {
+      sendGroupMessage: async (input) => {
+        sends.push(input);
+        return {
+          status: 200,
+          ok: true,
+          requestId: input.requestId,
+          idempotencyKey: input.idempotencyKey
+        };
+      },
+      updateGroupCurrentScene: async () => ({
+        status: 200,
+        ok: true
+      }),
+      getGroupTurn: async (input) => {
+        turnChecks.push(input);
+        return {
+          status: 200,
+          ok: true
+        };
+      },
+      updateGroupTurnTaking: async (input) => {
+        turnTakingUpdates.push(input);
+        return {
+          status: 200,
+          ok: true
+        };
+      }
+    });
+
+    await runtime.handleGroupChatChanged(
+      group({ useManualTurntaking: false }),
+      groupNotification("doc-ai-1", "Velma studies the static.", "ai", "2026-06-06T00:00:00.000Z")
+    );
+    await runtime.handleGroupChatChanged(
+      group({ useManualTurntaking: false }),
+      groupNotification("doc-user-1", "I ask what the radio is saying.", "user", "2026-06-06T00:01:00.000Z")
+    );
+
+    expect(turnChecks).toEqual([
+      {
+        groupId: "group-a",
+        allowUser: true
+      }
+    ]);
+    expect(turnTakingUpdates).toEqual([
+      {
+        groupId: "group-a",
+        useManualTurntaking: true
+      },
+      {
+        groupId: "group-a",
+        useManualTurntaking: false
+      }
+    ]);
+    expect(sends).toHaveLength(1);
+    expect(sends[0]).toMatchObject({
+      groupId: "group-a",
+      message: "*The phone hisses louder near the puddle.*",
+      triggerAiResponse: true
+    });
+  });
+
+  it("does not guard groups whose observed baseline is already manual", async () => {
+    const config = testConfig({ hermesEnabled: true });
+    const preferences = GroupGamingPreferenceStore.fromConfig(config);
+    preferences.set("group-a", {
+      enabled: true,
+      campaignId: "prairie-saints-and-municipal-ghosts",
+      mysteryId: "the-thing-in-the-floodway",
+      automationMode: "autonomous"
+    });
+    const store = CampaignStateStore.fromConfig(config);
+    const turnChecks: unknown[] = [];
+    const turnTakingUpdates: unknown[] = [];
+    const runtime = testGameRuntime(config, preferences, store, hermesDecisionResponse(), {
+      sendGroupMessage: async (input) => ({
+        status: 200,
+        ok: true,
+        requestId: input.requestId,
+        idempotencyKey: input.idempotencyKey
+      }),
+      updateGroupCurrentScene: async () => ({
+        status: 200,
+        ok: true
+      }),
+      getGroupTurn: async (input) => {
+        turnChecks.push(input);
+        return {
+          status: 200,
+          ok: true
+        };
+      },
+      updateGroupTurnTaking: async (input) => {
+        turnTakingUpdates.push(input);
+        return {
+          status: 200,
+          ok: true
+        };
+      }
+    });
+
+    await runtime.handleGroupChatChanged(
+      group({ useManualTurntaking: true }),
+      groupNotification("doc-ai-1", "Velma studies the static.", "ai", "2026-06-06T00:00:00.000Z")
+    );
+
+    expect(turnChecks).toHaveLength(0);
+    expect(turnTakingUpdates).toHaveLength(0);
+  });
+
+  it("does not switch automatic groups to manual until Kindroid reports a user turn", async () => {
+    const config = testConfig({ hermesEnabled: true });
+    const preferences = GroupGamingPreferenceStore.fromConfig(config);
+    preferences.set("group-a", {
+      enabled: true,
+      campaignId: "prairie-saints-and-municipal-ghosts",
+      mysteryId: "the-thing-in-the-floodway",
+      automationMode: "autonomous"
+    });
+    const store = CampaignStateStore.fromConfig(config);
+    const turnTakingUpdates: unknown[] = [];
+    const runtime = testGameRuntime(config, preferences, store, hermesDecisionResponse(), {
+      sendGroupMessage: async (input) => ({
+        status: 200,
+        ok: true,
+        requestId: input.requestId,
+        idempotencyKey: input.idempotencyKey
+      }),
+      updateGroupCurrentScene: async () => ({
+        status: 200,
+        ok: true
+      }),
+      getGroupTurn: async () => ({
+        status: 200,
+        ok: true,
+        aiId: "kin-a"
+      }),
+      updateGroupTurnTaking: async (input) => {
+        turnTakingUpdates.push(input);
+        return {
+          status: 200,
+          ok: true
+        };
+      }
+    });
+
+    await runtime.handleGroupChatChanged(
+      group({ useManualTurntaking: false }),
+      groupNotification("doc-ai-1", "Velma studies the static.", "ai", "2026-06-06T00:00:00.000Z")
+    );
+
+    expect(turnTakingUpdates).toHaveLength(0);
+  });
+
   it("ignores duplicate Kin document ids in the group turn buffer", async () => {
     const config = testConfig({ hermesEnabled: true });
     const preferences = GroupGamingPreferenceStore.fromConfig(config);
@@ -1489,12 +1657,13 @@ function hermesTextResponse(content: string) {
   };
 }
 
-function group(): KindroidGroup {
+function group(overrides: Partial<KindroidGroup> = {}): KindroidGroup {
   return {
     groupId: "group-a",
     documentId: "group-a",
     name: "Test Group",
-    aiIds: ["kin-a"]
+    aiIds: ["kin-a"],
+    ...overrides
   };
 }
 

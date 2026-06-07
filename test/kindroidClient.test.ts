@@ -19,6 +19,7 @@ import {
   buildSendGroupMessagePayload,
   buildSendMessagePayload,
   buildUpdateChatDynamismPayload,
+  buildUpdateGroupTurnTakingPayload,
   buildUpdateIdentityPayload
 } from "../src/kindroid/payloads.js";
 import type { Logger } from "../src/util/logger.js";
@@ -105,7 +106,8 @@ describe("Kindroid client normalizers", () => {
     const document = documentLike("group-doc-1", {
       group_id: "group-1",
       group_name: "Evening Roundtable",
-      group_ais: [{ ai_id: "kin-1" }, { aiId: "kin-2" }, "kin-3"]
+      group_ais: [{ ai_id: "kin-1" }, { aiId: "kin-2" }, "kin-3"],
+      use_manual_turntaking: true
     });
 
     expect(normalizeGroupDocument(document)).toEqual([
@@ -113,7 +115,8 @@ describe("Kindroid client normalizers", () => {
         documentId: "group-doc-1",
         groupId: "group-1",
         name: "Evening Roundtable",
-        aiIds: ["kin-1", "kin-2", "kin-3"]
+        aiIds: ["kin-1", "kin-2", "kin-3"],
+        useManualTurntaking: true
       }
     ]);
   });
@@ -147,6 +150,18 @@ describe("Kindroid client normalizers", () => {
         currentScene: "x".repeat(161)
       })
     ).rejects.toThrow("Current scene cannot exceed 160 characters.");
+  });
+
+  it("builds narrow group turn-taking update payloads", () => {
+    expect(
+      buildUpdateGroupTurnTakingPayload({
+        groupId: "group-1",
+        useManualTurntaking: true
+      })
+    ).toEqual({
+      group_id: "group-1",
+      use_manual_turntaking: true
+    });
   });
 
   it("builds send-message payloads with no internet_response by default", () => {
@@ -484,6 +499,34 @@ describe("Kindroid client normalizers", () => {
       "https://api.kindroid.ai/v1/groupchats-get-turn",
       "https://api.kindroid.ai/v1/groupchats-ai-response"
     ]);
+  });
+
+  it("updates group turn-taking mode with a partial group update payload", async () => {
+    const sessionDir = createTestSessionDir(tempDirs);
+    const fetchMock = vi.fn(async (_input: string | URL, _init?: RequestInit) => new Response("OK", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new KindroidClient(testConfig({ sessionDir }), testLogger);
+
+    await expect(
+      client.updateGroupTurnTaking({
+        groupId: "group-1",
+        useManualTurntaking: true
+      })
+    ).resolves.toEqual({
+      ok: true,
+      status: 200,
+      responseText: undefined
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.kindroid.ai/v1/groupchats-update",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          group_id: "group-1",
+          use_manual_turntaking: true
+        })
+      })
+    );
   });
 
   it("calls documented chat-break, group chat-break, and rewind endpoints", async () => {

@@ -9,6 +9,7 @@ export interface KindroidGroup {
   groupId: string;
   name: string;
   aiIds: string[];
+  useManualTurntaking?: boolean;
 }
 
 export interface ListenKindroidGroupsOptions {
@@ -74,7 +75,8 @@ export function normalizeGroupDocument(
       documentId: document.id,
       groupId,
       name: name ?? "(unnamed group)",
-      aiIds: normalizeAiIds(data.group_ais)
+      aiIds: normalizeAiIds(data.group_ais),
+      ...(typeof data.use_manual_turntaking === "boolean" ? { useManualTurntaking: data.use_manual_turntaking } : {})
     }
   ];
 }
