@@ -119,6 +119,69 @@ export class CampaignStateStore {
     return next;
   }
 
+  activate(input: {
+    groupId: string;
+    campaign: CampaignPack;
+    mysteryId?: string;
+    sourceDocumentId?: string;
+  }): GroupCampaignState {
+    const current = this.ensureInitialized({
+      groupId: input.groupId,
+      campaign: input.campaign,
+      mysteryId: input.mysteryId
+    });
+    if (input.sourceDocumentId && isProcessedSourceDocument(current, input.sourceDocumentId)) {
+      return current;
+    }
+
+    const now = new Date().toISOString();
+    const updated: GroupCampaignState = {
+      ...current,
+      status: "active",
+      updatedAt: now,
+      processedSourceDocumentIds: input.sourceDocumentId
+        ? appendProcessedSourceDocumentId(current.processedSourceDocumentIds, input.sourceDocumentId)
+        : current.processedSourceDocumentIds
+    };
+    this.saveGroupState(input.groupId, updated);
+    return updated;
+  }
+
+  resetInitialized(input: {
+    groupId: string;
+    campaign: CampaignPack;
+    mysteryId?: string;
+    sourceDocumentId?: string;
+  }): GroupCampaignState {
+    const mystery = findMystery(input.campaign, input.mysteryId);
+    const file = this.read();
+    const groups = file.groups ?? {};
+    const previous = groups[input.groupId];
+    if (
+      input.sourceDocumentId &&
+      previous?.campaignId === input.campaign.id &&
+      previous.mysteryId === mystery.id &&
+      isProcessedSourceDocument(stateWithDefaults(previous), input.sourceDocumentId)
+    ) {
+      return stateWithDefaults(previous);
+    }
+
+    const now = new Date().toISOString();
+    const next = initialGroupCampaignState({
+      groupId: input.groupId,
+      campaignId: input.campaign.id,
+      mysteryId: mystery.id,
+      status: "active",
+      now,
+      processedSourceDocumentIds: input.sourceDocumentId
+        ? appendProcessedSourceDocumentId([], input.sourceDocumentId)
+        : []
+    });
+    groups[input.groupId] = next;
+    this.write({ ...file, groups });
+    return next;
+  }
+
   applyDecision(input: {
     groupId: string;
     campaign: CampaignPack;
@@ -183,6 +246,36 @@ export class CampaignStateStore {
     return updated;
   }
 
+  storePendingKeeperDecision(input: {
+    groupId: string;
+    sourceDocumentId: string;
+    automationMode: GamingAutomationMode;
+    keeperMessage: string;
+    confidence?: GameDecisionConfidence;
+    reason?: string;
+  }): GroupCampaignState | null {
+    const current = this.getForGroup(input.groupId);
+    if (!current) {
+      return null;
+    }
+
+    const now = new Date().toISOString();
+    const updated: GroupCampaignState = {
+      ...current,
+      pendingDecision: {
+        sourceDocumentId: input.sourceDocumentId,
+        createdAt: now,
+        automationMode: input.automationMode,
+        keeperMessage: input.keeperMessage,
+        ...(input.confidence ? { confidence: input.confidence } : {}),
+        ...(input.reason ? { reason: input.reason } : {})
+      },
+      updatedAt: now
+    };
+    this.saveGroupState(input.groupId, updated);
+    return updated;
+  }
+
   private read(): CampaignStateFile {
     try {
       const parsed = JSON.parse(fs.readFileSync(this.filePath, "utf8")) as CampaignStateFile;
@@ -222,6 +315,31 @@ function sortStateFile(file: CampaignStateFile): CampaignStateFile {
     Object.entries(file.groups ?? {}).sort(([left], [right]) => left.localeCompare(right))
   );
   return { groups };
+}
+
+function initialGroupCampaignState(input: {
+  groupId: string;
+  campaignId: string;
+  mysteryId: string;
+  status: GroupCampaignState["status"];
+  now: string;
+  processedSourceDocumentIds?: string[];
+}): GroupCampaignState {
+  return {
+    groupId: input.groupId,
+    campaignId: input.campaignId,
+    mysteryId: input.mysteryId,
+    status: input.status,
+    initializedAt: input.now,
+    updatedAt: input.now,
+    currentCountdownIndex: 0,
+    discoveredClueIds: [],
+    revealedThreatIds: [],
+    revealedNpcIds: [],
+    visitedLocationIds: [],
+    notes: [],
+    processedSourceDocumentIds: input.processedSourceDocumentIds ?? []
+  };
 }
 
 function applyStateChanges(

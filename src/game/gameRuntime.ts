@@ -8,9 +8,11 @@ import { newRequestId } from "../util/ids.js";
 import type { Logger } from "../util/logger.js";
 import { loadCampaignPacks, type LoadedCampaignPack } from "./campaignPack.js";
 import { CampaignStateStore, type GameKeeperDecision, type GroupCampaignState } from "./campaignStateStore.js";
+import { parseGameCommand, type GameCommand } from "./gameCommands.js";
 import { parseGameDecisionContent, normalizeGameDecision } from "./gameDecision.js";
 import { genericMysteryMoves } from "./gameMoves.js";
 import { GroupGamingPreferenceStore, type GamingAutomationMode } from "./groupGamingPreferences.js";
+import { spoilerFreeMysteryBrief, type SpoilerFreeMysteryBrief } from "./spoilerFreeBrief.js";
 
 interface HermesChatCompletionResult {
   choices?: Array<{
@@ -18,6 +20,11 @@ interface HermesChatCompletionResult {
       content?: string;
     };
   }>;
+}
+
+interface GameMysteryIntro {
+  keeperMessage: string;
+  reason?: string;
 }
 
 export interface GameRuntimeOptions {
@@ -123,6 +130,18 @@ export class GameRuntime {
         campaignId: preference.campaignId
       });
       return emptyGameGroupChatResult();
+    }
+
+    const command = notification.sender === "user" ? parseGameCommand(notification.text) : null;
+    if (command) {
+      return this.handleGameCommand({
+        group,
+        notification,
+        command,
+        campaign,
+        mysteryId: preference.mysteryId,
+        automationMode: preference.automationMode
+      });
     }
 
     if (!this.options.config.hermes.enabled || !this.options.config.hermes.apiKey) {
@@ -294,6 +313,142 @@ export class GameRuntime {
     return updated;
   }
 
+  private async handleGameCommand(input: {
+    group: KindroidGroup;
+    notification: KindroidGroupChatChangeNotification;
+    command: GameCommand;
+    campaign: LoadedCampaignPack;
+    mysteryId?: string;
+    automationMode: GamingAutomationMode;
+  }): Promise<GameGroupChatResult> {
+    const currentState = this.options.campaignStates.ensureInitialized({
+      groupId: input.group.groupId,
+      campaign: input.campaign,
+      mysteryId: input.mysteryId
+    });
+    if (currentState.processedSourceDocumentIds.includes(input.notification.documentId)) {
+      this.options.logger.info("Skipping duplicate Group Gaming command source document.", {
+        groupId: input.group.groupId,
+        documentId: input.notification.documentId,
+        command: input.command.type,
+        campaignId: input.campaign.id,
+        mysteryId: currentState.mysteryId
+      });
+      return handledGameGroupChatResult();
+    }
+
+    const updated =
+      input.command.type === "reset_mystery"
+        ? this.options.campaignStates.resetInitialized({
+            groupId: input.group.groupId,
+            campaign: input.campaign,
+            mysteryId: input.mysteryId,
+            sourceDocumentId: input.notification.documentId
+          })
+        : this.options.campaignStates.activate({
+            groupId: input.group.groupId,
+            campaign: input.campaign,
+            mysteryId: input.mysteryId,
+            sourceDocumentId: input.notification.documentId
+          });
+    if (input.command.type === "reset_mystery") {
+      this.clearTurnBuffer(input.group.groupId);
+    }
+    this.options.onStateUpdated?.(updated);
+    this.options.logger.info("Group Gaming command applied.", {
+      groupId: input.group.groupId,
+      documentId: input.notification.documentId,
+      command: input.command.type,
+      campaignId: input.campaign.id,
+      mysteryId: updated.mysteryId,
+      automationMode: input.automationMode,
+      status: updated.status
+    });
+
+    if (input.automationMode === "observe") {
+      return {
+        gameHandled: true,
+        keeperMessageAttempted: false,
+        keeperMessageSent: false,
+        keeperMessageSuppressed: true
+      };
+    }
+
+    if (!this.options.config.hermes.enabled || !this.options.config.hermes.apiKey) {
+      this.options.logger.warn("Group Gaming command applied without Keeper intro because Hermes is not configured.", {
+        groupId: input.group.groupId,
+        documentId: input.notification.documentId,
+        command: input.command.type,
+        campaignId: input.campaign.id,
+        mysteryId: updated.mysteryId,
+        automationMode: input.automationMode
+      });
+      return {
+        gameHandled: true,
+        keeperMessageAttempted: false,
+        keeperMessageSent: false,
+        keeperMessageSuppressed: true
+      };
+    }
+
+    const intro = await this.requestMysteryIntro(input, updated.mysteryId);
+    if (!intro) {
+      return {
+        gameHandled: true,
+        keeperMessageAttempted: false,
+        keeperMessageSent: false,
+        keeperMessageSuppressed: false
+      };
+    }
+
+    if (input.automationMode === "suggest") {
+      const pending = this.options.campaignStates.storePendingKeeperDecision({
+        groupId: input.group.groupId,
+        sourceDocumentId: input.notification.documentId,
+        automationMode: input.automationMode,
+        keeperMessage: intro.keeperMessage,
+        confidence: "high",
+        reason: intro.reason
+      });
+      if (pending) {
+        this.options.onStateUpdated?.(pending);
+        this.options.onPendingDecision?.(pending);
+      }
+      return {
+        gameHandled: true,
+        keeperMessageAttempted: true,
+        keeperMessageSent: false,
+        keeperMessageSuppressed: true
+      };
+    }
+
+    const pending = this.options.campaignStates.storePendingKeeperDecision({
+      groupId: input.group.groupId,
+      sourceDocumentId: input.notification.documentId,
+      automationMode: input.automationMode,
+      keeperMessage: intro.keeperMessage,
+      confidence: "high",
+      reason: intro.reason
+    });
+    if (pending) {
+      this.options.onStateUpdated?.(pending);
+    }
+    const keeperMessageSent = await this.sendKeeperMessage(
+      input.group,
+      input.notification.documentId,
+      intro.keeperMessage,
+      {
+        source: "autonomous"
+      }
+    );
+    return {
+      gameHandled: true,
+      keeperMessageAttempted: true,
+      keeperMessageSent,
+      keeperMessageSuppressed: !keeperMessageSent
+    };
+  }
+
   private resolveCampaign(campaignId: string | undefined): LoadedCampaignPack | null {
     const campaigns = loadCampaignPacks(this.options.config);
     return (
@@ -341,6 +496,77 @@ export class GameRuntime {
     return normalizeGameDecision(parseGameDecisionContent(content), input.campaign, input.state.mysteryId);
   }
 
+  private async requestMysteryIntro(
+    input: {
+      group: KindroidGroup;
+      notification: KindroidGroupChatChangeNotification;
+      command: GameCommand;
+      campaign: LoadedCampaignPack;
+      automationMode: GamingAutomationMode;
+    },
+    mysteryId: string
+  ): Promise<GameMysteryIntro | null> {
+    const brief = spoilerFreeMysteryBrief(input.campaign, mysteryId);
+    try {
+      const response = await fetch(`${normalizeBaseUrl(this.options.config.hermes.baseUrl)}/chat/completions`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${this.options.config.hermes.apiKey}`
+        },
+        body: JSON.stringify({
+          model: "hermes-agent",
+          messages: [
+            {
+              role: "system",
+              content: mysteryIntroSystemPrompt()
+            },
+            {
+              role: "user",
+              content: JSON.stringify(mysteryIntroPromptPayload(input, brief))
+            }
+          ]
+        })
+      });
+
+      const responseText = await response.text();
+      if (!response.ok) {
+        this.options.logger.warn("Hermes Group Gaming intro request failed.", {
+          groupId: input.group.groupId,
+          documentId: input.notification.documentId,
+          command: input.command.type,
+          status: response.status,
+          responseText: responseText.slice(0, 500)
+        });
+        return null;
+      }
+
+      const result = JSON.parse(responseText) as HermesChatCompletionResult;
+      const content = result.choices?.[0]?.message?.content ?? "";
+      const intro = normalizeMysteryIntro(parseGameDecisionContent(content));
+      if (!intro) {
+        this.options.logger.warn("Hermes Group Gaming intro response did not include a Keeper message.", {
+          groupId: input.group.groupId,
+          documentId: input.notification.documentId,
+          command: input.command.type
+        });
+        return null;
+      }
+      return {
+        ...intro,
+        keeperMessage: formatKeeperMessageForGroupChat(intro.keeperMessage)
+      };
+    } catch (error) {
+      this.options.logger.warn("Hermes Group Gaming intro request failed.", {
+        groupId: input.group.groupId,
+        documentId: input.notification.documentId,
+        command: input.command.type,
+        error: error instanceof Error ? error.message : String(error)
+      });
+      return null;
+    }
+  }
+
   private bufferTurnContext(groupId: string, notification: KindroidGroupChatChangeNotification): boolean {
     const buffer = this.prunedTurnBuffer(groupId, notification.timestamp);
     if (buffer.seenDocumentIds.includes(notification.documentId)) {
@@ -377,6 +603,10 @@ export class GameRuntime {
         parcel.userMessage.documentId
       ])
     });
+  }
+
+  private clearTurnBuffer(groupId: string): void {
+    this.turnBuffers.delete(groupId);
   }
 
   private prunedTurnBuffer(groupId: string, timestamp: string | null | undefined): GameTurnBuffer {
@@ -499,6 +729,15 @@ function emptyGameGroupChatResult(): GameGroupChatResult {
   };
 }
 
+function handledGameGroupChatResult(): GameGroupChatResult {
+  return {
+    gameHandled: true,
+    keeperMessageAttempted: false,
+    keeperMessageSent: false,
+    keeperMessageSuppressed: false
+  };
+}
+
 export function gameEventPolicy(
   notification: KindroidChatNotification,
   _automationMode: GamingAutomationMode
@@ -549,6 +788,16 @@ function gameSystemPrompt(): string {
   ].join("\n");
 }
 
+function mysteryIntroSystemPrompt(): string {
+  return [
+    "You are Hermes acting as a contained Keeper intro writer for an original mystery-horror group game.",
+    "Write a spoiler-free opening Keeper message for the group.",
+    "Use only the public briefing supplied.",
+    "Do not reveal the mystery truth, monster identity, countdown, hidden clues, weaknesses, or future events.",
+    'Return only compact JSON: {"keeperMessage":"","reason":""}.'
+  ].join("\n");
+}
+
 function gamePromptPayload(input: {
   group: KindroidGroup;
   notification: KindroidGroupChatChangeNotification;
@@ -594,6 +843,45 @@ function gamePromptPayload(input: {
     mystery,
     state: input.state
   };
+}
+
+function mysteryIntroPromptPayload(
+  input: {
+    group: KindroidGroup;
+    command: GameCommand;
+    automationMode: GamingAutomationMode;
+  },
+  brief: SpoilerFreeMysteryBrief
+) {
+  return {
+    type: "kinagent.game.mystery_intro",
+    command: input.command.type,
+    automationMode: input.automationMode,
+    group: {
+      groupId: input.group.groupId,
+      name: input.group.name,
+      aiIds: input.group.aiIds
+    },
+    brief
+  };
+}
+
+function normalizeMysteryIntro(input: unknown): GameMysteryIntro | null {
+  const record =
+    input && typeof input === "object" && !Array.isArray(input) ? (input as Record<string, unknown>) : null;
+  const keeperMessage = optionalIntroText(record?.keeperMessage, 1400);
+  if (!keeperMessage) {
+    return null;
+  }
+  return {
+    keeperMessage,
+    ...(optionalIntroText(record?.reason, 300) ? { reason: optionalIntroText(record?.reason, 300) } : {})
+  };
+}
+
+function optionalIntroText(value: unknown, maxLength: number): string | undefined {
+  const normalized = typeof value === "string" ? value.trim().replace(/\s+/g, " ") : "";
+  return normalized ? normalized.slice(0, maxLength) : undefined;
 }
 
 function decisionForPolicy(decision: GameKeeperDecision, mode: GamingAutomationMode): GameKeeperDecision {

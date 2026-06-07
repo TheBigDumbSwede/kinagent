@@ -108,6 +108,14 @@ Runtime
   -> desktop Kin or Group Scene tab
 ```
 
+Group Gaming also recognizes explicit user-originated group commands:
+
+- `/start-mystery` starts the selected campaign/mystery.
+- `/reset-mystery` clears local progress and restarts the selected mystery.
+
+Only user messages execute these commands. Mystery intros are generated from spoiler-free public briefing data and do not
+include hidden truth, threat data, countdowns, or hidden clues.
+
 Kindroid domain access is organized behind `KindroidApiClient` resource modules:
 
 - `kins` for Kin discovery from `Users/{uid}/AIs`.
