@@ -69,7 +69,6 @@ export function normalizeGroupDocument(
   }
   const rawName = stringValue(data.group_name);
   const name = rawName && options.decryptionKey ? decryptKindroidValue(rawName, options.decryptionKey).value : rawName;
-
   return [
     {
       documentId: document.id,

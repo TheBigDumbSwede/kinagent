@@ -92,13 +92,7 @@ export interface UpdateKindroidGroupCurrentSceneInput {
   currentScene: string;
 }
 
-export interface UpdateKindroidGroupTurnTakingInput {
-  groupId: string;
-  useManualTurntaking: boolean;
-}
-
 export type UpdateKindroidGroupCurrentSceneResult = UpdateKindroidCurrentSceneResult;
-export type UpdateKindroidGroupTurnTakingResult = KindroidMutationResult;
 export type BreakKindroidChatResult = KindroidMutationResult;
 export type BreakKindroidGroupChatResult = KindroidMutationResult;
 export type RewindKindroidMessagesResult = KindroidMutationResult;

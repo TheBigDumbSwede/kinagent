@@ -27,8 +27,7 @@ interface GameMysteryIntro {
   reason?: string;
 }
 
-type GameKindroidClient = Pick<KindroidClient, "sendGroupMessage" | "updateGroupCurrentScene"> &
-  Partial<Pick<KindroidClient, "getGroupTurn" | "updateGroupTurnTaking">>;
+type GameKindroidClient = Pick<KindroidClient, "sendGroupMessage" | "updateGroupCurrentScene">;
 
 export interface GameRuntimeOptions {
   config: AppConfig;
@@ -92,11 +91,6 @@ interface GameTurnParcel {
   userMessage: GameTurnBufferMessage;
 }
 
-interface GroupTurnGuardState {
-  baselineUseManualTurntaking?: boolean;
-  guardActive: boolean;
-}
-
 const autonomousKeeperCooldownMs = 30 * 1000;
 const turnBufferMaxMessages = 12;
 const turnBufferMaxAgeMs = 10 * 60 * 1000;
@@ -105,7 +99,6 @@ const turnBufferSeenDocumentIdLimit = 100;
 export class GameRuntime {
   private readonly kindroidClient: GameKindroidClient;
   private readonly turnBuffers = new Map<string, GameTurnBuffer>();
-  private readonly turnGuards = new Map<string, GroupTurnGuardState>();
 
   constructor(private readonly options: GameRuntimeOptions) {
     this.kindroidClient = options.kindroidClient ?? new KindroidClient(options.config, options.logger);
@@ -123,7 +116,6 @@ export class GameRuntime {
     if (!preference.enabled) {
       return emptyGameGroupChatResult();
     }
-    this.observeGroupTurnTaking(group);
 
     if (!notification.text || (notification.textEncrypted && !notification.textDecrypted)) {
       this.options.logger.debug("Skipping game runtime event without readable group chat text.", {
@@ -191,11 +183,6 @@ export class GameRuntime {
         role: notification.role,
         automationMode: preference.automationMode,
         buffered
-      });
-      await this.maybeGuardAutomaticTurnTaking({
-        group,
-        notification,
-        automationMode: preference.automationMode
       });
       return {
         gameHandled: true,
@@ -292,7 +279,6 @@ export class GameRuntime {
       };
     }
 
-    await this.restoreTurnGuardIfActive(group, notification.documentId);
     return {
       gameHandled: true,
       keeperMessageAttempted: false,
@@ -352,7 +338,6 @@ export class GameRuntime {
       });
       return handledGameGroupChatResult();
     }
-
     const updated =
       input.command.type === "reset_mystery"
         ? this.options.campaignStates.resetInitialized({
@@ -382,7 +367,6 @@ export class GameRuntime {
     });
 
     if (input.automationMode === "observe") {
-      await this.restoreTurnGuardIfActive(input.group, input.notification.documentId);
       return {
         gameHandled: true,
         keeperMessageAttempted: false,
@@ -400,7 +384,6 @@ export class GameRuntime {
         mysteryId: updated.mysteryId,
         automationMode: input.automationMode
       });
-      await this.restoreTurnGuardIfActive(input.group, input.notification.documentId);
       return {
         gameHandled: true,
         keeperMessageAttempted: false,
@@ -411,7 +394,6 @@ export class GameRuntime {
 
     const intro = await this.requestMysteryIntro(input, updated.mysteryId);
     if (!intro) {
-      await this.restoreTurnGuardIfActive(input.group, input.notification.documentId);
       return {
         gameHandled: true,
         keeperMessageAttempted: false,
@@ -433,7 +415,6 @@ export class GameRuntime {
         this.options.onStateUpdated?.(pending);
         this.options.onPendingDecision?.(pending);
       }
-      await this.restoreTurnGuardIfActive(input.group, input.notification.documentId);
       return {
         gameHandled: true,
         keeperMessageAttempted: true,
@@ -458,7 +439,8 @@ export class GameRuntime {
       input.notification.documentId,
       intro.keeperMessage,
       {
-        source: "autonomous"
+        source: "autonomous",
+        triggerAiResponse: false
       }
     );
     return {
@@ -629,145 +611,6 @@ export class GameRuntime {
     this.turnBuffers.delete(groupId);
   }
 
-  private observeGroupTurnTaking(group: KindroidGroup): void {
-    if (typeof group.useManualTurntaking !== "boolean") {
-      return;
-    }
-
-    const current = this.turnGuards.get(group.groupId);
-    if (current?.guardActive) {
-      return;
-    }
-
-    this.turnGuards.set(group.groupId, {
-      baselineUseManualTurntaking: group.useManualTurntaking,
-      guardActive: false
-    });
-  }
-
-  private async maybeGuardAutomaticTurnTaking(input: {
-    group: KindroidGroup;
-    notification: KindroidGroupChatChangeNotification;
-    automationMode: GamingAutomationMode;
-  }): Promise<void> {
-    if (input.automationMode !== "autonomous") {
-      return;
-    }
-    const guard = this.turnGuards.get(input.group.groupId);
-    if (guard?.guardActive || guard?.baselineUseManualTurntaking !== false) {
-      return;
-    }
-    if (!this.kindroidClient.getGroupTurn || !this.kindroidClient.updateGroupTurnTaking) {
-      this.options.logger.warn("Group Gaming turn guard skipped because Kindroid turn APIs are unavailable.", {
-        groupId: input.group.groupId,
-        documentId: input.notification.documentId
-      });
-      return;
-    }
-
-    const turn = await this.safeGetGroupTurn(input.group, input.notification.documentId);
-    if (!turn?.ok || turn.aiId) {
-      return;
-    }
-
-    const updated = await this.safeUpdateGroupTurnTaking(input.group, input.notification.documentId, true);
-    if (!updated) {
-      return;
-    }
-
-    this.turnGuards.set(input.group.groupId, {
-      baselineUseManualTurntaking: false,
-      guardActive: true
-    });
-    this.options.logger.info("Group Gaming turn guard enabled manual turn-taking for a user turn.", {
-      groupId: input.group.groupId,
-      documentId: input.notification.documentId
-    });
-  }
-
-  private shouldTriggerAiResponseAfterKeeper(groupId: string): boolean {
-    return this.turnGuards.get(groupId)?.guardActive === true;
-  }
-
-  private async restoreTurnGuardIfActive(group: KindroidGroup, sourceDocumentId: string): Promise<void> {
-    const guard = this.turnGuards.get(group.groupId);
-    if (!guard?.guardActive || guard.baselineUseManualTurntaking !== false) {
-      return;
-    }
-
-    const restored = await this.safeUpdateGroupTurnTaking(group, sourceDocumentId, false);
-    if (!restored) {
-      return;
-    }
-
-    this.turnGuards.set(group.groupId, {
-      baselineUseManualTurntaking: false,
-      guardActive: false
-    });
-    this.options.logger.info("Group Gaming turn guard restored automatic turn-taking after user turn.", {
-      groupId: group.groupId,
-      sourceDocumentId
-    });
-  }
-
-  private async safeGetGroupTurn(
-    group: KindroidGroup,
-    sourceDocumentId: string
-  ): Promise<{ ok: boolean; aiId?: string; status: number; responseText?: string } | null> {
-    if (!this.kindroidClient.getGroupTurn) {
-      return null;
-    }
-
-    try {
-      return await this.kindroidClient.getGroupTurn({
-        groupId: group.groupId,
-        allowUser: true
-      });
-    } catch (error) {
-      this.options.logger.warn("Group Gaming turn guard get-turn check failed.", {
-        groupId: group.groupId,
-        sourceDocumentId,
-        error: error instanceof Error ? error.message : String(error)
-      });
-      return null;
-    }
-  }
-
-  private async safeUpdateGroupTurnTaking(
-    group: KindroidGroup,
-    sourceDocumentId: string,
-    useManualTurntaking: boolean
-  ): Promise<boolean> {
-    if (!this.kindroidClient.updateGroupTurnTaking) {
-      return false;
-    }
-
-    try {
-      const result = await this.kindroidClient.updateGroupTurnTaking({
-        groupId: group.groupId,
-        useManualTurntaking
-      });
-      if (!result.ok) {
-        this.options.logger.warn("Group Gaming turn-taking update failed.", {
-          groupId: group.groupId,
-          sourceDocumentId,
-          useManualTurntaking,
-          status: result.status,
-          responseText: result.responseText
-        });
-      }
-      return result.ok;
-    } catch (error) {
-      this.options.logger.warn("Group Gaming turn-taking update failed.", {
-        groupId: group.groupId,
-        sourceDocumentId,
-        useManualTurntaking,
-        error: error instanceof Error ? error.message : String(error)
-      });
-      return false;
-    }
-  }
-
   private prunedTurnBuffer(groupId: string, timestamp: string | null | undefined): GameTurnBuffer {
     const current = this.turnBuffers.get(groupId) ?? { messages: [], seenDocumentIds: [] };
     const pruned = {
@@ -782,65 +625,60 @@ export class GameRuntime {
     group: KindroidGroup,
     sourceDocumentId: string,
     message: string,
-    input: { source: "autonomous" | "approved-suggestion" }
+    input: { source: "autonomous" | "approved-suggestion"; triggerAiResponse?: boolean }
   ): Promise<boolean> {
     const requestId = newRequestId();
     const idempotencyKey = newRequestId();
-    const shouldRestoreTurnGuard = this.shouldTriggerAiResponseAfterKeeper(group.groupId);
+    const triggerAiResponse = input.triggerAiResponse ?? false;
     const result = await this.sendKeeperGroupMessage({
       groupId: group.groupId,
       message,
       requestId,
       idempotencyKey,
-      triggerAiResponse: shouldRestoreTurnGuard
+      triggerAiResponse
     });
-    try {
-      this.options.logger.info("Group Gaming Keeper message sent.", {
-        groupId: group.groupId,
-        groupName: group.name,
-        sourceDocumentId,
-        source: input.source,
-        ok: result.ok,
-        status: result.status,
-        requestId
+    this.options.logger.info("Group Gaming Keeper message sent.", {
+      groupId: group.groupId,
+      groupName: group.name,
+      sourceDocumentId,
+      source: input.source,
+      triggerAiResponse,
+      ok: result.ok,
+      status: result.status,
+      requestId
+    });
+
+    if (result.ok) {
+      await this.options.dedupeStore.recordOutbound({
+        kinId: group.groupId,
+        text: message,
+        requestId,
+        idempotencyKey
       });
-
-      if (result.ok) {
-        await this.options.dedupeStore.recordOutbound({
-          kinId: group.groupId,
-          text: message,
-          requestId,
-          idempotencyKey
-        });
-        const updated = this.options.campaignStates.markKeeperMessageSent({
-          groupId: group.groupId,
-          text: message,
-          requestId,
-          idempotencyKey,
-          sourceDocumentId
-        });
-        if (updated) {
-          this.options.onStateUpdated?.(updated);
-        }
-        await this.syncKeeperMessageToGroupCurrentScene(group, sourceDocumentId, message);
-      }
-
-      this.options.onKeeperMessageSent?.({
+      const updated = this.options.campaignStates.markKeeperMessageSent({
         groupId: group.groupId,
-        groupName: group.name,
         text: message,
         requestId,
         idempotencyKey,
-        sourceDocumentId,
-        result
+        sourceDocumentId
       });
-
-      return result.ok;
-    } finally {
-      if (shouldRestoreTurnGuard) {
-        await this.restoreTurnGuardIfActive(group, sourceDocumentId);
+      if (updated) {
+        this.options.onStateUpdated?.(updated);
       }
+      await this.syncKeeperMessageToGroupCurrentScene(group, sourceDocumentId, message);
     }
+
+    this.options.onKeeperMessageSent?.({
+      groupId: group.groupId,
+      groupName: group.name,
+      text: message,
+      requestId,
+      idempotencyKey,
+      sourceDocumentId,
+      result
+    });
+
+    return result.ok;
   }
 
   private async sendKeeperGroupMessage(input: {

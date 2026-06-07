@@ -19,7 +19,6 @@ import {
   buildSendGroupMessagePayload,
   buildSendMessagePayload,
   buildUpdateChatDynamismPayload,
-  buildUpdateGroupTurnTakingPayload,
   buildUpdateIdentityPayload
 } from "../src/kindroid/payloads.js";
 import type { Logger } from "../src/util/logger.js";
@@ -152,18 +151,6 @@ describe("Kindroid client normalizers", () => {
     ).rejects.toThrow("Current scene cannot exceed 160 characters.");
   });
 
-  it("builds narrow group turn-taking update payloads", () => {
-    expect(
-      buildUpdateGroupTurnTakingPayload({
-        groupId: "group-1",
-        useManualTurntaking: true
-      })
-    ).toEqual({
-      group_id: "group-1",
-      use_manual_turntaking: true
-    });
-  });
-
   it("builds send-message payloads with no internet_response by default", () => {
     expect(
       buildSendMessagePayload({
@@ -206,7 +193,15 @@ describe("Kindroid client normalizers", () => {
       })
     ).toMatchObject({
       group_id: "group-1",
-      message: "Visible group diagnostic message."
+      message: "Visible group diagnostic message.",
+      image_urls: null,
+      image_description: null,
+      video_url: null,
+      video_description: null,
+      internet_response: null,
+      link_url: null,
+      link_description: null,
+      client_platform: "web"
     });
   });
 
@@ -222,7 +217,8 @@ describe("Kindroid client normalizers", () => {
     ).toMatchObject({
       group_id: "group-1",
       message: "Visible group diagnostic message.",
-      internet_response: "Diagnostic hidden group context: KINAGENT-GROUP-CANARY-1234."
+      internet_response: "Diagnostic hidden group context: KINAGENT-GROUP-CANARY-1234.",
+      client_platform: "web"
     });
   });
 
@@ -236,6 +232,14 @@ describe("Kindroid client normalizers", () => {
       })
     ).toEqual({
       group_id: "group-1",
+      image_urls: null,
+      image_description: null,
+      video_url: null,
+      video_description: null,
+      internet_response: null,
+      link_url: null,
+      link_description: null,
+      client_platform: "web",
       audio_url: "https://example.test/audio.mp3"
     });
   });
@@ -282,7 +286,9 @@ describe("Kindroid client normalizers", () => {
     ).toEqual({
       ai_id: "kin-1",
       group_id: "group-1",
-      stream: false
+      stream: false,
+      request_id: "group-ai-request-1",
+      client_platform: "web"
     });
   });
 
@@ -499,34 +505,6 @@ describe("Kindroid client normalizers", () => {
       "https://api.kindroid.ai/v1/groupchats-get-turn",
       "https://api.kindroid.ai/v1/groupchats-ai-response"
     ]);
-  });
-
-  it("updates group turn-taking mode with a partial group update payload", async () => {
-    const sessionDir = createTestSessionDir(tempDirs);
-    const fetchMock = vi.fn(async (_input: string | URL, _init?: RequestInit) => new Response("OK", { status: 200 }));
-    vi.stubGlobal("fetch", fetchMock);
-    const client = new KindroidClient(testConfig({ sessionDir }), testLogger);
-
-    await expect(
-      client.updateGroupTurnTaking({
-        groupId: "group-1",
-        useManualTurntaking: true
-      })
-    ).resolves.toEqual({
-      ok: true,
-      status: 200,
-      responseText: undefined
-    });
-    expect(fetchMock).toHaveBeenCalledWith(
-      "https://api.kindroid.ai/v1/groupchats-update",
-      expect.objectContaining({
-        method: "POST",
-        body: JSON.stringify({
-          group_id: "group-1",
-          use_manual_turntaking: true
-        })
-      })
-    );
   });
 
   it("calls documented chat-break, group chat-break, and rewind endpoints", async () => {

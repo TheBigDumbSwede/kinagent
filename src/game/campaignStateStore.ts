@@ -467,6 +467,8 @@ function stateWithDefaults(state: GroupCampaignState): GroupCampaignState {
     visitedLocationIds: state.visitedLocationIds ?? [],
     notes: state.notes ?? [],
     processedSourceDocumentIds: state.processedSourceDocumentIds ?? [],
-    ...(state.pendingRollRequest ? { pendingRollRequest: state.pendingRollRequest } : {})
+    ...(state.pendingRollRequest ? { pendingRollRequest: state.pendingRollRequest } : {}),
+    ...(state.pendingDecision ? { pendingDecision: state.pendingDecision } : {}),
+    ...(state.lastKeeperMessage ? { lastKeeperMessage: state.lastKeeperMessage } : {})
   };
 }
