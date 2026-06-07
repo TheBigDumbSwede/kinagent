@@ -9,6 +9,7 @@ import type { Logger } from "../util/logger.js";
 import { loadCampaignPacks, type LoadedCampaignPack } from "./campaignPack.js";
 import { CampaignStateStore, type GameKeeperDecision, type GroupCampaignState } from "./campaignStateStore.js";
 import { parseGameDecisionContent, normalizeGameDecision } from "./gameDecision.js";
+import { genericMysteryMoves } from "./gameMoves.js";
 import { GroupGamingPreferenceStore, type GamingAutomationMode } from "./groupGamingPreferences.js";
 
 interface HermesChatCompletionResult {
@@ -61,10 +62,34 @@ interface KeeperSpeechPacing {
   lastKeeperMessageAt?: string;
 }
 
+interface GameTurnBufferMessage {
+  documentId: string;
+  timestamp: string | null;
+  aiId: string | null;
+  sender: KindroidGroupChatChangeNotification["sender"];
+  role: KindroidGroupChatChangeNotification["role"];
+  text: string;
+}
+
+interface GameTurnBuffer {
+  messages: GameTurnBufferMessage[];
+  seenDocumentIds: string[];
+}
+
+interface GameTurnParcel {
+  closedBy: "user";
+  contextMessages: GameTurnBufferMessage[];
+  userMessage: GameTurnBufferMessage;
+}
+
 const autonomousKeeperCooldownMs = 30 * 1000;
+const turnBufferMaxMessages = 12;
+const turnBufferMaxAgeMs = 10 * 60 * 1000;
+const turnBufferSeenDocumentIdLimit = 100;
 
 export class GameRuntime {
   private readonly kindroidClient: Pick<KindroidClient, "sendGroupMessage" | "updateGroupCurrentScene">;
+  private readonly turnBuffers = new Map<string, GameTurnBuffer>();
 
   constructor(private readonly options: GameRuntimeOptions) {
     this.kindroidClient = options.kindroidClient ?? new KindroidClient(options.config, options.logger);
@@ -129,12 +154,14 @@ export class GameRuntime {
       };
     }
     if (!eventPolicy.canMutateState && !eventPolicy.canCreateKeeperDecision) {
-      this.options.logger.info("Group Gaming event handled without mutation by event policy.", {
+      const buffered = this.bufferTurnContext(group.groupId, notification);
+      this.options.logger.info("Group Gaming event buffered as non-mutating turn context.", {
         groupId: group.groupId,
         documentId: notification.documentId,
         sender: notification.sender,
         role: notification.role,
-        automationMode: preference.automationMode
+        automationMode: preference.automationMode,
+        buffered
       });
       return {
         gameHandled: true,
@@ -156,11 +183,14 @@ export class GameRuntime {
       mysteryId: currentState.mysteryId,
       automationMode: preference.automationMode,
       sender: notification.sender,
-      role: notification.role
+      role: notification.role,
+      bufferedContextMessages: this.turnBufferContext(group.groupId, notification.timestamp).length
     });
+    const turnParcel = this.buildTurnParcel(group.groupId, notification);
     const decision = await this.requestGameDecision({
       group,
       notification,
+      turnParcel,
       campaign,
       state: currentState,
       automationMode: preference.automationMode,
@@ -192,6 +222,7 @@ export class GameRuntime {
       keeperSpeechPacingReason: keeperMessageSuppressed ? keeperSpeechPacing.reason : undefined,
       pendingDecision: Boolean(updated.pendingDecision)
     });
+    this.checkpointTurnBuffer(group.groupId, turnParcel);
     if (keeperMessageSuppressed) {
       this.options.logger.info("Group Gaming autonomous Keeper message suppressed by pacing.", {
         groupId: group.groupId,
@@ -273,6 +304,7 @@ export class GameRuntime {
   private async requestGameDecision(input: {
     group: KindroidGroup;
     notification: KindroidGroupChatChangeNotification;
+    turnParcel: GameTurnParcel;
     campaign: LoadedCampaignPack;
     state: GroupCampaignState;
     automationMode: GamingAutomationMode;
@@ -307,6 +339,54 @@ export class GameRuntime {
     const result = JSON.parse(responseText) as HermesChatCompletionResult;
     const content = result.choices?.[0]?.message?.content ?? "";
     return normalizeGameDecision(parseGameDecisionContent(content), input.campaign, input.state.mysteryId);
+  }
+
+  private bufferTurnContext(groupId: string, notification: KindroidGroupChatChangeNotification): boolean {
+    const buffer = this.prunedTurnBuffer(groupId, notification.timestamp);
+    if (buffer.seenDocumentIds.includes(notification.documentId)) {
+      return false;
+    }
+
+    buffer.messages.push(turnBufferMessage(notification));
+    buffer.messages = boundTurnBufferMessages(buffer.messages, notification.timestamp);
+    buffer.seenDocumentIds = boundSeenDocumentIds([...buffer.seenDocumentIds, notification.documentId]);
+    this.turnBuffers.set(groupId, buffer);
+    return true;
+  }
+
+  private buildTurnParcel(groupId: string, notification: KindroidGroupChatChangeNotification): GameTurnParcel {
+    return {
+      closedBy: "user",
+      contextMessages: this.turnBufferContext(groupId, notification.timestamp),
+      userMessage: turnBufferMessage(notification)
+    };
+  }
+
+  private turnBufferContext(groupId: string, timestamp: string | null | undefined): GameTurnBufferMessage[] {
+    const buffer = this.prunedTurnBuffer(groupId, timestamp);
+    return buffer.messages;
+  }
+
+  private checkpointTurnBuffer(groupId: string, parcel: GameTurnParcel): void {
+    const buffer = this.prunedTurnBuffer(groupId, parcel.userMessage.timestamp);
+    this.turnBuffers.set(groupId, {
+      messages: [],
+      seenDocumentIds: boundSeenDocumentIds([
+        ...buffer.seenDocumentIds,
+        ...parcel.contextMessages.map((message) => message.documentId),
+        parcel.userMessage.documentId
+      ])
+    });
+  }
+
+  private prunedTurnBuffer(groupId: string, timestamp: string | null | undefined): GameTurnBuffer {
+    const current = this.turnBuffers.get(groupId) ?? { messages: [], seenDocumentIds: [] };
+    const pruned = {
+      messages: boundTurnBufferMessages(current.messages, timestamp),
+      seenDocumentIds: boundSeenDocumentIds(current.seenDocumentIds)
+    };
+    this.turnBuffers.set(groupId, pruned);
+    return pruned;
   }
 
   private async sendKeeperMessage(
@@ -451,6 +531,8 @@ function gameSystemPrompt(): string {
     "You are Hermes acting as a contained Keeper engine for an original mystery-horror group game.",
     "Kinagent is the authoritative campaign ledger. You may propose state changes, but only Kinagent stores truth.",
     'Return only compact JSON with this shape: {"keeperMessage":"","stateChanges":[],"moveCall":null,"rollRequest":null,"confidence":"low|medium|high","reason":""}.',
+    'If a player-facing move roll is needed, set rollRequest as {"moveId":"<known move id>","actor":"","modifier":0,"prompt":"","reason":""}.',
+    "Kinagent resolves dice rolls. Never invent dice totals or roll outcomes.",
     "Allowed stateChanges are:",
     '{"type":"advance_countdown","by":1,"reason":""}',
     '{"type":"set_status","status":"initialized|active|paused|completed","reason":""}',
@@ -470,6 +552,7 @@ function gameSystemPrompt(): string {
 function gamePromptPayload(input: {
   group: KindroidGroup;
   notification: KindroidGroupChatChangeNotification;
+  turnParcel: GameTurnParcel;
   campaign: LoadedCampaignPack;
   state: GroupCampaignState;
   automationMode: GamingAutomationMode;
@@ -493,6 +576,7 @@ function gamePromptPayload(input: {
       role: input.notification.role,
       text: input.notification.text
     },
+    turn: input.turnParcel,
     campaign: {
       id: input.campaign.id,
       title: input.campaign.title,
@@ -506,6 +590,7 @@ function gamePromptPayload(input: {
       hooks: input.campaign.hooks,
       hermes: input.campaign.hermes
     },
+    moves: genericMysteryMoves,
     mystery,
     state: input.state
   };
@@ -536,7 +621,6 @@ function applyKeeperSpeechPacing(
     ...decision,
     keeperMessage: undefined,
     moveCall: undefined,
-    rollRequest: undefined,
     pressureCategory: undefined
   };
 }
@@ -666,6 +750,33 @@ function timestampMs(value: string | null | undefined): number {
 
   const timestamp = new Date(value).getTime();
   return Number.isFinite(timestamp) ? timestamp : NaN;
+}
+
+function turnBufferMessage(notification: KindroidGroupChatChangeNotification): GameTurnBufferMessage {
+  return {
+    documentId: notification.documentId,
+    timestamp: notification.timestamp,
+    aiId: notification.aiId,
+    sender: notification.sender,
+    role: notification.role,
+    text: notification.text ?? ""
+  };
+}
+
+function boundTurnBufferMessages(
+  messages: GameTurnBufferMessage[],
+  timestamp: string | null | undefined
+): GameTurnBufferMessage[] {
+  const currentMs = timestampMs(timestamp);
+  const recent = messages.filter((message) => {
+    const messageMs = timestampMs(message.timestamp);
+    return !Number.isFinite(currentMs) || !Number.isFinite(messageMs) || currentMs - messageMs <= turnBufferMaxAgeMs;
+  });
+  return recent.slice(-turnBufferMaxMessages);
+}
+
+function boundSeenDocumentIds(documentIds: string[]): string[] {
+  return [...new Set(documentIds)].slice(-turnBufferSeenDocumentIdLimit);
 }
 
 function normalizeBaseUrl(value: string): string {

@@ -1,5 +1,6 @@
 import type { CampaignPack, MysteryEntry } from "./campaignPack.js";
 import type { GameKeeperDecision, GameStateChange, GroupCampaignState } from "./campaignStateStore.js";
+import { genericMysteryMoves, normalizeRollRequest } from "./gameMoves.js";
 
 export function normalizeGameDecision(input: unknown, campaign: CampaignPack, mysteryId: string): GameKeeperDecision {
   const record = objectRecord(input);
@@ -10,7 +11,7 @@ export function normalizeGameDecision(input: unknown, campaign: CampaignPack, my
   const mystery = campaign.mysteries.find((item) => item.id === mysteryId) ?? campaign.mysteries[0];
   const keeperMessage = optionalText(record.keeperMessage, 1400);
   const moveCall = plainObject(record.moveCall);
-  const rollRequest = plainObject(record.rollRequest);
+  const rollRequest = normalizeRollRequest(record.rollRequest ?? record.roll_request, genericMysteryMoves);
   return {
     ...(keeperMessage ? { keeperMessage } : {}),
     stateChanges: normalizeStateChanges(record.stateChanges, campaign, mystery),

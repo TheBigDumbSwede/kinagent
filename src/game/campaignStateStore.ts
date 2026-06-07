@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { AppConfig } from "../config/types.js";
 import type { CampaignPack, MysteryEntry } from "./campaignPack.js";
+import type { RollRequest } from "./gameMoves.js";
 import type { GamingAutomationMode } from "./groupGamingPreferences.js";
 
 export type GameDecisionConfidence = "low" | "medium" | "high";
@@ -10,7 +11,7 @@ export interface GameKeeperDecision {
   keeperMessage?: string;
   stateChanges: GameStateChange[];
   moveCall?: Record<string, unknown>;
-  rollRequest?: Record<string, unknown>;
+  rollRequest?: RollRequest;
   pressureCategory?: string;
   confidence?: GameDecisionConfidence;
   reason?: string;
@@ -31,8 +32,16 @@ export interface PendingGameDecision {
   automationMode: GamingAutomationMode;
   keeperMessage?: string;
   moveCall?: Record<string, unknown>;
-  rollRequest?: Record<string, unknown>;
   pressureCategory?: string;
+  confidence?: GameDecisionConfidence;
+  reason?: string;
+}
+
+export interface PendingRollRequest {
+  sourceDocumentId: string;
+  createdAt: string;
+  automationMode: GamingAutomationMode;
+  request: RollRequest;
   confidence?: GameDecisionConfidence;
   reason?: string;
 }
@@ -59,6 +68,7 @@ export interface GroupCampaignState {
   visitedLocationIds: string[];
   notes: string[];
   processedSourceDocumentIds: string[];
+  pendingRollRequest?: PendingRollRequest;
   pendingDecision?: PendingGameDecision;
   lastKeeperMessage?: SentKeeperMessage;
 }
@@ -129,6 +139,7 @@ export class CampaignStateStore {
     }
     const next = applyStateChanges(current, input.decision.stateChanges, mystery, now);
     const pendingDecision = pendingDecisionFrom(input, now);
+    const pendingRollRequest = pendingRollRequestFrom(input, now) ?? next.pendingRollRequest;
     const updated: GroupCampaignState = {
       ...next,
       updatedAt: now,
@@ -136,6 +147,7 @@ export class CampaignStateStore {
         next.processedSourceDocumentIds,
         input.sourceDocumentId
       ),
+      ...(pendingRollRequest ? { pendingRollRequest } : {}),
       ...(pendingDecision ? { pendingDecision } : { pendingDecision: undefined })
     };
 
@@ -271,7 +283,7 @@ function pendingDecisionFrom(
   if (input.automationMode === "observe") {
     return undefined;
   }
-  if (!decision.keeperMessage && !decision.moveCall && !decision.rollRequest) {
+  if (!decision.keeperMessage && !decision.moveCall) {
     return undefined;
   }
 
@@ -281,10 +293,32 @@ function pendingDecisionFrom(
     automationMode: input.automationMode,
     ...(decision.keeperMessage ? { keeperMessage: decision.keeperMessage } : {}),
     ...(decision.moveCall ? { moveCall: decision.moveCall } : {}),
-    ...(decision.rollRequest ? { rollRequest: decision.rollRequest } : {}),
     ...(decision.pressureCategory ? { pressureCategory: decision.pressureCategory } : {}),
     ...(decision.confidence ? { confidence: decision.confidence } : {}),
     ...(decision.reason ? { reason: decision.reason } : {})
+  };
+}
+
+function pendingRollRequestFrom(
+  input: {
+    sourceDocumentId: string;
+    automationMode: GamingAutomationMode;
+    decision: GameKeeperDecision;
+  },
+  createdAt: string
+): PendingRollRequest | undefined {
+  const request = input.decision.rollRequest;
+  if (input.automationMode === "observe" || !request) {
+    return undefined;
+  }
+
+  return {
+    sourceDocumentId: input.sourceDocumentId,
+    createdAt,
+    automationMode: input.automationMode,
+    request,
+    ...(input.decision.confidence ? { confidence: input.decision.confidence } : {}),
+    ...(input.decision.reason ? { reason: input.decision.reason } : {})
   };
 }
 
@@ -314,6 +348,7 @@ function stateWithDefaults(state: GroupCampaignState): GroupCampaignState {
     revealedNpcIds: state.revealedNpcIds ?? [],
     visitedLocationIds: state.visitedLocationIds ?? [],
     notes: state.notes ?? [],
-    processedSourceDocumentIds: state.processedSourceDocumentIds ?? []
+    processedSourceDocumentIds: state.processedSourceDocumentIds ?? [],
+    ...(state.pendingRollRequest ? { pendingRollRequest: state.pendingRollRequest } : {})
   };
 }

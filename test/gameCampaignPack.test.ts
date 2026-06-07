@@ -8,6 +8,7 @@ import { campaignPackDirectories, loadCampaignPacks, validateCampaignPack } from
 import { importCampaignPack } from "../src/game/campaignPackImport.js";
 import { CampaignStateStore } from "../src/game/campaignStateStore.js";
 import { formatKeeperMessageForGroupChat, GameRuntime } from "../src/game/gameRuntime.js";
+import { createSequenceDiceRoller, resolvePbtARoll } from "../src/game/gameMoves.js";
 import { GroupGamingPreferenceStore, groupGamingPreferencesPath } from "../src/game/groupGamingPreferences.js";
 import { shouldSkipGenericHermesGroupHandling } from "../src/runtime/bridgeRuntime.js";
 import { InMemoryDedupeStore } from "../src/state/dedupeStore.js";
@@ -451,6 +452,77 @@ describe("game campaign foundations", () => {
     expect(formatKeeperMessageForGroupChat("*Already narrated.*")).toBe("*Already narrated.*");
   });
 
+  it("resolves PbtA 10+, 7-9, and 6- roll outcomes with deterministic dice", () => {
+    expect(
+      resolvePbtARoll({ moveId: "investigate", modifier: 0 }, { roller: createSequenceDiceRoller([6, 4]) })
+    ).toMatchObject({
+      dice: [6, 4],
+      total: 10,
+      outcome: "10+"
+    });
+    expect(
+      resolvePbtARoll({ moveId: "investigate", modifier: 0 }, { roller: createSequenceDiceRoller([3, 4]) })
+    ).toMatchObject({
+      dice: [3, 4],
+      total: 7,
+      outcome: "7-9"
+    });
+    expect(
+      resolvePbtARoll({ moveId: "investigate", modifier: 0 }, { roller: createSequenceDiceRoller([3, 3]) })
+    ).toMatchObject({
+      dice: [3, 3],
+      total: 6,
+      outcome: "6-"
+    });
+  });
+
+  it("stores Hermes roll requests as pending campaign state without resolving them", async () => {
+    const config = testConfig({ hermesEnabled: true });
+    const preferences = GroupGamingPreferenceStore.fromConfig(config);
+    preferences.set("group-a", {
+      enabled: true,
+      campaignId: "prairie-saints-and-municipal-ghosts",
+      mysteryId: "the-thing-in-the-floodway",
+      automationMode: "suggest"
+    });
+    const store = CampaignStateStore.fromConfig(config);
+    const runtime = testGameRuntime(
+      config,
+      preferences,
+      store,
+      hermesDecisionResponse({
+        keeperMessage: undefined,
+        stateChanges: [],
+        rollRequest: {
+          moveId: "investigate",
+          actor: "Velma",
+          modifier: 2,
+          prompt: "Roll +Sharp to read the phone static.",
+          reason: "The player is investigating a clue under uncertainty."
+        }
+      })
+    );
+
+    await runtime.handleGroupChatChanged(group(), groupNotification("doc-1", "I inspect the phone static."));
+
+    expect(store.getForGroup("group-a")).toMatchObject({
+      currentCountdownIndex: 0,
+      pendingRollRequest: {
+        sourceDocumentId: "doc-1",
+        automationMode: "suggest",
+        request: {
+          moveId: "investigate",
+          actor: "Velma",
+          modifier: 2,
+          prompt: "Roll +Sharp to read the phone static.",
+          reason: "The player is investigating a clue under uncertainty."
+        }
+      }
+    });
+    expect(store.getForGroup("group-a")?.pendingDecision).toBeUndefined();
+    expect(store.getForGroup("group-a")?.lastKeeperMessage).toBeUndefined();
+  });
+
   it("sends autonomous Keeper messages through the group send port", async () => {
     const config = testConfig({ hermesEnabled: true });
     const preferences = GroupGamingPreferenceStore.fromConfig(config);
@@ -554,6 +626,120 @@ describe("game campaign foundations", () => {
     });
     expect(store.getForGroup("group-a")?.pendingDecision).toBeUndefined();
     expect(store.getForGroup("group-a")?.lastKeeperMessage).toBeUndefined();
+  });
+
+  it("buffers Kin group turns and sends them with the next user turn", async () => {
+    const config = testConfig({ hermesEnabled: true });
+    const preferences = GroupGamingPreferenceStore.fromConfig(config);
+    preferences.set("group-a", {
+      enabled: true,
+      campaignId: "prairie-saints-and-municipal-ghosts",
+      mysteryId: "the-thing-in-the-floodway",
+      automationMode: "observe"
+    });
+    const store = CampaignStateStore.fromConfig(config);
+    const payloads: Array<Record<string, unknown>> = [];
+    const runtime = testGameRuntime(config, preferences, store, hermesDecisionResponse(), undefined, {
+      onFetch: (_input, init) => {
+        payloads.push(gamePromptPayloadFromFetchInit(init));
+      }
+    });
+
+    await runtime.handleGroupChatChanged(
+      group(),
+      groupNotification("doc-ai-1", "Velma studies the static.", "ai", "2026-06-06T00:00:00.000Z")
+    );
+    await runtime.handleGroupChatChanged(
+      group(),
+      groupNotification("doc-ai-2", "Daphne checks the puddle.", "ai", "2026-06-06T00:01:00.000Z")
+    );
+
+    expect(payloads).toHaveLength(0);
+    expect(store.getForGroup("group-a")).toMatchObject({
+      currentCountdownIndex: 0,
+      processedSourceDocumentIds: []
+    });
+
+    await runtime.handleGroupChatChanged(
+      group(),
+      groupNotification("doc-user-1", "I ask what the radio is saying.", "user", "2026-06-06T00:02:00.000Z")
+    );
+
+    expect(payloads).toHaveLength(1);
+    expect(payloads[0]).toMatchObject({
+      event: {
+        documentId: "doc-user-1",
+        sender: "user",
+        text: "I ask what the radio is saying."
+      },
+      turn: {
+        closedBy: "user",
+        contextMessages: [
+          {
+            documentId: "doc-ai-1",
+            sender: "ai",
+            text: "Velma studies the static."
+          },
+          {
+            documentId: "doc-ai-2",
+            sender: "ai",
+            text: "Daphne checks the puddle."
+          }
+        ],
+        userMessage: {
+          documentId: "doc-user-1",
+          sender: "user",
+          text: "I ask what the radio is saying."
+        }
+      }
+    });
+    expect(store.getForGroup("group-a")).toMatchObject({
+      currentCountdownIndex: 1,
+      processedSourceDocumentIds: ["doc-user-1"]
+    });
+  });
+
+  it("ignores duplicate Kin document ids in the group turn buffer", async () => {
+    const config = testConfig({ hermesEnabled: true });
+    const preferences = GroupGamingPreferenceStore.fromConfig(config);
+    preferences.set("group-a", {
+      enabled: true,
+      campaignId: "prairie-saints-and-municipal-ghosts",
+      mysteryId: "the-thing-in-the-floodway",
+      automationMode: "observe"
+    });
+    const store = CampaignStateStore.fromConfig(config);
+    const payloads: Array<Record<string, unknown>> = [];
+    const runtime = testGameRuntime(config, preferences, store, hermesDecisionResponse(), undefined, {
+      onFetch: (_input, init) => {
+        payloads.push(gamePromptPayloadFromFetchInit(init));
+      }
+    });
+
+    await runtime.handleGroupChatChanged(
+      group(),
+      groupNotification("doc-ai-1", "Velma studies the static.", "ai", "2026-06-06T00:00:00.000Z")
+    );
+    await runtime.handleGroupChatChanged(
+      group(),
+      groupNotification("doc-ai-1", "Velma repeats the same document.", "ai", "2026-06-06T00:01:00.000Z")
+    );
+    await runtime.handleGroupChatChanged(
+      group(),
+      groupNotification("doc-user-1", "I ask what changed.", "user", "2026-06-06T00:02:00.000Z")
+    );
+
+    expect(payloads).toHaveLength(1);
+    expect(payloads[0]).toMatchObject({
+      turn: {
+        contextMessages: [
+          {
+            documentId: "doc-ai-1",
+            text: "Velma studies the static."
+          }
+        ]
+      }
+    });
   });
 
   it("reports failed autonomous Keeper sends without marking them sent", async () => {
@@ -746,13 +932,19 @@ function testGameRuntime(
       status: 200,
       ok: true
     })
-  }
+  },
+  options: {
+    onFetch?: (input: Parameters<typeof fetch>[0], init: Parameters<typeof fetch>[1]) => void;
+  } = {}
 ): GameRuntime {
-  vi.stubGlobal("fetch", async () => ({
-    ok: true,
-    status: 200,
-    text: async () => JSON.stringify(hermesResponse)
-  }));
+  vi.stubGlobal("fetch", async (input: Parameters<typeof fetch>[0], init: Parameters<typeof fetch>[1]) => {
+    options.onFetch?.(input, init);
+    return {
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify(hermesResponse)
+    };
+  });
   return new GameRuntime({
     config,
     logger: testLogger,
@@ -764,6 +956,11 @@ function testGameRuntime(
     onKeeperMessageSent: () => undefined,
     onPendingDecision: () => undefined
   });
+}
+
+function gamePromptPayloadFromFetchInit(init: Parameters<typeof fetch>[1]): Record<string, unknown> {
+  const body = JSON.parse(String(init?.body)) as { messages: Array<{ content: string }> };
+  return JSON.parse(body.messages[1]?.content ?? "{}") as Record<string, unknown>;
 }
 
 function hermesDecisionResponse(overrides: Record<string, unknown> = {}) {

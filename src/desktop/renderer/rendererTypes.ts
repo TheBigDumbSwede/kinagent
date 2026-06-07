@@ -163,6 +163,20 @@ export interface GroupCampaignStateSummary {
   visitedLocationIds: string[];
   notes: string[];
   processedSourceDocumentIds: string[];
+  pendingRollRequest?: {
+    sourceDocumentId: string;
+    createdAt: string;
+    automationMode: GamingAutomationMode;
+    request: {
+      moveId: string;
+      actor?: string;
+      modifier: number;
+      prompt?: string;
+      reason?: string;
+    };
+    confidence?: "low" | "medium" | "high";
+    reason?: string;
+  };
   pendingDecision?: {
     sourceDocumentId: string;
     createdAt: string;
