@@ -13,6 +13,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: release-${{ github.event_name == 'push' && github.ref_name || inputs.tag || github.run_id }}
+  cancel-in-progress: false
+
 jobs:
   windows-portable:
     runs-on: windows-latest
