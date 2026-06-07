@@ -292,6 +292,7 @@ export class GameRuntime {
       };
     }
 
+    await this.restoreTurnGuardIfActive(group, notification.documentId);
     return {
       gameHandled: true,
       keeperMessageAttempted: false,
@@ -381,6 +382,7 @@ export class GameRuntime {
     });
 
     if (input.automationMode === "observe") {
+      await this.restoreTurnGuardIfActive(input.group, input.notification.documentId);
       return {
         gameHandled: true,
         keeperMessageAttempted: false,
@@ -398,6 +400,7 @@ export class GameRuntime {
         mysteryId: updated.mysteryId,
         automationMode: input.automationMode
       });
+      await this.restoreTurnGuardIfActive(input.group, input.notification.documentId);
       return {
         gameHandled: true,
         keeperMessageAttempted: false,
@@ -408,6 +411,7 @@ export class GameRuntime {
 
     const intro = await this.requestMysteryIntro(input, updated.mysteryId);
     if (!intro) {
+      await this.restoreTurnGuardIfActive(input.group, input.notification.documentId);
       return {
         gameHandled: true,
         keeperMessageAttempted: false,
@@ -429,6 +433,7 @@ export class GameRuntime {
         this.options.onStateUpdated?.(pending);
         this.options.onPendingDecision?.(pending);
       }
+      await this.restoreTurnGuardIfActive(input.group, input.notification.documentId);
       return {
         gameHandled: true,
         keeperMessageAttempted: true,
@@ -684,7 +689,7 @@ export class GameRuntime {
     return this.turnGuards.get(groupId)?.guardActive === true;
   }
 
-  private async restoreAutomaticTurnTaking(group: KindroidGroup, sourceDocumentId: string): Promise<void> {
+  private async restoreTurnGuardIfActive(group: KindroidGroup, sourceDocumentId: string): Promise<void> {
     const guard = this.turnGuards.get(group.groupId);
     if (!guard?.guardActive || guard.baselineUseManualTurntaking !== false) {
       return;
@@ -699,7 +704,7 @@ export class GameRuntime {
       baselineUseManualTurntaking: false,
       guardActive: false
     });
-    this.options.logger.info("Group Gaming turn guard restored automatic turn-taking after Keeper send.", {
+    this.options.logger.info("Group Gaming turn guard restored automatic turn-taking after user turn.", {
       groupId: group.groupId,
       sourceDocumentId
     });
@@ -781,58 +786,61 @@ export class GameRuntime {
   ): Promise<boolean> {
     const requestId = newRequestId();
     const idempotencyKey = newRequestId();
-    const triggerAiResponse = this.shouldTriggerAiResponseAfterKeeper(group.groupId);
+    const shouldRestoreTurnGuard = this.shouldTriggerAiResponseAfterKeeper(group.groupId);
     const result = await this.sendKeeperGroupMessage({
       groupId: group.groupId,
       message,
       requestId,
       idempotencyKey,
-      triggerAiResponse
+      triggerAiResponse: shouldRestoreTurnGuard
     });
-    this.options.logger.info("Group Gaming Keeper message sent.", {
-      groupId: group.groupId,
-      groupName: group.name,
-      sourceDocumentId,
-      source: input.source,
-      ok: result.ok,
-      status: result.status,
-      requestId
-    });
-
-    if (result.ok) {
-      await this.options.dedupeStore.recordOutbound({
-        kinId: group.groupId,
-        text: message,
-        requestId,
-        idempotencyKey
-      });
-      const updated = this.options.campaignStates.markKeeperMessageSent({
+    try {
+      this.options.logger.info("Group Gaming Keeper message sent.", {
         groupId: group.groupId,
+        groupName: group.name,
+        sourceDocumentId,
+        source: input.source,
+        ok: result.ok,
+        status: result.status,
+        requestId
+      });
+
+      if (result.ok) {
+        await this.options.dedupeStore.recordOutbound({
+          kinId: group.groupId,
+          text: message,
+          requestId,
+          idempotencyKey
+        });
+        const updated = this.options.campaignStates.markKeeperMessageSent({
+          groupId: group.groupId,
+          text: message,
+          requestId,
+          idempotencyKey,
+          sourceDocumentId
+        });
+        if (updated) {
+          this.options.onStateUpdated?.(updated);
+        }
+        await this.syncKeeperMessageToGroupCurrentScene(group, sourceDocumentId, message);
+      }
+
+      this.options.onKeeperMessageSent?.({
+        groupId: group.groupId,
+        groupName: group.name,
         text: message,
         requestId,
         idempotencyKey,
-        sourceDocumentId
+        sourceDocumentId,
+        result
       });
-      if (updated) {
-        this.options.onStateUpdated?.(updated);
-      }
-      await this.syncKeeperMessageToGroupCurrentScene(group, sourceDocumentId, message);
-      if (triggerAiResponse) {
-        await this.restoreAutomaticTurnTaking(group, sourceDocumentId);
+
+      return result.ok;
+    } finally {
+      if (shouldRestoreTurnGuard) {
+        await this.restoreTurnGuardIfActive(group, sourceDocumentId);
       }
     }
-
-    this.options.onKeeperMessageSent?.({
-      groupId: group.groupId,
-      groupName: group.name,
-      text: message,
-      requestId,
-      idempotencyKey,
-      sourceDocumentId,
-      result
-    });
-
-    return result.ok;
   }
 
   private async sendKeeperGroupMessage(input: {
