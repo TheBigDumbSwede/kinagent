@@ -169,11 +169,73 @@ export function summarizeCampaignPack(pack: LoadedCampaignPack): CampaignPackSum
 
 export function validateCampaignPack(value: unknown, input: { source: "builtin" | "local"; sourcePath?: string }) {
   const parsed = campaignPackSchema.parse(value);
+  validateCampaignPackReferences(parsed, input);
   return {
     ...parsed,
     source: input.source,
     sourcePath: input.sourcePath
   } satisfies LoadedCampaignPack;
+}
+
+function validateCampaignPackReferences(
+  pack: CampaignPack,
+  input: { source: "builtin" | "local"; sourcePath?: string }
+): void {
+  const label = campaignPackErrorLabel(pack, input);
+  assertUniqueIds(pack.mysteries, `${label} mysteries`);
+  assertUniqueIds(pack.threats, `${label} threats`);
+  assertUniqueIds(pack.locations, `${label} locations`);
+  assertUniqueIds(pack.npcs, `${label} NPCs`);
+  assertUniqueIds(pack.hooks, `${label} hooks`);
+
+  const threatIds = new Set(pack.threats.map((item) => item.id));
+  const locationIds = new Set(pack.locations.map((item) => item.id));
+  const npcIds = new Set(pack.npcs.map((item) => item.id));
+
+  for (const mystery of pack.mysteries) {
+    assertKnownIds(mystery.threatIds ?? [], threatIds, `${label} mystery "${mystery.id}" threatIds`);
+    assertKnownIds(mystery.locationIds ?? [], locationIds, `${label} mystery "${mystery.id}" locationIds`);
+    assertKnownIds(mystery.npcIds ?? [], npcIds, `${label} mystery "${mystery.id}" npcIds`);
+    assertUniqueClueIds(mystery, `${label} mystery "${mystery.id}" clues`);
+  }
+}
+
+function campaignPackErrorLabel(
+  pack: CampaignPack,
+  input: { source: "builtin" | "local"; sourcePath?: string }
+): string {
+  return `Campaign pack "${pack.id}"${input.sourcePath ? ` (${input.sourcePath})` : ""}`;
+}
+
+function assertUniqueIds(items: Array<{ id: string }>, label: string): void {
+  const seen = new Set<string>();
+  for (const item of items) {
+    if (seen.has(item.id)) {
+      throw new Error(`${label} contains duplicate id "${item.id}".`);
+    }
+    seen.add(item.id);
+  }
+}
+
+function assertKnownIds(values: string[], knownIds: Set<string>, label: string): void {
+  for (const value of values) {
+    if (!knownIds.has(value)) {
+      throw new Error(`${label} references unknown id "${value}".`);
+    }
+  }
+}
+
+function assertUniqueClueIds(mystery: MysteryEntry, label: string): void {
+  const seen = new Set<string>();
+  for (const clue of mystery.clues) {
+    if (typeof clue === "string") {
+      continue;
+    }
+    if (seen.has(clue.id)) {
+      throw new Error(`${label} contains duplicate clue id "${clue.id}".`);
+    }
+    seen.add(clue.id);
+  }
 }
 
 export function campaignPackDirectories(config: AppConfig): string[] {

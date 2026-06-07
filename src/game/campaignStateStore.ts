@@ -58,6 +58,7 @@ export interface GroupCampaignState {
   revealedNpcIds: string[];
   visitedLocationIds: string[];
   notes: string[];
+  processedSourceDocumentIds: string[];
   pendingDecision?: PendingGameDecision;
   lastKeeperMessage?: SentKeeperMessage;
 }
@@ -100,7 +101,8 @@ export class CampaignStateStore {
       revealedThreatIds: [],
       revealedNpcIds: [],
       visitedLocationIds: [],
-      notes: []
+      notes: [],
+      processedSourceDocumentIds: []
     };
     groups[input.groupId] = next;
     this.write({ ...file, groups });
@@ -122,11 +124,18 @@ export class CampaignStateStore {
     });
     const mystery = findMystery(input.campaign, current.mysteryId);
     const now = new Date().toISOString();
+    if (isProcessedSourceDocument(current, input.sourceDocumentId)) {
+      return current;
+    }
     const next = applyStateChanges(current, input.decision.stateChanges, mystery, now);
     const pendingDecision = pendingDecisionFrom(input, now);
     const updated: GroupCampaignState = {
       ...next,
       updatedAt: now,
+      processedSourceDocumentIds: appendProcessedSourceDocumentId(
+        next.processedSourceDocumentIds,
+        input.sourceDocumentId
+      ),
       ...(pendingDecision ? { pendingDecision } : { pendingDecision: undefined })
     };
 
@@ -259,6 +268,9 @@ function pendingDecisionFrom(
   createdAt: string
 ): PendingGameDecision | undefined {
   const decision = input.decision;
+  if (input.automationMode === "observe") {
+    return undefined;
+  }
   if (!decision.keeperMessage && !decision.moveCall && !decision.rollRequest) {
     return undefined;
   }
@@ -281,6 +293,19 @@ function uniqueAppend(values: string[], value: string): string[] {
   return normalized && !values.includes(normalized) ? [...values, normalized] : values;
 }
 
+function isProcessedSourceDocument(state: GroupCampaignState, sourceDocumentId: string): boolean {
+  const normalized = sourceDocumentId.trim();
+  return Boolean(normalized && state.processedSourceDocumentIds.includes(normalized));
+}
+
+function appendProcessedSourceDocumentId(values: string[], sourceDocumentId: string): string[] {
+  const normalized = sourceDocumentId.trim();
+  if (!normalized) {
+    return values.slice(-100);
+  }
+  return uniqueAppend(values, normalized).slice(-100);
+}
+
 function stateWithDefaults(state: GroupCampaignState): GroupCampaignState {
   return {
     ...state,
@@ -288,6 +313,7 @@ function stateWithDefaults(state: GroupCampaignState): GroupCampaignState {
     revealedThreatIds: state.revealedThreatIds ?? [],
     revealedNpcIds: state.revealedNpcIds ?? [],
     visitedLocationIds: state.visitedLocationIds ?? [],
-    notes: state.notes ?? []
+    notes: state.notes ?? [],
+    processedSourceDocumentIds: state.processedSourceDocumentIds ?? []
   };
 }

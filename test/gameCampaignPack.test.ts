@@ -4,11 +4,12 @@ import path from "node:path";
 import AdmZip from "adm-zip";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AppConfig } from "../src/config/types.js";
-import { campaignPackDirectories, loadCampaignPacks } from "../src/game/campaignPack.js";
+import { campaignPackDirectories, loadCampaignPacks, validateCampaignPack } from "../src/game/campaignPack.js";
 import { importCampaignPack } from "../src/game/campaignPackImport.js";
 import { CampaignStateStore } from "../src/game/campaignStateStore.js";
 import { formatKeeperMessageForGroupChat, GameRuntime } from "../src/game/gameRuntime.js";
 import { GroupGamingPreferenceStore, groupGamingPreferencesPath } from "../src/game/groupGamingPreferences.js";
+import { shouldSkipGenericHermesGroupHandling } from "../src/runtime/bridgeRuntime.js";
 import { InMemoryDedupeStore } from "../src/state/dedupeStore.js";
 import type { KindroidGroup } from "../src/kindroid/client/index.js";
 
@@ -34,6 +35,73 @@ describe("game campaign foundations", () => {
       id: "river-husk",
       kind: "monster"
     });
+  });
+
+  it("rejects campaign packs with dangling threat references", () => {
+    expect(() =>
+      validateCampaignPack(
+        campaignPackFixture({
+          mysteries: [
+            {
+              ...mysteryFixture(),
+              threatIds: ["missing-threat"]
+            }
+          ],
+          threats: []
+        }),
+        { source: "local", sourcePath: "bad-threat.json" }
+      )
+    ).toThrow(/threatIds references unknown id "missing-threat"/);
+  });
+
+  it("rejects campaign packs with dangling location references", () => {
+    expect(() =>
+      validateCampaignPack(
+        campaignPackFixture({
+          mysteries: [
+            {
+              ...mysteryFixture(),
+              locationIds: ["missing-location"]
+            }
+          ],
+          locations: []
+        }),
+        { source: "local", sourcePath: "bad-location.json" }
+      )
+    ).toThrow(/locationIds references unknown id "missing-location"/);
+  });
+
+  it("rejects duplicate mystery clue ids", () => {
+    expect(() =>
+      validateCampaignPack(
+        campaignPackFixture({
+          mysteries: [
+            {
+              ...mysteryFixture(),
+              clues: [
+                { id: "same-clue", text: "One clue." },
+                { id: "same-clue", text: "Another clue." }
+              ]
+            }
+          ]
+        }),
+        { source: "local", sourcePath: "duplicate-clues.json" }
+      )
+    ).toThrow(/duplicate clue id "same-clue"/);
+  });
+
+  it("rejects duplicate campaign entity ids", () => {
+    expect(() =>
+      validateCampaignPack(
+        campaignPackFixture({
+          threats: [
+            { id: "same-threat", name: "One Threat", kind: "monster" },
+            { id: "same-threat", name: "Other Threat", kind: "monster" }
+          ]
+        }),
+        { source: "local", sourcePath: "duplicate-threats.json" }
+      )
+    ).toThrow(/threats contains duplicate id "same-threat"/);
   });
 
   it("creates the local campaign pack drop-in directory", () => {
@@ -252,6 +320,7 @@ describe("game campaign foundations", () => {
       discoveredClueIds: [],
       revealedThreatIds: []
     });
+    expect(state.processedSourceDocumentIds).toEqual([]);
     expect(store.ensureInitialized({ groupId: "group-a", campaign, mysteryId: state.mysteryId })).toEqual(state);
   });
 
@@ -276,6 +345,28 @@ describe("game campaign foundations", () => {
       notes: ["The group investigated phone static."]
     });
     expect(store.getForGroup("group-a")?.pendingDecision).toBeUndefined();
+  });
+
+  it("does not apply the same source document state changes twice", async () => {
+    const config = testConfig({ hermesEnabled: true });
+    const preferences = GroupGamingPreferenceStore.fromConfig(config);
+    preferences.set("group-a", {
+      enabled: true,
+      campaignId: "prairie-saints-and-municipal-ghosts",
+      mysteryId: "the-thing-in-the-floodway",
+      automationMode: "observe"
+    });
+    const store = CampaignStateStore.fromConfig(config);
+    const runtime = testGameRuntime(config, preferences, store, hermesDecisionResponse());
+
+    await runtime.handleGroupChatChanged(group(), groupNotification("doc-1", "I inspect the phone static."));
+    await runtime.handleGroupChatChanged(group(), groupNotification("doc-1", "I inspect the phone static again."));
+
+    expect(store.getForGroup("group-a")).toMatchObject({
+      currentCountdownIndex: 1,
+      discoveredClueIds: ["static-phone"],
+      processedSourceDocumentIds: ["doc-1"]
+    });
   });
 
   it("stores suggest-mode Keeper decisions for review", async () => {
@@ -412,7 +503,7 @@ describe("game campaign foundations", () => {
     });
   });
 
-  it("does not send autonomous Keeper messages after Kin turns but still applies state changes", async () => {
+  it("does not mutate campaign state or send autonomous Keeper messages after Kin turns", async () => {
     const config = testConfig({ hermesEnabled: true });
     const preferences = GroupGamingPreferenceStore.fromConfig(config);
     preferences.set("group-a", {
@@ -443,18 +534,148 @@ describe("game campaign foundations", () => {
       }
     });
 
-    await runtime.handleGroupChatChanged(group(), groupNotification("doc-1", "Velma thinks through the clue.", "ai"));
+    const result = await runtime.handleGroupChatChanged(
+      group(),
+      groupNotification("doc-1", "Velma thinks through the clue.", "ai")
+    );
 
+    expect(result).toMatchObject({
+      gameHandled: true,
+      keeperMessageAttempted: false,
+      keeperMessageSent: false
+    });
     expect(sends).toHaveLength(0);
     expect(sceneUpdates).toHaveLength(0);
     expect(store.getForGroup("group-a")).toMatchObject({
-      currentCountdownIndex: 1,
-      discoveredClueIds: ["static-phone"],
-      revealedThreatIds: ["river-husk"],
-      notes: ["The group investigated phone static."]
+      currentCountdownIndex: 0,
+      discoveredClueIds: [],
+      revealedThreatIds: [],
+      notes: []
     });
     expect(store.getForGroup("group-a")?.pendingDecision).toBeUndefined();
     expect(store.getForGroup("group-a")?.lastKeeperMessage).toBeUndefined();
+  });
+
+  it("reports failed autonomous Keeper sends without marking them sent", async () => {
+    const config = testConfig({ hermesEnabled: true });
+    const preferences = GroupGamingPreferenceStore.fromConfig(config);
+    preferences.set("group-a", {
+      enabled: true,
+      campaignId: "prairie-saints-and-municipal-ghosts",
+      mysteryId: "the-thing-in-the-floodway",
+      automationMode: "autonomous"
+    });
+    const store = CampaignStateStore.fromConfig(config);
+    const runtime = testGameRuntime(config, preferences, store, hermesDecisionResponse(), {
+      sendGroupMessage: async (input) => ({
+        status: 503,
+        ok: false,
+        requestId: input.requestId,
+        idempotencyKey: input.idempotencyKey,
+        responseText: "temporary failure"
+      }),
+      updateGroupCurrentScene: async () => ({
+        status: 200,
+        ok: true
+      })
+    });
+
+    const result = await runtime.handleGroupChatChanged(
+      group(),
+      groupNotification("doc-1", "I inspect the phone static.")
+    );
+
+    expect(result).toMatchObject({
+      gameHandled: true,
+      keeperMessageAttempted: true,
+      keeperMessageSent: false
+    });
+    expect(shouldSkipGenericHermesGroupHandling(result)).toBe(true);
+    expect(store.getForGroup("group-a")).toMatchObject({
+      currentCountdownIndex: 1,
+      pendingDecision: {
+        sourceDocumentId: "doc-1",
+        keeperMessage: "*The phone hisses louder near the puddle.*",
+        automationMode: "autonomous"
+      }
+    });
+    expect(store.getForGroup("group-a")?.lastKeeperMessage).toBeUndefined();
+  });
+
+  it("ignores non-JSON Hermes decisions without mutation or Keeper send", async () => {
+    const config = testConfig({ hermesEnabled: true });
+    const preferences = GroupGamingPreferenceStore.fromConfig(config);
+    preferences.set("group-a", {
+      enabled: true,
+      campaignId: "prairie-saints-and-municipal-ghosts",
+      mysteryId: "the-thing-in-the-floodway",
+      automationMode: "autonomous"
+    });
+    const store = CampaignStateStore.fromConfig(config);
+    const sends: unknown[] = [];
+    const runtime = testGameRuntime(config, preferences, store, hermesTextResponse("not json"), {
+      sendGroupMessage: async (input) => {
+        sends.push(input);
+        return {
+          status: 200,
+          ok: true,
+          requestId: input.requestId,
+          idempotencyKey: input.idempotencyKey
+        };
+      },
+      updateGroupCurrentScene: async () => ({
+        status: 200,
+        ok: true
+      })
+    });
+
+    await runtime.handleGroupChatChanged(group(), groupNotification("doc-1", "I inspect the phone static."));
+
+    expect(sends).toHaveLength(0);
+    expect(store.getForGroup("group-a")).toMatchObject({
+      currentCountdownIndex: 0,
+      discoveredClueIds: [],
+      revealedThreatIds: [],
+      processedSourceDocumentIds: ["doc-1"]
+    });
+    expect(store.getForGroup("group-a")?.pendingDecision).toBeUndefined();
+  });
+
+  it("ignores unknown Hermes state change types and ids", async () => {
+    const config = testConfig({ hermesEnabled: true });
+    const preferences = GroupGamingPreferenceStore.fromConfig(config);
+    preferences.set("group-a", {
+      enabled: true,
+      campaignId: "prairie-saints-and-municipal-ghosts",
+      mysteryId: "the-thing-in-the-floodway",
+      automationMode: "observe"
+    });
+    const store = CampaignStateStore.fromConfig(config);
+    const runtime = testGameRuntime(
+      config,
+      preferences,
+      store,
+      hermesDecisionResponse({
+        keeperMessage: undefined,
+        stateChanges: [
+          { type: "teleport_group", locationId: "floodway-underpass" },
+          { type: "add_discovered_clue", clueId: "missing-clue" },
+          { type: "reveal_threat", threatId: "missing-threat" },
+          { type: "reveal_npc", npcId: "missing-npc" },
+          { type: "visit_location", locationId: "missing-location" }
+        ]
+      })
+    );
+
+    await runtime.handleGroupChatChanged(group(), groupNotification("doc-1", "I inspect the phone static."));
+
+    expect(store.getForGroup("group-a")).toMatchObject({
+      currentCountdownIndex: 0,
+      discoveredClueIds: [],
+      revealedThreatIds: [],
+      revealedNpcIds: [],
+      visitedLocationIds: []
+    });
   });
 
   it("does not send autonomous Keeper messages during the short Keeper cooldown", async () => {
@@ -545,7 +766,7 @@ function testGameRuntime(
   });
 }
 
-function hermesDecisionResponse() {
+function hermesDecisionResponse(overrides: Record<string, unknown> = {}) {
   return {
     choices: [
       {
@@ -560,8 +781,21 @@ function hermesDecisionResponse() {
             ],
             pressureCategory: "investigation_prompt",
             confidence: "high",
-            reason: "The group is investigating a known clue."
+            reason: "The group is investigating a known clue.",
+            ...overrides
           })
+        }
+      }
+    ]
+  };
+}
+
+function hermesTextResponse(content: string) {
+  return {
+    choices: [
+      {
+        message: {
+          content
         }
       }
     ]
@@ -620,6 +854,37 @@ function writeMinimalMystery(filePath: string, input: { id: string; title: strin
       truth: "The test truth."
     })
   );
+}
+
+function campaignPackFixture(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "fixture-campaign",
+    title: "Fixture Campaign",
+    rulesetStyle: "pbta-mystery-hunt",
+    license: "test",
+    tone: ["plain"],
+    contentWarnings: [],
+    mysteries: [mysteryFixture()],
+    threats: [{ id: "known-threat", name: "Known Threat", kind: "monster" }],
+    locations: [{ id: "known-location", name: "Known Location" }],
+    npcs: [{ id: "known-npc", name: "Known NPC" }],
+    hooks: [{ id: "known-hook", text: "Known hook." }],
+    ...overrides
+  };
+}
+
+function mysteryFixture(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "fixture-mystery",
+    title: "Fixture Mystery",
+    hook: "A local test hook.",
+    truth: "The test truth.",
+    clues: [{ id: "known-clue", text: "Known clue." }],
+    threatIds: ["known-threat"],
+    locationIds: ["known-location"],
+    npcIds: ["known-npc"],
+    ...overrides
+  };
 }
 
 const testLogger = {

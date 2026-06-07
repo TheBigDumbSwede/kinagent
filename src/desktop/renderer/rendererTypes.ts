@@ -162,6 +162,7 @@ export interface GroupCampaignStateSummary {
   revealedNpcIds: string[];
   visitedLocationIds: string[];
   notes: string[];
+  processedSourceDocumentIds: string[];
   pendingDecision?: {
     sourceDocumentId: string;
     createdAt: string;

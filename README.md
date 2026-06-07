@@ -335,16 +335,18 @@ Gaming preferences are stored separately under `./data/game-groups.json`. Kinage
 pack for development; user-authored local packs can be placed under `./data/campaigns/<pack>/` with a `campaign.json`
 manifest plus optional `mysteries/`, `threats/`, `npcs/`, `locations/`, `hooks/`, and `hermes/` folders. Packs provide
 static content and prompt hints only; they do not execute code. Mystery packs can model clues, structured countdown
-stages, and threat records, but the game runtime only accepts state changes that reference known pack ids.
+stages, and threat records, but imported packs are validated for internal id references and the game runtime only accepts
+state changes that reference known pack ids.
 
 When Gaming is enabled for a monitored group, Kinagent can send group chat events to Hermes through a contained game
 runtime. Hermes returns a game decision with a Keeper message and validated local state changes. `observe` applies only
 local state changes, `suggest` stores pending Keeper decisions until reviewed from the Gaming tab, and `autonomous` may
 send the Keeper message through the existing group message path. Suggested Keeper messages can be approved with `Send
 Keeper`; approved and autonomous messages both use the same group send path and local scene sync. Autonomous Keeper
-speech is paced: Kinagent can still apply state changes from readable Kin turns, but visible Keeper messages are only
-sent after user/player turns and after a short cooldown from the prior Keeper message. The game runtime has its own
-decision schema and does not extend the generic Hermes action registry.
+speech is paced: only user/player turns can mutate campaign state or create Keeper decisions, and visible Keeper
+messages are sent only after policy and cooldown checks pass. Source document ids are recorded so the same group chat
+event cannot advance countdowns, reveal entities, add clues, or send autonomous Keeper text twice. The game runtime has
+its own decision schema and does not extend the generic Hermes action registry.
 
 Enable desktop-only voice sidecar playback for new AI messages:
 

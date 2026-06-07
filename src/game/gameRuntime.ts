@@ -42,8 +42,16 @@ export interface GameKeeperMessageSentEvent {
 }
 
 export interface GameGroupChatResult {
+  gameHandled: boolean;
+  keeperMessageAttempted: boolean;
   keeperMessageSent: boolean;
   keeperMessageSuppressed: boolean;
+}
+
+export interface GameEventPolicy {
+  gameHandled: boolean;
+  canMutateState: boolean;
+  canCreateKeeperDecision: boolean;
 }
 
 interface KeeperSpeechPacing {
@@ -105,6 +113,36 @@ export class GameRuntime {
       campaign,
       mysteryId: preference.mysteryId
     });
+    const eventPolicy = gameEventPolicy(notification, preference.automationMode);
+    if (currentState.processedSourceDocumentIds.includes(notification.documentId)) {
+      this.options.logger.info("Skipping duplicate Group Gaming source document.", {
+        groupId: group.groupId,
+        documentId: notification.documentId,
+        campaignId: campaign.id,
+        mysteryId: currentState.mysteryId
+      });
+      return {
+        gameHandled: true,
+        keeperMessageAttempted: false,
+        keeperMessageSent: false,
+        keeperMessageSuppressed: false
+      };
+    }
+    if (!eventPolicy.canMutateState && !eventPolicy.canCreateKeeperDecision) {
+      this.options.logger.info("Group Gaming event handled without mutation by event policy.", {
+        groupId: group.groupId,
+        documentId: notification.documentId,
+        sender: notification.sender,
+        role: notification.role,
+        automationMode: preference.automationMode
+      });
+      return {
+        gameHandled: true,
+        keeperMessageAttempted: false,
+        keeperMessageSent: false,
+        keeperMessageSuppressed: false
+      };
+    }
     const keeperSpeechPacing = evaluateKeeperSpeechPacing({
       state: currentState,
       notification,
@@ -128,7 +166,10 @@ export class GameRuntime {
       automationMode: preference.automationMode,
       keeperSpeechPacing
     });
-    const policyDecision = formatDecisionForGroupTransport(decisionForPolicy(decision, preference.automationMode));
+    const eventFilteredDecision = applyGameEventPolicy(decision, eventPolicy);
+    const policyDecision = formatDecisionForGroupTransport(
+      decisionForPolicy(eventFilteredDecision, preference.automationMode)
+    );
     const pacedDecision = applyKeeperSpeechPacing(policyDecision, preference.automationMode, keeperSpeechPacing);
     const updated = this.options.campaignStates.applyDecision({
       groupId: group.groupId,
@@ -169,6 +210,7 @@ export class GameRuntime {
     }
 
     if (preference.automationMode === "autonomous" && pacedDecision.keeperMessage) {
+      const keeperMessageAttempted = true;
       const keeperMessageSent = await this.sendKeeperMessage(
         group,
         notification.documentId,
@@ -177,10 +219,20 @@ export class GameRuntime {
           source: "autonomous"
         }
       );
-      return { keeperMessageSent, keeperMessageSuppressed };
+      return {
+        gameHandled: true,
+        keeperMessageAttempted,
+        keeperMessageSent,
+        keeperMessageSuppressed
+      };
     }
 
-    return { keeperMessageSent: false, keeperMessageSuppressed };
+    return {
+      gameHandled: true,
+      keeperMessageAttempted: false,
+      keeperMessageSent: false,
+      keeperMessageSuppressed
+    };
   }
 
   async approvePendingKeeperMessage(group: KindroidGroup): Promise<GroupCampaignState> {
@@ -265,12 +317,11 @@ export class GameRuntime {
   ): Promise<boolean> {
     const requestId = newRequestId();
     const idempotencyKey = newRequestId();
-    const result = await this.kindroidClient.sendGroupMessage({
+    const result = await this.sendKeeperGroupMessage({
       groupId: group.groupId,
       message,
       requestId,
-      idempotencyKey,
-      triggerAiResponse: false
+      idempotencyKey
     });
     this.options.logger.info("Group Gaming Keeper message sent.", {
       groupId: group.groupId,
@@ -315,6 +366,28 @@ export class GameRuntime {
     return result.ok;
   }
 
+  private async sendKeeperGroupMessage(input: {
+    groupId: string;
+    message: string;
+    requestId: string;
+    idempotencyKey: string;
+  }): Promise<SendKindroidGroupMessageResult> {
+    try {
+      return await this.kindroidClient.sendGroupMessage({
+        ...input,
+        triggerAiResponse: false
+      });
+    } catch (error) {
+      return {
+        status: 0,
+        ok: false,
+        requestId: input.requestId,
+        idempotencyKey: input.idempotencyKey,
+        responseText: error instanceof Error ? error.message : String(error)
+      };
+    }
+  }
+
   private async syncKeeperMessageToGroupCurrentScene(
     group: KindroidGroup,
     sourceDocumentId: string,
@@ -338,7 +411,39 @@ export class GameRuntime {
 }
 
 function emptyGameGroupChatResult(): GameGroupChatResult {
-  return { keeperMessageSent: false, keeperMessageSuppressed: false };
+  return {
+    gameHandled: false,
+    keeperMessageAttempted: false,
+    keeperMessageSent: false,
+    keeperMessageSuppressed: false
+  };
+}
+
+export function gameEventPolicy(
+  notification: KindroidChatNotification,
+  _automationMode: GamingAutomationMode
+): GameEventPolicy {
+  const isUserTurn = notification.type === "kindroid.group_chat.changed" && notification.sender === "user";
+  return {
+    gameHandled: notification.type === "kindroid.group_chat.changed",
+    canMutateState: isUserTurn,
+    canCreateKeeperDecision: isUserTurn
+  };
+}
+
+export function applyGameEventPolicy(decision: GameKeeperDecision, policy: GameEventPolicy): GameKeeperDecision {
+  return {
+    ...decision,
+    stateChanges: policy.canMutateState ? decision.stateChanges : [],
+    ...(policy.canCreateKeeperDecision
+      ? {}
+      : {
+          keeperMessage: undefined,
+          moveCall: undefined,
+          rollRequest: undefined,
+          pressureCategory: undefined
+        })
+  };
 }
 
 function gameSystemPrompt(): string {

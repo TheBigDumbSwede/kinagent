@@ -22,7 +22,7 @@ import {
 } from "../game/campaignPack.js";
 import { importCampaignPack, type CampaignPackImportResult } from "../game/campaignPackImport.js";
 import { CampaignStateStore, type GroupCampaignState } from "../game/campaignStateStore.js";
-import { GameRuntime } from "../game/gameRuntime.js";
+import { GameRuntime, type GameGroupChatResult } from "../game/gameRuntime.js";
 import { GroupGamingPreferenceStore, type GroupGamingPreference } from "../game/groupGamingPreferences.js";
 import {
   defaultChatDynamismBounds,
@@ -853,10 +853,9 @@ export class BridgeRuntime {
           textDecrypted: message.textDecrypted,
           textDecryptionError: message.textDecryptionError
         });
-        let keeperMessageSent = false;
+        let gameResult: GameGroupChatResult | null = null;
         try {
-          const gameResult = await this.game.handleGroupChatChanged(group, notification);
-          keeperMessageSent = gameResult.keeperMessageSent;
+          gameResult = await this.game.handleGroupChatChanged(group, notification);
         } catch (error) {
           this.options.logger.warn("Group Gaming event handling failed.", {
             groupId: group.groupId,
@@ -864,10 +863,14 @@ export class BridgeRuntime {
             error: error instanceof Error ? error.message : String(error)
           });
         }
-        if (keeperMessageSent) {
-          this.options.logger.info("Skipping generic Hermes group event handling after autonomous Keeper message.", {
+        if (gameResult && shouldSkipGenericHermesGroupHandling(gameResult)) {
+          this.options.logger.info("Skipping generic Hermes group event handling after Group Gaming handled event.", {
             groupId: group.groupId,
-            documentId: message.id
+            documentId: message.id,
+            gameHandled: gameResult.gameHandled,
+            keeperMessageAttempted: gameResult.keeperMessageAttempted,
+            keeperMessageSent: gameResult.keeperMessageSent,
+            keeperMessageSuppressed: gameResult.keeperMessageSuppressed
           });
         } else {
           await this.hermes.handleChatChanged(notification);
@@ -1181,6 +1184,10 @@ export class BridgeRuntime {
   private emit(event: BridgeRuntimeEvent): void {
     this.options.onEvent?.(event);
   }
+}
+
+export function shouldSkipGenericHermesGroupHandling(result: GameGroupChatResult): boolean {
+  return result.gameHandled || result.keeperMessageAttempted || result.keeperMessageSent;
 }
 
 export interface BridgeRuntimeStatus {
