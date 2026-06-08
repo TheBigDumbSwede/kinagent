@@ -317,18 +317,20 @@ export class GameRuntime {
     if (!sendResult.ok) {
       throw new Error("Keeper suggestion could not be sent to the Group.");
     }
-    this.options.campaignStates.markRollResultSent({
-      groupId: group.groupId,
-      sourceDocumentId: state.pendingDecision.sourceDocumentId,
-      message: state.pendingDecision.keeperMessage,
-      sent: {
-        ok: sendResult.ok,
-        status: sendResult.status,
-        requestId: sendResult.requestId,
-        idempotencyKey: sendResult.idempotencyKey,
-        ...(sendResult.responseText ? { responseText: sendResult.responseText } : {})
-      }
-    });
+    if (state.rollHistory.some((entry) => entry.sourceDocumentId === state.pendingDecision?.sourceDocumentId)) {
+      this.options.campaignStates.markRollResultSent({
+        groupId: group.groupId,
+        sourceDocumentId: state.pendingDecision.sourceDocumentId,
+        message: state.pendingDecision.keeperMessage,
+        sent: {
+          ok: sendResult.ok,
+          status: sendResult.status,
+          requestId: sendResult.requestId,
+          idempotencyKey: sendResult.idempotencyKey,
+          ...(sendResult.responseText ? { responseText: sendResult.responseText } : {})
+        }
+      });
+    }
 
     const updated = this.options.campaignStates.getForGroup(group.groupId);
     if (!updated) {
