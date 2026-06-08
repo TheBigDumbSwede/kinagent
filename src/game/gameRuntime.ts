@@ -74,6 +74,7 @@ interface RollResolutionResult {
 }
 
 const autonomousKeeperCooldownMs = 30 * 1000;
+const autonomousNoOpKeeperMessage = "*The moment hangs unresolved. What do you do next?*";
 
 export class GameRuntime {
   private readonly diceRoller: DiceRoller;
@@ -223,12 +224,7 @@ export class GameRuntime {
     });
     const eventFilteredDecision = applyGameEventPolicy(decision, eventPolicy);
     const policyDecision = formatDecisionForGroupTransport(
-      surfaceAutonomousUserDecision({
-        decision: decisionForPolicy(eventFilteredDecision, preference.automationMode),
-        notification,
-        automationMode: preference.automationMode,
-        state: currentState
-      })
+      decisionForPolicy(eventFilteredDecision, preference.automationMode)
     );
     const pacedDecision = applyKeeperSpeechPacing(policyDecision, preference.automationMode, keeperSpeechPacing);
     const applied = this.options.campaignStates.applyDecision({
@@ -245,6 +241,7 @@ export class GameRuntime {
       automationMode: preference.automationMode
     });
     const updated = rollResolution?.state ?? applied;
+    const mysteryCompleted = updated.status === "completed";
     const keeperMessageSuppressed = Boolean(policyDecision.keeperMessage && !pacedDecision.keeperMessage);
     this.options.logger.info("Group Gaming decision applied.", {
       groupId: group.groupId,
@@ -294,6 +291,46 @@ export class GameRuntime {
         pacedDecision.keeperMessage,
         {
           source: "autonomous"
+        }
+      );
+      return {
+        gameHandled: true,
+        keeperMessageAttempted,
+        keeperMessageSent,
+        keeperMessageSuppressed
+      };
+    }
+
+    if (mysteryCompleted && !rollResolution && !pacedDecision.keeperMessage && !updated.pendingDecision) {
+      const completionNotice = await this.handleCompletedMysteryKeeperNotice({
+        group,
+        notification,
+        automationMode: preference.automationMode,
+        state: updated
+      });
+      if (completionNotice) {
+        return completionNotice;
+      }
+    }
+
+    if (
+      shouldSendAutonomousNoOpKeeperMessage({
+        decision: policyDecision,
+        notification,
+        automationMode: preference.automationMode,
+        state: updated,
+        rollResolution
+      })
+    ) {
+      const keeperMessageAttempted = true;
+      const keeperMessageSent = await this.sendKeeperMessage(
+        group,
+        notification.documentId,
+        autonomousNoOpKeeperMessage,
+        {
+          source: "autonomous",
+          recordCampaignState: false,
+          syncCurrentScene: false
         }
       );
       return {
@@ -658,6 +695,49 @@ export class GameRuntime {
     };
   }
 
+  private async handleCompletedMysteryKeeperNotice(input: {
+    group: KindroidGroup;
+    notification: KindroidGroupChatChangeNotification;
+    automationMode: GamingAutomationMode;
+    state: GroupCampaignState;
+  }): Promise<GameGroupChatResult | null> {
+    if (input.automationMode === "observe") {
+      return null;
+    }
+
+    const keeperMessage = completionKeeperMessage(input.state);
+    if (input.automationMode === "suggest") {
+      const pending = this.options.campaignStates.storePendingKeeperDecision({
+        groupId: input.group.groupId,
+        sourceDocumentId: input.notification.documentId,
+        automationMode: input.automationMode,
+        keeperMessage,
+        confidence: "high",
+        reason: "The selected mystery is complete."
+      });
+      if (pending) {
+        this.options.onStateUpdated?.(pending);
+        this.options.onPendingDecision?.(pending);
+      }
+      return {
+        gameHandled: true,
+        keeperMessageAttempted: true,
+        keeperMessageSent: false,
+        keeperMessageSuppressed: true
+      };
+    }
+
+    const keeperMessageSent = await this.sendKeeperMessage(input.group, input.notification.documentId, keeperMessage, {
+      source: "autonomous"
+    });
+    return {
+      gameHandled: true,
+      keeperMessageAttempted: true,
+      keeperMessageSent,
+      keeperMessageSuppressed: !keeperMessageSent
+    };
+  }
+
   private resolveCampaign(campaignId: string | undefined): LoadedCampaignPack | null {
     const campaigns = loadCampaignPacks(this.options.config);
     return (
@@ -840,7 +920,12 @@ export class GameRuntime {
     group: KindroidGroup,
     sourceDocumentId: string,
     message: string,
-    input: { source: "autonomous" | "approved-suggestion"; triggerAiResponse?: boolean }
+    input: {
+      source: "autonomous" | "approved-suggestion";
+      triggerAiResponse?: boolean;
+      recordCampaignState?: boolean;
+      syncCurrentScene?: boolean;
+    }
   ): Promise<boolean> {
     const result = await this.keeperMessenger.send(group, sourceDocumentId, message, input);
     return result.ok;
@@ -1084,23 +1169,23 @@ function decisionForPolicy(decision: GameKeeperDecision, mode: GamingAutomationM
   return decision;
 }
 
-function surfaceAutonomousUserDecision(input: {
+function shouldSendAutonomousNoOpKeeperMessage(input: {
   decision: GameKeeperDecision;
   notification: KindroidChatNotification;
   automationMode: GamingAutomationMode;
   state: GroupCampaignState;
-}): GameKeeperDecision {
-  if (input.automationMode !== "autonomous" || input.notification.sender !== "user" || input.decision.keeperMessage) {
-    return input.decision;
-  }
-
-  return {
-    ...input.decision,
-    keeperMessage:
-      input.decision.rollRequest || input.state.pendingRollRequest
-        ? undefined
-        : "The moment hangs unresolved. What do you do next?"
-  };
+  rollResolution: RollResolutionResult | null;
+}): boolean {
+  return (
+    input.automationMode === "autonomous" &&
+    input.notification.sender === "user" &&
+    !input.decision.keeperMessage &&
+    input.decision.stateChanges.length === 0 &&
+    !input.decision.rollRequest &&
+    !input.state.pendingRollRequest &&
+    !input.state.pendingDecision &&
+    !input.rollResolution
+  );
 }
 
 function applyKeeperSpeechPacing(

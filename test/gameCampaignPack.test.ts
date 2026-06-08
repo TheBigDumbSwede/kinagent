@@ -1881,6 +1881,7 @@ describe("game campaign foundations", () => {
     });
     const store = CampaignStateStore.fromConfig(config);
     const sends: unknown[] = [];
+    const sceneUpdates: unknown[] = [];
     const runtime = testGameRuntime(config, preferences, store, hermesTextResponse("not json"), {
       sendGroupMessage: async (input) => {
         sends.push(input);
@@ -1891,10 +1892,13 @@ describe("game campaign foundations", () => {
           idempotencyKey: input.idempotencyKey
         };
       },
-      updateGroupCurrentScene: async () => ({
-        status: 200,
-        ok: true
-      })
+      updateGroupCurrentScene: async (input) => {
+        sceneUpdates.push(input);
+        return {
+          status: 200,
+          ok: true
+        };
+      }
     });
 
     await runtime.handleGroupChatChanged(group(), groupNotification("doc-1", "I inspect the phone static."));
@@ -1909,10 +1913,183 @@ describe("game campaign foundations", () => {
       currentCountdownIndex: 0,
       discoveredClueIds: [],
       revealedThreatIds: [],
+      processedSourceDocumentIds: ["doc-1"]
+    });
+    expect(store.getForGroup("group-a")?.lastKeeperMessage).toBeUndefined();
+    expect(sceneUpdates).toHaveLength(0);
+  });
+
+  it("surfaces no-op autonomous decisions even during Keeper cooldown", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-06T00:00:10.000Z"));
+    const config = testConfig({ hermesEnabled: true });
+    const preferences = GroupGamingPreferenceStore.fromConfig(config);
+    preferences.set("group-a", {
+      enabled: true,
+      campaignId: "prairie-saints-and-municipal-ghosts",
+      mysteryId: "the-thing-in-the-floodway",
+      automationMode: "autonomous"
+    });
+    const store = CampaignStateStore.fromConfig(config);
+    store.ensureInitialized({
+      groupId: "group-a",
+      campaign: loadCampaignPacks(config)[0],
+      mysteryId: "the-thing-in-the-floodway"
+    });
+    store.markKeeperMessageSent({
+      groupId: "group-a",
+      text: "*Earlier Keeper message.*",
+      requestId: "request-1",
+      idempotencyKey: "idem-1",
+      sourceDocumentId: "doc-before"
+    });
+    const sends: unknown[] = [];
+    const sceneUpdates: unknown[] = [];
+    const runtime = testGameRuntime(
+      config,
+      preferences,
+      store,
+      hermesDecisionResponse({
+        keeperMessage: undefined,
+        stateChanges: [],
+        pressureCategory: undefined,
+        reason: "No Keeper action is needed."
+      }),
+      {
+        sendGroupMessage: async (input) => {
+          sends.push(input);
+          return {
+            status: 200,
+            ok: true,
+            requestId: input.requestId,
+            idempotencyKey: input.idempotencyKey
+          };
+        },
+        updateGroupCurrentScene: async (input) => {
+          sceneUpdates.push(input);
+          return {
+            status: 200,
+            ok: true
+          };
+        }
+      }
+    );
+
+    const result = await runtime.handleGroupChatChanged(
+      group(),
+      groupNotification("doc-1", "I wait a beat.", "user", "2026-06-06T00:00:20.000Z")
+    );
+
+    expect(result).toMatchObject({
+      gameHandled: true,
+      keeperMessageAttempted: true,
+      keeperMessageSent: true,
+      keeperMessageSuppressed: false
+    });
+    expect(sends).toHaveLength(1);
+    expect(sends[0]).toMatchObject({
+      groupId: "group-a",
+      message: "*The moment hangs unresolved. What do you do next?*",
+      triggerAiResponse: false
+    });
+    expect(sceneUpdates).toHaveLength(0);
+    expect(store.getForGroup("group-a")).toMatchObject({
+      currentCountdownIndex: 0,
+      discoveredClueIds: [],
+      revealedThreatIds: [],
       processedSourceDocumentIds: ["doc-1"],
       lastKeeperMessage: {
-        text: "*The moment hangs unresolved. What do you do next?*",
-        sourceDocumentId: "doc-1"
+        text: "*Earlier Keeper message.*",
+        sourceDocumentId: "doc-before"
+      }
+    });
+  });
+
+  it("announces completed autonomous mysteries even during Keeper cooldown", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-06T00:00:10.000Z"));
+    const config = testConfig({ hermesEnabled: true });
+    const preferences = GroupGamingPreferenceStore.fromConfig(config);
+    preferences.set("group-a", {
+      enabled: true,
+      campaignId: "prairie-saints-and-municipal-ghosts",
+      mysteryId: "the-thing-in-the-floodway",
+      automationMode: "autonomous"
+    });
+    const store = CampaignStateStore.fromConfig(config);
+    store.ensureInitialized({
+      groupId: "group-a",
+      campaign: loadCampaignPacks(config)[0],
+      mysteryId: "the-thing-in-the-floodway"
+    });
+    store.markKeeperMessageSent({
+      groupId: "group-a",
+      text: "*Earlier Keeper message.*",
+      requestId: "request-1",
+      idempotencyKey: "idem-1",
+      sourceDocumentId: "doc-before"
+    });
+    const sends: unknown[] = [];
+    const sceneUpdates: unknown[] = [];
+    const runtime = testGameRuntime(
+      config,
+      preferences,
+      store,
+      hermesDecisionResponse({
+        keeperMessage: undefined,
+        stateChanges: [{ type: "set_status", status: "completed", reason: "The mystery is resolved." }],
+        pressureCategory: undefined,
+        reason: "The selected mystery is complete."
+      }),
+      {
+        sendGroupMessage: async (input) => {
+          sends.push(input);
+          return {
+            status: 200,
+            ok: true,
+            requestId: input.requestId,
+            idempotencyKey: input.idempotencyKey
+          };
+        },
+        updateGroupCurrentScene: async (input) => {
+          sceneUpdates.push(input);
+          return {
+            status: 200,
+            ok: true
+          };
+        }
+      }
+    );
+
+    const result = await runtime.handleGroupChatChanged(
+      group(),
+      groupNotification("doc-complete", "I wrap up the case.", "user", "2026-06-06T00:00:20.000Z")
+    );
+
+    expect(result).toMatchObject({
+      gameHandled: true,
+      keeperMessageAttempted: true,
+      keeperMessageSent: true,
+      keeperMessageSuppressed: false
+    });
+    expect(sends).toHaveLength(1);
+    expect(sends[0]).toMatchObject({
+      groupId: "group-a",
+      message: "*The mystery is marked complete.*",
+      triggerAiResponse: false
+    });
+    expect(sceneUpdates).toEqual([
+      {
+        groupId: "group-a",
+        currentScene: "The mystery is marked complete."
+      }
+    ]);
+    expect(store.getForGroup("group-a")).toMatchObject({
+      status: "completed",
+      processedSourceDocumentIds: ["doc-complete"],
+      lastKeeperMessage: {
+        text: "*The mystery is marked complete.*",
+        sourceDocumentId: "doc-complete"
       }
     });
   });

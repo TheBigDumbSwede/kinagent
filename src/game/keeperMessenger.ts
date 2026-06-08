@@ -42,11 +42,18 @@ export class KeeperMessenger {
     group: KindroidGroup,
     sourceDocumentId: string,
     message: string,
-    input: { source: KeeperMessageSource; triggerAiResponse?: boolean }
+    input: {
+      source: KeeperMessageSource;
+      triggerAiResponse?: boolean;
+      recordCampaignState?: boolean;
+      syncCurrentScene?: boolean;
+    }
   ): Promise<SendKindroidGroupMessageResult> {
     const requestId = newRequestId();
     const idempotencyKey = newRequestId();
     const triggerAiResponse = input.triggerAiResponse ?? false;
+    const recordCampaignState = input.recordCampaignState ?? true;
+    const syncCurrentScene = input.syncCurrentScene ?? true;
     const result = await this.sendGroupMessage({
       groupId: group.groupId,
       message,
@@ -72,17 +79,21 @@ export class KeeperMessenger {
         requestId,
         idempotencyKey
       });
-      const updated = this.options.campaignStates.markKeeperMessageSent({
-        groupId: group.groupId,
-        text: message,
-        requestId,
-        idempotencyKey,
-        sourceDocumentId
-      });
-      if (updated) {
-        this.options.onStateUpdated?.(updated);
+      if (recordCampaignState) {
+        const updated = this.options.campaignStates.markKeeperMessageSent({
+          groupId: group.groupId,
+          text: message,
+          requestId,
+          idempotencyKey,
+          sourceDocumentId
+        });
+        if (updated) {
+          this.options.onStateUpdated?.(updated);
+        }
       }
-      await this.syncCurrentScene(group, sourceDocumentId, message);
+      if (syncCurrentScene) {
+        await this.syncCurrentScene(group, sourceDocumentId, message);
+      }
     }
 
     this.options.onKeeperMessageSent?.({
