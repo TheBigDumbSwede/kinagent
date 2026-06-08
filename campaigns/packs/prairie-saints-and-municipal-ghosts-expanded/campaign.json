@@ -1,0 +1,24 @@
+{
+  "id": "prairie-saints-and-municipal-ghosts-expanded",
+  "title": "Prairie Saints and Municipal Ghosts: Rain Season",
+  "genre": "urban prairie horror",
+  "tone": [
+    "rain-soaked",
+    "municipal decay",
+    "local folklore under fluorescent light",
+    "paranormal investigation",
+    "dry wit under pressure"
+  ],
+  "rulesetStyle": "pbta-mystery-hunt",
+  "recommendedGroupSize": "2-5 hunters",
+  "contentWarnings": [
+    "body horror",
+    "drowning imagery",
+    "missing persons",
+    "memory loss",
+    "animal horror",
+    "urban collapse"
+  ],
+  "license": "MIT",
+  "attribution": "Original Kinagent campaign pack."
+}

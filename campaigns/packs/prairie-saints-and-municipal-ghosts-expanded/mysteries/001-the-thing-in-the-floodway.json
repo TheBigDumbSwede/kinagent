@@ -1,0 +1,89 @@
+{
+  "id": "the-thing-in-the-floodway",
+  "title": "The Thing in the Floodway",
+  "hook": "After three nights of hard rain, people start vanishing near drainage tunnels, pump houses, and underpasses.",
+  "truth": "A parasitic water-spirit called the River Husk has nested in the floodway infrastructure and is hollowing out living hosts to make a path inland.",
+  "monster": {
+    "name": "The River Husk",
+    "type": "parasite-haunt",
+    "instinct": "To hollow out living hosts and return them to the water system.",
+    "weaknesses": ["salted fire", "spoken names of the drowned", "dry ground consecrated by living memory"]
+  },
+  "countdown": [
+    {
+      "id": "warning",
+      "label": "First Sign",
+      "text": "A dog refuses to cross a puddle under the floodway overpass, then begins growling at the storm drain."
+    },
+    {
+      "id": "loss",
+      "label": "First Loss",
+      "text": "A maintenance worker misses checkout after inspecting a pump alarm."
+    },
+    {
+      "id": "return",
+      "label": "False Return",
+      "text": "The missing worker is seen at home, soaked through, smiling without recognizing family."
+    },
+    {
+      "id": "system-shift",
+      "label": "System Shift",
+      "text": "Water begins flowing uphill through a sealed drainage channel."
+    },
+    {
+      "id": "public-crisis",
+      "label": "Public Crisis",
+      "text": "Basements across a low neighbourhood flood from the drains upward."
+    },
+    {
+      "id": "breach",
+      "label": "Final Breach",
+      "text": "Every storm drain in the district opens at once and the River Husk calls its hosts home."
+    }
+  ],
+  "clues": [
+    {
+      "id": "locked-basement-water",
+      "text": "Muddy water stands inside a locked basement with no broken pipes.",
+      "tags": ["physical", "water"]
+    },
+    {
+      "id": "static-phone",
+      "text": "A victim's phone plays thick static only when held near standing water.",
+      "tags": ["device", "water"]
+    },
+    {
+      "id": "salt-crystals",
+      "text": "Salt crystals cling to a storm drain grate that city maps say should be dry.",
+      "tags": ["weakness", "infrastructure"]
+    },
+    {
+      "id": "names-on-wall",
+      "text": "Names of old drowning victims appear in condensation on tunnel concrete.",
+      "tags": ["history", "spirit"]
+    },
+    {
+      "id": "hollow-host-breath",
+      "text": "A returned victim exhales damp air that smells of river weeds.",
+      "tags": ["host", "body"]
+    },
+    {
+      "id": "dry-memory",
+      "text": "A memorial bench near the underpass stays bone dry in the rain.",
+      "tags": ["weakness", "memory"]
+    }
+  ],
+  "threatIds": ["river-husk", "hollowed-hosts", "anchor-drain"],
+  "locationIds": ["floodway-underpass", "pump-house-three", "bus-loop-at-rain"],
+  "npcIds": ["night-maintenance-crew", "nadia-pelletier", "graham-vale"],
+  "keeperHints": [
+    "Let the mystery begin with municipal inconvenience before it becomes supernatural.",
+    "Use wet footprints, wrong water levels, and bad radio calls as pressure.",
+    "The River Husk should feel local, practical, and old, not cosmic."
+  ],
+  "revealPolicy": "Reveal the water-spirit through traces, hosts, and impossible infrastructure before naming it.",
+  "automationSafety": [
+    "Do not declare a player character drowned or possessed without explicit consent.",
+    "Do not solve the weakness unless the group earns the names-and-salt connection."
+  ]
+}

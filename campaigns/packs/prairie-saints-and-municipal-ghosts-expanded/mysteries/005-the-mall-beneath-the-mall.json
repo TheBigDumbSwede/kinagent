@@ -1,0 +1,89 @@
+{
+  "id": "the-mall-beneath-the-mall",
+  "title": "The Mall Beneath the Mall",
+  "hook": "Security cameras in a dying mall show a lower food court that was never built, full of shoppers from stores that closed years ago.",
+  "truth": "The mall's buried service level has become a hunger-place where abandoned brands, bad promises, and missing shoppers are traded as offerings.",
+  "monster": {
+    "name": "The Lower Mall",
+    "type": "place-predator",
+    "instinct": "To keep people browsing until they forget what they came for and who is waiting outside.",
+    "weaknesses": ["following a receipt trail backward", "closing every gate at once", "refusing the perfect purchase"]
+  },
+  "countdown": [
+    {
+      "id": "camera-floor",
+      "label": "First Sign",
+      "text": "A camera shows an escalator going down where the floor plan shows storage."
+    },
+    {
+      "id": "lost-shopper",
+      "label": "First Loss",
+      "text": "A teenager vanishes after following a pop-up sale notification."
+    },
+    {
+      "id": "old-stores-open",
+      "label": "Temptation",
+      "text": "Closed stores reopen below with perfect versions of things people regret losing."
+    },
+    {
+      "id": "food-court-hum",
+      "label": "Feed",
+      "text": "The lower food court fills with shoppers who never blink and never leave."
+    },
+    {
+      "id": "upper-mall-sinks",
+      "label": "Crisis",
+      "text": "The real mall begins losing exits, one gate at a time."
+    },
+    {
+      "id": "grand-reopening",
+      "label": "Finale",
+      "text": "The Lower Mall announces a grand reopening and invites the whole city inside."
+    }
+  ],
+  "clues": [
+    {
+      "id": "impossible-receipt",
+      "text": "A receipt is dated next week and lists a store demolished in 2003.",
+      "tags": ["document", "time"]
+    },
+    {
+      "id": "reverse-receipt-trail",
+      "text": "Receipts point the way out only when followed from newest purchase to oldest.",
+      "tags": ["weakness", "navigation"]
+    },
+    {
+      "id": "gate-symmetry",
+      "text": "Every security gate must close together or the lower level opens another entrance.",
+      "tags": ["weakness", "infrastructure"]
+    },
+    {
+      "id": "perfect-purchase",
+      "text": "Each victim was offered exactly what they wanted to undo.",
+      "tags": ["temptation", "pattern"]
+    },
+    {
+      "id": "old-jingle",
+      "text": "A store jingle contains the names of missing shoppers in the backing vocals.",
+      "tags": ["sound", "victims"]
+    },
+    {
+      "id": "service-map",
+      "text": "A maintenance map shows a buried service corridor labelled only as Returns.",
+      "tags": ["map", "place"]
+    }
+  ],
+  "threatIds": ["lower-mall", "returns-clerks", "escalator-well"],
+  "locationIds": ["boarded-mall", "food-court-below", "service-corridor-cathedral"],
+  "npcIds": ["alana-cho", "joel-august", "tessa-mallory"],
+  "keeperHints": [
+    "Make the mall mundane first: bad tile, closed kiosks, stale cinnamon, locked gates.",
+    "Temptation should be personal but never require inventing private backstory without permission.",
+    "Use retail language as ritual language."
+  ],
+  "revealPolicy": "Show the place feeding on regret before naming it as a predator.",
+  "automationSafety": [
+    "Do not decide what a player character most wants; ask or offer broad sensory temptation.",
+    "Always leave one practical exit visible until the finale countdown stage."
+  ]
+}

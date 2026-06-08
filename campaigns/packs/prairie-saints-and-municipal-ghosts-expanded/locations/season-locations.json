@@ -1,0 +1,114 @@
+[
+  {
+    "id": "floodway-underpass",
+    "name": "Floodway Underpass",
+    "description": "Concrete, sodium light, wet gravel, and water moving where it should not.",
+    "sensoryPalette": ["wet concrete", "distant traffic", "cold standing water", "ozone before rain"],
+    "soundscapeHints": ["dripping water", "low tunnel resonance", "tires passing overhead"],
+    "tags": ["water", "threshold"]
+  },
+  {
+    "id": "pump-house-three",
+    "name": "Pump House Three",
+    "description": "A locked municipal pump station with old warning signs, new scratches, and a basement that should be dry.",
+    "sensoryPalette": ["chlorine", "rust", "hot electrical panels", "muddy boot prints"],
+    "soundscapeHints": ["pump thrum", "failing fluorescent ballast", "water hammer"],
+    "tags": ["water", "infrastructure"]
+  },
+  {
+    "id": "bus-loop-at-rain",
+    "name": "Bus Loop at Rain",
+    "description": "A low bus loop where puddles gather under shelter glass and every timetable is damp.",
+    "sensoryPalette": ["diesel", "wet paper", "streetlight glare", "plastic seats"],
+    "soundscapeHints": ["bus brakes", "rain on shelter roof", "distant radio static"],
+    "tags": ["public", "transit"]
+  },
+  {
+    "id": "switching-station",
+    "name": "Old Switching Station",
+    "description": "A brick utility building behind chain-link fence, full of dead panels and one humming copper trunk.",
+    "sensoryPalette": ["dust", "warm copper", "ozone", "oil-stained concrete"],
+    "soundscapeHints": ["electrical hum", "radio scan clicks", "wind in chain link"],
+    "tags": ["signal", "infrastructure"]
+  },
+  {
+    "id": "old-civic-archive",
+    "name": "Old Civic Archive",
+    "description": "A records office with rolling shelves, water stains, and maps that have been corrected too many times.",
+    "sensoryPalette": ["paper dust", "toner", "old glue", "basement cold"],
+    "soundscapeHints": ["shelf wheels", "distant copier", "paper shifting"],
+    "tags": ["records", "history"]
+  },
+  {
+    "id": "ellice-rooming-house",
+    "name": "Ellice Rooming House",
+    "description": "A sagging house cut into too many rooms, with mail slots for tenants no one remembers.",
+    "sensoryPalette": ["boiled cabbage", "old carpet", "dusty heat", "paint over damp wood"],
+    "soundscapeHints": ["radiator knocks", "floorboard creaks", "muffled lullaby"],
+    "tags": ["memory", "home"]
+  },
+  {
+    "id": "root-cellar-door",
+    "name": "Root Cellar Door",
+    "description": "A narrow cellar entrance under the kitchen stairs, sealed with old locks and newer apologies.",
+    "sensoryPalette": ["cold soil", "iron keys", "mildew", "sun through dirty glass"],
+    "soundscapeHints": ["soft breathing behind wood", "key teeth scraping", "dirt settling"],
+    "tags": ["memory", "threshold"]
+  },
+  {
+    "id": "willow-shelterbelt",
+    "name": "Willow Shelterbelt",
+    "description": "A strip of trees at the city's edge where tracks enter but do not always leave.",
+    "sensoryPalette": ["willow bark", "cold earth", "animal musk", "snow in shade"],
+    "soundscapeHints": ["branches tapping", "distant traffic", "soft chewing"],
+    "tags": ["edge", "animal"]
+  },
+  {
+    "id": "edge-bus-shelter",
+    "name": "Edge Bus Shelter",
+    "description": "A glass bus shelter near open fields, warm with human breath and old fast-food wrappers.",
+    "sensoryPalette": ["wet wool", "cold fries", "road salt", "fogged glass"],
+    "soundscapeHints": ["wind across fields", "bus announcement crackle", "teeth clicking"],
+    "tags": ["transit", "hunger"]
+  },
+  {
+    "id": "grain-elevator-foundation",
+    "name": "Grain Elevator Foundation",
+    "description": "The concrete remains of an elevator, half swallowed by grass and old hunger stories.",
+    "sensoryPalette": ["dry grass", "grain dust", "iron rust", "cold shadow"],
+    "soundscapeHints": ["grass hiss", "far train horn", "hooves on concrete"],
+    "tags": ["history", "hunger"]
+  },
+  {
+    "id": "boarded-mall",
+    "name": "Boarded Mall",
+    "description": "A half-empty shopping centre with bright islands of commerce in a sea of shuttered gates.",
+    "sensoryPalette": ["floor wax", "stale cinnamon", "dusty skylight", "old fountain coins"],
+    "soundscapeHints": ["escalator clack", "distant mall music", "security radio"],
+    "tags": ["retail", "public"]
+  },
+  {
+    "id": "food-court-below",
+    "name": "Food Court Below",
+    "description": "An impossible lower food court where every sign is familiar but no logo is quite right.",
+    "sensoryPalette": ["hot fryer oil", "plastic trays", "too-clean tables", "sugary air"],
+    "soundscapeHints": ["old jingles", "cash drawer chime", "crowd murmur without words"],
+    "tags": ["retail", "impossible"]
+  },
+  {
+    "id": "service-corridor-cathedral",
+    "name": "Service Corridor Cathedral",
+    "description": "A service corridor stretched impossibly tall, where loading doors stand like chapels to things returned.",
+    "sensoryPalette": ["cardboard", "cold tile", "metal gates", "burned coffee"],
+    "soundscapeHints": ["cart wheels", "gate rattles", "distant announcements"],
+    "tags": ["threshold", "retail"]
+  },
+  {
+    "id": "survey-marker-zero",
+    "name": "Survey Marker Zero",
+    "description": "A brass survey marker set into cracked pavement where no official survey says it should be.",
+    "sensoryPalette": ["warm brass", "tar", "metallic air", "settled dust"],
+    "soundscapeHints": ["low civic rumble", "distant bells", "maps unfolding"],
+    "tags": ["finale", "origin"]
+  }
+]

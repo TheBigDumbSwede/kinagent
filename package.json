@@ -27,6 +27,8 @@
     "soundscape:generate": "tsx scripts/soundscape/generate-elevenlabs-palette.ts",
     "soundscape:analyze": "tsx scripts/soundscape/analyze-generated-assets.ts",
     "soundscape:normalize": "tsx scripts/soundscape/normalize-generated-assets.ts",
+    "campaigns:check": "tsx scripts/campaigns/check-campaigns.ts",
+    "campaigns:build": "tsx scripts/campaigns/build-campaigns.ts",
     "experiment:chat-dynamism": "tsx src/index.ts experiment-chat-dynamism",
     "experiment:internet-response": "tsx src/index.ts experiment-internet-response",
     "daemon": "tsx src/index.ts daemon",
@@ -42,7 +44,7 @@
     "release:check-version": "node scripts/check-release-version.mjs",
     "smoke:portable": "node scripts/smoke-portable.mjs",
     "test:live": "vitest run --config vitest.live.config.ts",
-    "check": "npm run secret-scan && npm run lint && npm run format && npm run typecheck && npm test && npm run build",
+    "check": "npm run secret-scan && npm run campaigns:check && npm run lint && npm run format && npm run typecheck && npm test && npm run build",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit"
   },
   "build": {

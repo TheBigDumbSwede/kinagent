@@ -1,0 +1,49 @@
+{
+  "investigationSignals": [
+    "searches a location",
+    "questions a witness",
+    "checks records or maps",
+    "studies a device, signal, animal, room, receipt, or water trace",
+    "compares current evidence to earlier mysteries"
+  ],
+  "pressureSignals": [
+    "ignores an active threat",
+    "splits up in a dangerous location",
+    "waits while the countdown is active",
+    "uses a haunted object without precautions",
+    "accepts a bargain without naming the cost"
+  ],
+  "keeperResponseModes": [
+    {
+      "id": "reveal-clue",
+      "useWhen": "The group investigates a relevant place, person, object, or pattern.",
+      "shape": "Give one concrete clue and one sensory detail. Avoid explaining the whole mystery."
+    },
+    {
+      "id": "advance-pressure",
+      "useWhen": "The group delays, ignores a threat, or gives the threat room to act.",
+      "shape": "Advance one countdown stage or show a local consequence."
+    },
+    {
+      "id": "offer-choice",
+      "useWhen": "A threat tempts, bargains, corners, or divides the group.",
+      "shape": "State the offer, visible cost, and immediate risk without choosing for them."
+    },
+    {
+      "id": "spotlight-npc",
+      "useWhen": "An NPC has relevant pressure or can reveal a human cost.",
+      "shape": "Let the NPC want something practical and emotionally legible."
+    },
+    {
+      "id": "season-echo",
+      "useWhen": "The group has completed at least one earlier mystery and a pattern can recur.",
+      "shape": "Bring back a clue texture, NPC, location, or weakness as a meaningful echo."
+    }
+  ],
+  "avoid": [
+    "Do not roll or cite proprietary move names.",
+    "Do not narrate player character choices.",
+    "Do not reveal hidden truth before earned clues support it.",
+    "Do not escalate every message; allow investigation and quiet dread."
+  ]
+}

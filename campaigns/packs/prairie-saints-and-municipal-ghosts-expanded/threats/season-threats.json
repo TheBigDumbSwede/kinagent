@@ -1,0 +1,179 @@
+[
+  {
+    "id": "river-husk",
+    "name": "The River Husk",
+    "kind": "monster",
+    "motivation": "Pull living hosts back into the water system.",
+    "powers": ["waterborne pressure", "host mimicry", "impossible flow"],
+    "weaknesses": ["salted fire", "spoken names of the drowned", "dry ground consecrated by memory"],
+    "attacks": ["flood a confined space", "speak through a hollowed host", "turn drains into grasping hands"],
+    "notes": ["Best used as practical horror inside ordinary infrastructure."],
+    "tags": ["water", "host", "episode-1"]
+  },
+  {
+    "id": "hollowed-hosts",
+    "name": "Hollowed Hosts",
+    "kind": "minions",
+    "motivation": "Act normal long enough to bring others near water.",
+    "powers": ["familiar faces", "borrowed memories", "wet breath"],
+    "weaknesses": ["dry salt", "being called by a remembered private name"],
+    "tags": ["water", "body"]
+  },
+  {
+    "id": "anchor-drain",
+    "name": "The Anchor Drain",
+    "kind": "hazard",
+    "motivation": "Keep the River Husk rooted in the district.",
+    "powers": ["pulls water uphill", "hides under municipal access plates"],
+    "weaknesses": ["opened in daylight", "ringed with salt and names"],
+    "tags": ["infrastructure"]
+  },
+  {
+    "id": "saint-of-static",
+    "name": "The Saint of Static",
+    "kind": "monster",
+    "motivation": "Turn confession into worship and worship into signal strength.",
+    "powers": ["device possession", "future confession echoes", "voice mimicry"],
+    "weaknesses": [
+      "dead air held in silence",
+      "grounded copper from the original transmitter",
+      "forgiveness freely given"
+    ],
+    "attacks": ["broadcast a secret", "speak through emergency alerts", "burn out grounding wire"],
+    "tags": ["signal", "episode-2"]
+  },
+  {
+    "id": "static-congregants",
+    "name": "Static Congregants",
+    "kind": "bystander-threat",
+    "motivation": "Hear one more broadcast, no matter the cost.",
+    "powers": ["group trance", "repeated phrases", "electrical sensitivity"],
+    "weaknesses": ["silence", "personal interruption", "power cut at source"],
+    "tags": ["crowd", "signal"]
+  },
+  {
+    "id": "copper-mast",
+    "name": "The Copper Mast",
+    "kind": "location-threat",
+    "motivation": "Give the Saint a body of wire and height.",
+    "powers": ["draws lightning", "carries voices through metal"],
+    "weaknesses": ["proper grounding", "ritual silence"],
+    "tags": ["infrastructure", "signal"]
+  },
+  {
+    "id": "tenant-archive",
+    "name": "The Tenant Archive",
+    "kind": "monster",
+    "motivation": "Preserve every tenant forever inside remembered rooms.",
+    "powers": ["impossible interiors", "memory theft", "room duplication"],
+    "weaknesses": ["complete true ledger", "returned keepsakes", "sunrise root cellar"],
+    "attacks": ["lock someone in a remembered room", "replace a hallway", "steal a personal object"],
+    "tags": ["memory", "episode-3"]
+  },
+  {
+    "id": "memory-landlord",
+    "name": "The Memory Landlord",
+    "kind": "minion",
+    "motivation": "Keep the ledger incomplete and the bargain profitable.",
+    "powers": ["appears in old mirrors", "knows unpaid debts", "moves through leases"],
+    "weaknesses": ["signed apology", "public accounting"],
+    "tags": ["memory", "human-cost"]
+  },
+  {
+    "id": "sealed-root-cellar",
+    "name": "The Sealed Root Cellar",
+    "kind": "hazard",
+    "motivation": "Hide the first bargain beneath the house.",
+    "powers": ["opens at wrong times", "breathes cold dust"],
+    "weaknesses": ["sunrise", "returned keys"],
+    "tags": ["place", "memory"]
+  },
+  {
+    "id": "white-browed-hart",
+    "name": "The White-Browed Hart",
+    "kind": "monster",
+    "motivation": "Trade hunger for obedience, names, and teeth.",
+    "powers": ["name theft", "winter road", "animal mask"],
+    "weaknesses": ["bread shared freely", "iron touched to antler velvet", "full names called before dawn"],
+    "attacks": ["offer a bargain", "summon the tooth herd", "open the winter road"],
+    "tags": ["hunger", "episode-4"]
+  },
+  {
+    "id": "tooth-herd",
+    "name": "The Tooth Herd",
+    "kind": "minions",
+    "motivation": "Surround, witness, and carry taken names.",
+    "powers": ["silent movement", "human teeth", "shared gaze"],
+    "weaknesses": ["iron fences", "shared bread"],
+    "tags": ["animal", "hunger"]
+  },
+  {
+    "id": "winter-road",
+    "name": "The Winter Road",
+    "kind": "phenomenon",
+    "motivation": "Lead the nameless away from the city.",
+    "powers": ["snow in warm weather", "memory thinning"],
+    "weaknesses": ["names spoken in order", "crossroads bread"],
+    "tags": ["portal", "winter"]
+  },
+  {
+    "id": "lower-mall",
+    "name": "The Lower Mall",
+    "kind": "monster-place",
+    "motivation": "Keep shoppers browsing until they forget the outside.",
+    "powers": ["impossible retail", "personal temptation", "exit theft"],
+    "weaknesses": ["receipt trail followed backward", "all gates closed at once", "refusing the perfect purchase"],
+    "attacks": ["open a desired store", "remove an exit", "call a victim by loyalty-program name"],
+    "tags": ["place", "episode-5"]
+  },
+  {
+    "id": "returns-clerks",
+    "name": "Returns Clerks",
+    "kind": "minions",
+    "motivation": "Process regrets into permanent inventory.",
+    "powers": ["perfect customer service", "receipt magic", "smiles that do not move"],
+    "weaknesses": ["unanswered complaint", "refused purchase"],
+    "tags": ["retail", "regret"]
+  },
+  {
+    "id": "escalator-well",
+    "name": "The Down Escalator",
+    "kind": "hazard",
+    "motivation": "Bring people below and keep them moving.",
+    "powers": ["appears on cameras first", "runs without power"],
+    "weaknesses": ["emergency stop key", "receipt trail"],
+    "tags": ["infrastructure", "threshold"]
+  },
+  {
+    "id": "city-mouth",
+    "name": "The City Mouth",
+    "kind": "season-monster",
+    "motivation": "Make every civic system lead inward.",
+    "powers": ["route distortion", "symptom coordination", "threshold creation"],
+    "weaknesses": [
+      "six anchored truths spoken at six thresholds",
+      "closing the old survey wound",
+      "a freely chosen route out"
+    ],
+    "attacks": ["bend a route", "revive an old symptom", "offer meaningful oblivion"],
+    "tags": ["finale", "season"]
+  },
+  {
+    "id": "threshold-teeth",
+    "name": "Threshold Teeth",
+    "kind": "hazards",
+    "motivation": "Hold open the six ways into the mouth.",
+    "powers": ["repeat previous mystery pressure", "turn exits into entrances"],
+    "weaknesses": ["anchored truths", "witness choice"],
+    "tags": ["finale", "threshold"]
+  },
+  {
+    "id": "civic-sink",
+    "name": "The Civic Sink",
+    "kind": "phenomenon",
+    "motivation": "Lower the built city into the buried mouth.",
+    "powers": ["settling buildings", "metallic basement air", "blank records"],
+    "weaknesses": ["survey wound closure", "public witness"],
+    "tags": ["finale", "infrastructure"]
+  }
+]

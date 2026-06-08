@@ -1,0 +1,100 @@
+{
+  "id": "the-city-built-over-a-mouth",
+  "title": "The City Built Over a Mouth",
+  "hook": "After the previous mysteries, the city's oldest maps all change overnight, revealing a mouth-shaped absence under civic buildings and transit lines.",
+  "truth": "The River Husk, the Saint, the House, the Hart, and the Lower Mall are symptoms of a buried city-mouth that wakes when enough stories, names, and hungers are routed into it.",
+  "monster": {
+    "name": "The City Mouth",
+    "type": "buried-entity",
+    "instinct": "To swallow the city by making every route, memory, signal, hunger, and shelter lead inward.",
+    "weaknesses": [
+      "six anchored truths spoken at six thresholds",
+      "closing the old survey wound",
+      "a freely chosen route out carried by the living"
+    ]
+  },
+  "countdown": [
+    {
+      "id": "maps-change",
+      "label": "First Sign",
+      "text": "Old survey maps change overnight, all showing a blank oval under the city centre."
+    },
+    {
+      "id": "routes-bend",
+      "label": "Distortion",
+      "text": "Transit routes, drainage channels, radio signals, and hallways begin bending toward the same point."
+    },
+    {
+      "id": "thresholds-open",
+      "label": "Opening",
+      "text": "Six thresholds open at sites touched by the previous mysteries."
+    },
+    {
+      "id": "symptoms-return",
+      "label": "Return",
+      "text": "Hosts, broadcasts, rooms, deer, and shoppers reappear as one coordinated pressure."
+    },
+    {
+      "id": "civic-sink",
+      "label": "Crisis",
+      "text": "Civic buildings settle several inches overnight and every basement door tastes of metal."
+    },
+    {
+      "id": "mouth-speaks",
+      "label": "Finale",
+      "text": "The City Mouth opens and offers to make every loss meaningful if the city steps inside."
+    }
+  ],
+  "clues": [
+    {
+      "id": "six-threshold-map",
+      "text": "Each previous mystery site marks one tooth around the buried mouth.",
+      "tags": ["map", "season"]
+    },
+    {
+      "id": "anchored-truths",
+      "text": "The mouth weakens when true names, forgiven confessions, returned keepsakes, shared bread, refused purchases, and dry memories are named together.",
+      "tags": ["weakness", "ritual"]
+    },
+    {
+      "id": "survey-wound",
+      "text": "The original survey line cut through a place older records refused to mark.",
+      "tags": ["origin", "history"]
+    },
+    {
+      "id": "route-out",
+      "text": "A route chosen by living witnesses and not optimized by any system stays visible on every map.",
+      "tags": ["escape", "choice"]
+    },
+    {
+      "id": "shared-symptoms",
+      "text": "Water static, missing names, impossible rooms, and old receipts all pulse on the same rhythm.",
+      "tags": ["pattern", "season"]
+    },
+    {
+      "id": "mouth-refuses-record",
+      "text": "Any record of the mouth becomes blank unless held by someone who has survived one of its symptoms.",
+      "tags": ["memory", "evidence"]
+    }
+  ],
+  "threatIds": ["city-mouth", "threshold-teeth", "civic-sink"],
+  "locationIds": [
+    "old-civic-archive",
+    "service-corridor-cathedral",
+    "survey-marker-zero",
+    "floodway-underpass",
+    "switching-station",
+    "ellice-rooming-house"
+  ],
+  "npcIds": ["nadia-pelletier", "simon-crane", "bea-lowry", "rafiq-haldar", "alana-cho", "imogen-voss"],
+  "keeperHints": [
+    "Bring back earlier consequences, allies, and unresolved costs.",
+    "The finale should reward what the group remembered, spared, and chose.",
+    "Keep the entity vast but expressed through civic systems and familiar places."
+  ],
+  "revealPolicy": "Reveal the City Mouth as the pattern behind the season only after multiple previous clues are connected.",
+  "automationSafety": [
+    "Do not erase previous victories; twist them into thresholds and resources.",
+    "Let the group decide which anchored truths matter most at the finale."
+  ]
+}
