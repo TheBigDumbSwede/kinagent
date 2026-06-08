@@ -1,5 +1,7 @@
 node_modules/
 dist/
+native-host/**/bin/
+native-host/**/obj/
 data/
 .claude/
 package-lock.json

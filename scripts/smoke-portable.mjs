@@ -12,6 +12,13 @@ if (!fs.existsSync(releaseDir)) {
 
 const portableExe = findReleaseExe(/Kinagent-\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?-portable\.exe/i);
 const installerExe = findReleaseExe(/Kinagent-\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?-setup\.exe/i);
+const packagedNativeHost = path.join(
+  releaseDir,
+  "win-unpacked",
+  "resources",
+  "native-host",
+  "kinagent-native-host.exe"
+);
 
 if (!portableExe) {
   fail("portable Kinagent exe was not found in release/.");
@@ -29,9 +36,18 @@ if (installerExe.size < 50_000_000) {
   fail(`${installerExe.file} is unexpectedly small (${installerExe.size} bytes).`);
 }
 
+if (!fs.existsSync(packagedNativeHost)) {
+  fail(`packaged native host was not found at ${packagedNativeHost}.`);
+}
+
+const nativeHostSize = fs.statSync(packagedNativeHost).size;
+if (nativeHostSize < 1_000_000) {
+  fail(`packaged native host is unexpectedly small (${nativeHostSize} bytes).`);
+}
+
 if (process.platform !== "win32") {
   process.stdout.write(
-    `Windows artifact smoke found ${portableExe.file} (${portableExe.size} bytes) and ${installerExe.file} (${installerExe.size} bytes); launch skipped on ${process.platform}.\n`
+    `Windows artifact smoke found ${portableExe.file} (${portableExe.size} bytes), ${installerExe.file} (${installerExe.size} bytes), and native host (${nativeHostSize} bytes); launch skipped on ${process.platform}.\n`
   );
   process.exit(0);
 }
@@ -83,7 +99,7 @@ child.on("exit", (code) => {
   }
 
   process.stdout.write(
-    `Portable smoke passed: ${portableExe.file} (${portableExe.size} bytes); installer sanity passed: ${installerExe.file} (${installerExe.size} bytes).\n`
+    `Portable smoke passed: ${portableExe.file} (${portableExe.size} bytes); installer sanity passed: ${installerExe.file} (${installerExe.size} bytes); native host packaged (${nativeHostSize} bytes).\n`
   );
 });
 

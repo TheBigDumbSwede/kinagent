@@ -3,6 +3,8 @@ import path from "node:path";
 import process from "node:process";
 
 runNpmScript("check");
+runNpmScript("native-host:build");
+runNpmScript("native-host:smoke");
 
 const electronBuilderCli = path.join(process.cwd(), "node_modules", "electron-builder", "cli.js");
 

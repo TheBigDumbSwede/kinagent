@@ -19,6 +19,7 @@ import {
 import { analyzeKinDesign, type KinAnalysisProgress } from "../kinAnalysis/kinAnalysis.js";
 import { BridgeRuntime, type BridgeRuntimeEvent, type KinSoundscapePreference } from "../runtime/bridgeRuntime.js";
 import type { JournalSuggestion } from "../journal/journalSuggestionStore.js";
+import { BrowserBridgeServer } from "../browserIntegration/browserBridgeServer.js";
 import { createLogger, type Logger } from "../util/logger.js";
 import {
   loadKinVoicePreference,
@@ -40,6 +41,7 @@ let tray: Tray | null = null;
 let isQuitting = false;
 let loginSession: { browser: Browser; context: BrowserContext } | null = null;
 let runtime: BridgeRuntime | null = null;
+let browserBridgeServer: BrowserBridgeServer | null = null;
 let smokeWindowReady = false;
 let smokeRuntimeReady = false;
 
@@ -59,6 +61,8 @@ if (!singleInstanceLock) {
 
   void app.whenReady().then(() => {
     initializeDesktopConfig();
+    browserBridgeServer = new BrowserBridgeServer({ logger });
+    void browserBridgeServer.start();
     createMainWindow();
     createTray();
     registerIpcHandlers();
@@ -86,6 +90,7 @@ function initializeDesktopConfig(): void {
 app.on("before-quit", () => {
   isQuitting = true;
   runtime?.stop();
+  void browserBridgeServer?.stop();
   cleanupChatExportTempFiles();
   void closeLoginSession();
 });
