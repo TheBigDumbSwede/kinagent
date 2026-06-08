@@ -1,7 +1,7 @@
 import type { RollResult } from "./gameMoves.js";
 
 export function formatRollResultMessage(result: RollResult): string {
-  return `Roll: ${rollOutcomeSummary(result)}.`;
+  return `Outcome: ${rollOutcomeSummary(result)}.`;
 }
 
 export function rollOutcomeSummary(result: Pick<RollResult, "outcome" | "total">): string {

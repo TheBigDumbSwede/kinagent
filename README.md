@@ -116,10 +116,11 @@ Group Gaming also recognizes explicit user-originated group commands:
 Only user messages execute these commands. Mystery intros are generated from spoiler-free public briefing data and do not
 include hidden truth, threat data, countdowns, or hidden clues.
 
-For groups normally set to automatic turn-taking, Group Gaming may temporarily switch the group to manual when Kindroid
-reports that the next turn belongs to the user. That gives Hermes room to respond under the user's group identity, then
-Kinagent restores automatic turn-taking after the Keeper message triggers the next AI response. Groups already configured
-as manual are left manual.
+For group play, Kin/AI messages are buffered as non-mutating context. The next user-originated message closes the turn
+and sends that buffered context plus the user message to Hermes as one game turn parcel. Autonomous mode can send
+Keeper and abstract roll-outcome messages, but Kinagent does not try to force Kindroid automatic turn-taking.
+Group-visible roll outcomes stay abstract, while full local dice, modifier, total, and outcome details remain in
+`rollHistory` for audit and post-roll Hermes narration context.
 
 Kindroid domain access is organized behind `KindroidApiClient` resource modules:
 
@@ -156,8 +157,7 @@ Kinagent uses the documented API shape for:
 - `POST https://api.kindroid.ai/v1/groupchats-ai-response`, using blocking text responses with `stream: false`.
 - `POST https://api.kindroid.ai/v1/groupchats-chat-break`, as a low-level client helper only.
 - `POST https://api.kindroid.ai/v1/update-info` for `current_scene` and identity-field writes.
-- `POST https://api.kindroid.ai/v1/groupchats-update` for group `current_scene`, and for the observed app field
-  `use_manual_turntaking` when Group Gaming temporarily guards automatic turn-taking.
+- `POST https://api.kindroid.ai/v1/groupchats-update` for group `current_scene`.
 
 Kinagent does not currently expose public API streaming (`stream: true`) because the bridge runtime and desktop
 workflows expect completed response text. It also does not wrap the Discord bot endpoint; that belongs to a different

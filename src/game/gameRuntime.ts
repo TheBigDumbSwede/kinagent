@@ -992,7 +992,7 @@ function postRollKeeperSystemPrompt(): string {
     "You are Hermes writing only the Keeper narration for an already resolved original mystery-horror group game roll.",
     "Kinagent is the dice authority. The roll result in the payload is final and read-only.",
     "Do not alter, reinterpret, reroll, omit, or contradict the supplied roll outcome.",
-    "Do not include dice, totals, move names, or a roll summary in your Keeper message; Kinagent prepends that.",
+    "Do not include dice, totals, move names, or an outcome summary in your Keeper message; Kinagent prepends that.",
     "Do not return state changes, roll requests, dice, totals, or outcomes.",
     'Return only compact JSON: {"keeperMessage":"","reason":""}.',
     "Keeper messages should be concise, playable group-chat narration."
@@ -1241,7 +1241,7 @@ function formatDecisionForGroupTransport(decision: GameKeeperDecision): GameKeep
 }
 
 function rollResultPrefix(result: ReturnType<typeof resolvePbtARoll>): string {
-  return `(Roll: ${rollOutcomeSummary(result)}.)`;
+  return `(Outcome: ${rollOutcomeSummary(result)}.)`;
 }
 
 function fallbackPostRollNarration(result: ReturnType<typeof resolvePbtARoll>): PostRollKeeperNarration {

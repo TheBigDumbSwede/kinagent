@@ -1136,7 +1136,7 @@ describe("game campaign foundations", () => {
     expect(sends).toHaveLength(1);
     expect(sends[0]).toMatchObject({
       groupId: "group-a",
-      message: "*(Roll: success.) The static resolves into a clear street address.*",
+      message: "*(Outcome: success.) The static resolves into a clear street address.*",
       triggerAiResponse: false
     });
     expect(hermesPayloads[1]).toMatchObject({
@@ -1169,7 +1169,7 @@ describe("game campaign foundations", () => {
       ]
     });
     expect(store.getForGroup("group-a")?.lastKeeperMessage).toMatchObject({
-      text: "*(Roll: success.) The static resolves into a clear street address.*",
+      text: "*(Outcome: success.) The static resolves into a clear street address.*",
       sourceDocumentId: "doc-1"
     });
   });
@@ -1226,7 +1226,7 @@ describe("game campaign foundations", () => {
     expect(sends).toHaveLength(1);
     expect(sends[0]).toMatchObject({
       message:
-        "*(Roll: partial success with complication.) The clue is useful, but the phone line stays open both ways.*"
+        "*(Outcome: partial success with complication.) The clue is useful, but the phone line stays open both ways.*"
     });
     expect(store.getForGroup("group-a")?.pendingRollRequest).toBeUndefined();
     expect(store.getForGroup("group-a")).toMatchObject({
