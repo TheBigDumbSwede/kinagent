@@ -37,29 +37,44 @@ jobs:
       - name: Check release version
         run: node scripts/check-release-version.mjs "${{ github.event_name == 'push' && github.ref_name || inputs.tag }}"
 
-      - name: Build Windows portable
+      - name: Build Windows artifacts
         run: npm run dist:win
 
       - name: Build campaign pack downloads
         run: npm run campaigns:build
 
-      - name: Locate portable artifact
+      - name: Locate Windows artifacts
         shell: pwsh
         run: |
-          $artifact = Get-ChildItem -Path release -Filter "Kinagent-*-portable.exe" |
+          $portable = Get-ChildItem -Path release -Filter "Kinagent-*-portable.exe" |
             Sort-Object Length -Descending |
             Select-Object -First 1
-          if (-not $artifact) {
+          if (-not $portable) {
             throw "Portable Kinagent exe was not found in release/."
           }
-          "PORTABLE_EXE=$($artifact.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
-          "PORTABLE_NAME=$($artifact.Name)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          $installer = Get-ChildItem -Path release -Filter "Kinagent-*-setup.exe" |
+            Sort-Object Length -Descending |
+            Select-Object -First 1
+          if (-not $installer) {
+            throw "Installer Kinagent exe was not found in release/."
+          }
+          "PORTABLE_EXE=$($portable.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "PORTABLE_NAME=$($portable.Name)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "INSTALLER_EXE=$($installer.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "INSTALLER_NAME=$($installer.Name)" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-      - name: Upload workflow artifact
+      - name: Upload portable workflow artifact
         uses: actions/upload-artifact@v7.0.1
         with:
           name: ${{ env.PORTABLE_NAME }}
           path: ${{ env.PORTABLE_EXE }}
+          if-no-files-found: error
+
+      - name: Upload installer workflow artifact
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: ${{ env.INSTALLER_NAME }}
+          path: ${{ env.INSTALLER_EXE }}
           if-no-files-found: error
 
       - name: Upload campaign pack workflow artifacts
@@ -80,10 +95,11 @@ jobs:
           gh release view $env:RELEASE_TAG *> $null
           if ($LASTEXITCODE -eq 0) {
             gh release upload $env:RELEASE_TAG $env:PORTABLE_EXE --clobber
+            gh release upload $env:RELEASE_TAG $env:INSTALLER_EXE --clobber
           } else {
-            gh release create $env:RELEASE_TAG $env:PORTABLE_EXE `
+            gh release create $env:RELEASE_TAG $env:PORTABLE_EXE $env:INSTALLER_EXE `
               --title "Kinagent $version" `
-              --notes "Windows portable build for Kinagent $version." `
+              --notes "Windows portable and installer builds for Kinagent $version." `
               --target $env:GITHUB_SHA
           }
           gh release upload $env:RELEASE_TAG release/campaigns/* --clobber
