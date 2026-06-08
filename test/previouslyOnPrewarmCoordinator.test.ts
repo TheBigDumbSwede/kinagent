@@ -11,6 +11,7 @@ import type { Logger } from "../src/util/logger.js";
 
 describe("PreviouslyOnPrewarmCoordinator", () => {
   afterEach(() => {
+    vi.clearAllTimers();
     vi.useRealTimers();
     vi.unstubAllGlobals();
     vi.clearAllMocks();
@@ -151,6 +152,7 @@ describe("PreviouslyOnPrewarmCoordinator", () => {
   });
 
   it("defers prewarm and saves the chat history cursor when public API catch-up is incomplete", async () => {
+    vi.useFakeTimers();
     const fetchMock = vi
       .fn(async (_input: string | URL, _init?: RequestInit) => Response.json({ messages: [] }))
       .mockResolvedValueOnce(
