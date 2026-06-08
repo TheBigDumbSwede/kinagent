@@ -357,7 +357,7 @@ state changes that reference known pack ids.
 Distributable campaign pack source lives separately under `campaigns/packs/`. `npm run campaigns:check` validates those
 packs with the same loader used by the app, and `npm run campaigns:build` writes downloadable zips plus
 `campaign-index.json` under `release/campaigns/`. Release builds upload those campaign zips as separate GitHub Release
-assets beside the portable app; they are not bundled into the executable.
+assets beside the Windows app downloads; they are not bundled into the executable.
 
 When Gaming is enabled for a monitored group, Kinagent can send group chat events to Hermes through a contained game
 runtime. Hermes returns a game decision with a Keeper message and validated local state changes. `observe` applies only
@@ -450,18 +450,19 @@ $env:KINAGENT_LIVE_TESTS = "1"
 npm run test:live
 ```
 
-Build and smoke-check the Windows portable app:
+Build and smoke-check the Windows release artifacts:
 
 ```powershell
 npm run dist:win
 ```
 
-The portable artifact is written under `release/`, which is ignored by Git.
+The Windows artifacts are written under `release/`, which is ignored by Git. The portable exe is useful for a
+no-install run, while the setup exe installs Kinagent into a stable Windows app location.
 
 ## Versioning and Releases
 
 Kinagent follows the same simple versioning model as Cadence: `package.json`
-is the source of truth, and the Windows portable filename is derived from that
+is the source of truth, and the Windows artifact filenames are derived from that
 version.
 
 Prepare a release version:
@@ -474,14 +475,14 @@ git push origin v0.1.1
 
 Use `minor` or `major` instead of `patch` when appropriate. The GitHub release
 workflow runs for `vX.Y.Z` tags, verifies that the tag matches
-`package.json`, runs the Windows portable build and smoke check, then attaches
-`Kinagent-X.Y.Z-portable.exe` and distributable campaign pack zips to the
-GitHub Release for that tag.
+`package.json`, runs the Windows build and portable smoke check, then attaches
+`Kinagent-X.Y.Z-portable.exe`, `Kinagent-X.Y.Z-setup.exe`, and distributable
+campaign pack zips to the GitHub Release for that tag.
 
 The release workflow can also be run manually from GitHub Actions. With no tag
 input, it produces downloadable workflow artifacts only. With an existing tag
-input, it verifies the version and uploads the portable exe plus campaign
-downloads to that release.
+input, it verifies the version and uploads the portable exe, setup exe, and
+campaign downloads to that release.
 
 ## Configuration
 
@@ -555,4 +556,4 @@ SQLite database. See [docs/chat-dynamism.md](docs/chat-dynamism.md).
 1. Expand Hermes action coverage beyond `current_scene`.
 2. Expand live integration coverage around saved session refresh and Firestore listen behavior.
 3. Add a native Hermes tool callback path if the local gateway exposes one.
-4. Add installer signing and start-with-Windows support.
+4. Add code signing and start-with-Windows support.

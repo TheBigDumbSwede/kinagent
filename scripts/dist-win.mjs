@@ -5,7 +5,7 @@ import process from "node:process";
 runNpmScript("check");
 
 const electronBuilderCli = path.join(process.cwd(), "node_modules", "electron-builder", "cli.js");
-run(process.execPath, [electronBuilderCli, "--win", "portable", "--publish", "never"], {
+run(process.execPath, [electronBuilderCli, "--win", "portable", "nsis", "--publish", "never"], {
   NODE_OPTIONS: appendNodeOption(process.env.NODE_OPTIONS, "--disable-warning=DEP0190")
 });
 
