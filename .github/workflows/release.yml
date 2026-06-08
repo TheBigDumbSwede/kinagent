@@ -37,7 +37,28 @@ jobs:
       - name: Check release version
         run: node scripts/check-release-version.mjs "${{ github.event_name == 'push' && github.ref_name || inputs.tag }}"
 
+      - name: Configure signing
+        id: signing
+        shell: pwsh
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+        run: |
+          if ($env:AZURE_CLIENT_ID -and $env:AZURE_CLIENT_SECRET -and $env:AZURE_TENANT_ID) {
+            "KINAGENT_SIGN=1" | Out-File -FilePath $env:GITHUB_ENV -Append
+            "enabled=1" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            Write-Host "Azure signing credentials present; signing enabled."
+          } else {
+            "enabled=0" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            Write-Host "Complete Azure signing credentials were not found; building unsigned."
+          }
+
       - name: Build Windows artifacts
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
         run: npm run dist:win
 
       - name: Build campaign pack downloads
@@ -62,6 +83,18 @@ jobs:
           "PORTABLE_NAME=$($portable.Name)" | Out-File -FilePath $env:GITHUB_ENV -Append
           "INSTALLER_EXE=$($installer.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
           "INSTALLER_NAME=$($installer.Name)" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Verify signatures
+        if: ${{ steps.signing.outputs.enabled == '1' }}
+        shell: pwsh
+        run: |
+          foreach ($exe in @($env:PORTABLE_EXE, $env:INSTALLER_EXE)) {
+            $sig = Get-AuthenticodeSignature $exe
+            if ($sig.Status -ne 'Valid') {
+              throw "Authenticode signature not valid for $exe (status: $($sig.Status))."
+            }
+            Write-Host "Signed OK: $exe -> $($sig.SignerCertificate.Subject)"
+          }
 
       - name: Upload portable workflow artifact
         uses: actions/upload-artifact@v7.0.1
