@@ -42,17 +42,23 @@ export function buildSendGroupMessagePayload(input: SendKindroidGroupMessageInpu
   }
 
   const payload: Record<string, unknown> = {
+    message: message ? input.message : undefined,
+    image_urls: null,
+    image_description: null,
+    video_url: null,
+    video_description: null,
+    internet_response: input.internetResponse || null,
+    link_url: null,
+    link_description: null,
+    client_platform: "web",
     group_id: input.groupId
   };
   if (message) {
     payload.message = input.message;
   }
   if (audioUrl) {
+    delete payload.message;
     payload.audio_url = audioUrl;
-  }
-
-  if (input.internetResponse) {
-    payload.internet_response = input.internetResponse;
   }
 
   return payload;
@@ -69,7 +75,9 @@ export function buildCreateGroupAiResponsePayload(input: CreateKindroidGroupAiRe
   return {
     ai_id: input.aiId,
     group_id: input.groupId,
-    stream: false
+    stream: false,
+    request_id: input.requestId,
+    client_platform: "web"
   };
 }
 

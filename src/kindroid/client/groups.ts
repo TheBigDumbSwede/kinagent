@@ -9,6 +9,7 @@ export interface KindroidGroup {
   groupId: string;
   name: string;
   aiIds: string[];
+  useManualTurntaking?: boolean;
 }
 
 export interface ListenKindroidGroupsOptions {
@@ -68,13 +69,13 @@ export function normalizeGroupDocument(
   }
   const rawName = stringValue(data.group_name);
   const name = rawName && options.decryptionKey ? decryptKindroidValue(rawName, options.decryptionKey).value : rawName;
-
   return [
     {
       documentId: document.id,
       groupId,
       name: name ?? "(unnamed group)",
-      aiIds: normalizeAiIds(data.group_ais)
+      aiIds: normalizeAiIds(data.group_ais),
+      ...(typeof data.use_manual_turntaking === "boolean" ? { useManualTurntaking: data.use_manual_turntaking } : {})
     }
   ];
 }

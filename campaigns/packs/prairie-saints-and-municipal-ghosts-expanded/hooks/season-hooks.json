@@ -1,0 +1,37 @@
+[
+  {
+    "id": "missing-worker",
+    "text": "A city maintenance worker missed checkout after inspecting floodway pumps.",
+    "tags": ["episode-1", "water"]
+  },
+  {
+    "id": "dead-frequency",
+    "text": "A dead radio frequency starts broadcasting confessions from tomorrow.",
+    "tags": ["episode-2", "signal"]
+  },
+  {
+    "id": "rooming-house-demolition",
+    "text": "A demolition notice appears on a house that has more rooms inside than outside.",
+    "tags": ["episode-3", "memory"]
+  },
+  {
+    "id": "smiling-deer",
+    "text": "A deer at the city edge smiles with a missing person's tooth.",
+    "tags": ["episode-4", "hunger"]
+  },
+  {
+    "id": "lower-food-court",
+    "text": "Security footage shows a food court below a mall that has no lower level.",
+    "tags": ["episode-5", "retail"]
+  },
+  {
+    "id": "changed-maps",
+    "text": "Every old map in the civic archive changes overnight around the same blank oval.",
+    "tags": ["finale", "season"]
+  },
+  {
+    "id": "recurring-rain-static",
+    "text": "Rain, static, missing names, and impossible exits begin appearing together.",
+    "tags": ["season", "pattern"]
+  }
+]

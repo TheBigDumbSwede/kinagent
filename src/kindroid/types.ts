@@ -43,6 +43,13 @@ export interface GetKindroidGroupTurnInput {
   allowUser: boolean;
 }
 
+export interface GetKindroidGroupTurnResult {
+  status: number;
+  ok: boolean;
+  aiId?: string;
+  responseText?: string;
+}
+
 export interface CreateKindroidGroupAiResponseInput {
   groupId: string;
   aiId: string;

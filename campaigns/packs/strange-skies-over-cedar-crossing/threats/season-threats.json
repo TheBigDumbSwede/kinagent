@@ -1,0 +1,170 @@
+[
+  {
+    "id": "field-survey-lattice",
+    "name": "The Field Survey Lattice",
+    "kind": "alien instrument",
+    "motivation": "Map local emotion through livestock, crop geometry, and accidental weather.",
+    "powers": ["arranges living creatures", "bends moonlight", "records fear as visible frost"],
+    "weaknesses": ["honest invitation", "grounded iron stakes", "unpatterned noise"],
+    "attacks": ["flash a memory into the field", "lift soil in perfect cubes", "make every cow stare at one person"],
+    "tags": ["field", "survey", "episode-1"]
+  },
+  {
+    "id": "borrowed-scarecrows",
+    "name": "Borrowed Scarecrows",
+    "kind": "minions",
+    "motivation": "Stand in for missing witnesses until the survey finishes.",
+    "powers": ["repeat overheard phrases", "move only when unobserved", "wear familiar jackets"],
+    "weaknesses": ["direct names", "firelight", "being asked a question twice"],
+    "tags": ["field", "mimic"]
+  },
+  {
+    "id": "weather-that-listens",
+    "name": "Weather That Listens",
+    "kind": "phenomenon",
+    "motivation": "Translate spoken worry into local atmospheric pressure.",
+    "powers": ["answers questions with wind", "makes private conversations rain", "moves storm cells in circles"],
+    "weaknesses": ["silence", "barometer reset at dawn", "laughter that is not nervous"],
+    "tags": ["weather", "signal"]
+  },
+  {
+    "id": "chronology-accountant",
+    "name": "The Chronology Accountant",
+    "kind": "alien bureaucrat",
+    "motivation": "Balance Earth's local calendar against a mistaken interstellar ledger.",
+    "powers": ["misfiles hours", "reassigns weekdays", "marks people absent from events they attended"],
+    "weaknesses": ["complete paper receipts", "synchronized clocks", "refusal to sign"],
+    "attacks": ["delete a morning", "make a room repeat lunch", "stamp a witness as overdue"],
+    "tags": ["time", "bureaucracy", "episode-2"]
+  },
+  {
+    "id": "receipt-ghosts",
+    "name": "Receipt Ghosts",
+    "kind": "evidence hazard",
+    "motivation": "Prove that impossible transactions happened.",
+    "powers": ["print future purchases", "bleed ink in alien numerals", "name people by wrong dates"],
+    "weaknesses": ["cash drawer audit", "burned duplicate slips"],
+    "tags": ["time", "diner"]
+  },
+  {
+    "id": "forty-minute-mile",
+    "name": "The Forty-Minute Mile",
+    "kind": "location-threat",
+    "motivation": "Hold travelers inside a bad unit conversion.",
+    "powers": ["loops roadside markers", "ages coffee but not people", "turns headlights blue"],
+    "weaknesses": ["walking backward between signs", "corrected map scale", "three synchronized horns"],
+    "tags": ["road", "time"]
+  },
+  {
+    "id": "sleeping-courier-craft",
+    "name": "The Sleeping Courier Craft",
+    "kind": "alien craft",
+    "motivation": "Wake, repair, and deliver a message to the wrong century.",
+    "powers": ["gravity pockets", "medical light", "locked interior larger than exterior"],
+    "weaknesses": ["matched harmonic pulse", "cool grain dust", "pilot name spoken correctly"],
+    "attacks": ["pull metal tools upward", "seal a door with blue light", "answer questions too literally"],
+    "tags": ["craft", "silo", "episode-3"]
+  },
+  {
+    "id": "grain-elevator-containment",
+    "name": "Grain Elevator Containment",
+    "kind": "hazard",
+    "motivation": "Keep the craft hidden by making the ordinary building increasingly impossible.",
+    "powers": ["folds stairwells", "turns grain bins into airlocks", "hums in pressure changes"],
+    "weaknesses": ["open roof hatch", "manual shutdown", "worker safety whistle"],
+    "tags": ["grain", "craft"]
+  },
+  {
+    "id": "helmet-full-of-moths",
+    "name": "The Helmet Full of Moths",
+    "kind": "artifact",
+    "motivation": "Translate danger through rural insect life because it lacks better software.",
+    "powers": ["projects warning lights", "speaks in wing taps", "makes moths spell bad advice"],
+    "weaknesses": ["dark cloth", "patient decoding", "lamp oil"],
+    "tags": ["craft", "artifact"]
+  },
+  {
+    "id": "roadside-translation-array",
+    "name": "The Roadside Translation Array",
+    "kind": "alien machine",
+    "motivation": "Teach human language to an arriving contact signal using signs, hymns, and traffic warnings.",
+    "powers": ["rewrites road signs", "turns hymns into coordinates", "makes warnings sound comforting"],
+    "weaknesses": ["plain speech", "manual sign removal", "one true local story"],
+    "attacks": ["broadcast false instructions", "translate fear as welcome", "make a chapel bell answer questions"],
+    "tags": ["language", "roadside", "episode-4"]
+  },
+  {
+    "id": "choir-of-misread-signs",
+    "name": "Choir of Misread Signs",
+    "kind": "minions",
+    "motivation": "Repeat translations until someone obeys.",
+    "powers": ["speak through billboards", "sing from culverts", "make arrows point skyward"],
+    "weaknesses": ["covered signs", "spoken names", "local dialect"],
+    "tags": ["language", "signal"]
+  },
+  {
+    "id": "chapel-bell-repeater",
+    "name": "The Chapel Bell Repeater",
+    "kind": "location-threat",
+    "motivation": "Ring every phrase important enough to summon attention.",
+    "powers": ["sonic pressure", "repeats secrets as bells", "summons lights from clouds"],
+    "weaknesses": ["rope cut by consent", "silent vigil", "bell clapper wrapped in linen"],
+    "tags": ["chapel", "sound"]
+  },
+  {
+    "id": "misplaced-envoy",
+    "name": "The Misplaced Envoy",
+    "kind": "alien visitor",
+    "motivation": "Make official contact while wearing the wrong person-shaped context.",
+    "powers": ["borrowed reflection", "polite telepathy", "committee-grade evasions"],
+    "weaknesses": ["correct host consent", "direct question answered three times", "shared food"],
+    "attacks": ["speak with two mouths", "swap a memory for protocol", "declare a crisis adjourned"],
+    "tags": ["envoy", "body", "episode-5"]
+  },
+  {
+    "id": "late-reflection",
+    "name": "Late Reflections",
+    "kind": "phenomenon",
+    "motivation": "Show the person who should have been present seven seconds ago.",
+    "powers": ["delayed mirrors", "wrong shadows", "photographs that blink after printing"],
+    "weaknesses": ["covered mirrors", "flashbulb burst", "true name called by a friend"],
+    "tags": ["body", "evidence"]
+  },
+  {
+    "id": "emergency-committee",
+    "name": "The Emergency Committee",
+    "kind": "human pressure",
+    "motivation": "Solve first contact with minutes, motions, and anxious refreshments.",
+    "powers": ["public panic", "procedural delay", "bad microphone feedback"],
+    "weaknesses": ["clear evidence", "private briefing", "one calm chairperson"],
+    "tags": ["town", "politics"]
+  },
+  {
+    "id": "orchard-star-gate",
+    "name": "The Orchard Star Gate",
+    "kind": "alien infrastructure",
+    "motivation": "Open a return corridor using misunderstood rural landmarks.",
+    "powers": ["folds sky into water", "summons impossible constellations", "charges through memory"],
+    "weaknesses": ["six corrected contact records", "quarry reflection broken", "visitor's true destination"],
+    "attacks": ["pull a location into the sky", "erase a road from maps", "make everyone hear home differently"],
+    "tags": ["finale", "portal", "episode-6"]
+  },
+  {
+    "id": "homesick-signal",
+    "name": "The Homesick Signal",
+    "kind": "phenomenon",
+    "motivation": "Call anything lost toward the gate.",
+    "powers": ["uses loved voices", "turns nostalgia physical", "lights every north-facing window"],
+    "weaknesses": ["chosen present moment", "group anchor", "names of places worth staying"],
+    "tags": ["finale", "signal"]
+  },
+  {
+    "id": "countywide-witness-panic",
+    "name": "Countywide Witness Panic",
+    "kind": "human pressure",
+    "motivation": "Turn wonder into rumor, rumor into fear, and fear into bad choices.",
+    "powers": ["crowd movement", "viral misunderstanding", "armed overreaction"],
+    "weaknesses": ["public clarity", "trusted witnesses", "visible mercy"],
+    "tags": ["finale", "public"]
+  }
+]

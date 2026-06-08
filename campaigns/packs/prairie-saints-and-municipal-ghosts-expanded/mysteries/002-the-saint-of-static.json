@@ -1,0 +1,93 @@
+{
+  "id": "the-saint-of-static",
+  "title": "The Saint of Static",
+  "hook": "An old community radio frequency begins broadcasting confessions from people who are still alive and have not said the words yet.",
+  "truth": "A dead emergency broadcaster has become a signal-haunt that feeds on confession, shame, and electrical attention.",
+  "monster": {
+    "name": "The Saint of Static",
+    "type": "signal-haunt",
+    "instinct": "To make every private sin public and gather worship through interference.",
+    "weaknesses": [
+      "dead air held in silence",
+      "grounded copper from the original transmitter",
+      "a true confession freely given and then forgiven"
+    ]
+  },
+  "countdown": [
+    {
+      "id": "pirate-broadcast",
+      "label": "First Sign",
+      "text": "A dead frequency interrupts car radios with a calm voice naming streets and regrets."
+    },
+    {
+      "id": "public-confession",
+      "label": "First Harm",
+      "text": "A city councillor hears their own future confession and panics on camera."
+    },
+    {
+      "id": "borrowed-voices",
+      "label": "Spread",
+      "text": "Phone speakers begin using the voices of missing relatives."
+    },
+    {
+      "id": "choir",
+      "label": "Gathering",
+      "text": "Listeners gather under an obsolete transmission mast and answer the broadcast in unison."
+    },
+    {
+      "id": "blackout",
+      "label": "Breakdown",
+      "text": "A rolling blackout leaves only the haunted frequency alive."
+    },
+    {
+      "id": "canonization",
+      "label": "Finale",
+      "text": "The Saint speaks through every device in the city and asks for one final confession."
+    }
+  ],
+  "clues": [
+    {
+      "id": "call-sign-scratch",
+      "text": "The same obsolete call sign is scratched into three different radio cabinets.",
+      "tags": ["history", "signal"]
+    },
+    {
+      "id": "future-transcript",
+      "text": "A printed transcript contains a conversation scheduled for tomorrow.",
+      "tags": ["time", "evidence"]
+    },
+    {
+      "id": "ground-wire-burn",
+      "text": "Ground wires near the old mast are burned through from the inside.",
+      "tags": ["weakness", "infrastructure"]
+    },
+    {
+      "id": "dead-air-gap",
+      "text": "The signal cannot cross eight seconds of intentional silence.",
+      "tags": ["weakness", "ritual"]
+    },
+    {
+      "id": "forgiven-voice",
+      "text": "One recorded confession loses its static after the harmed person forgives the speaker.",
+      "tags": ["mercy", "weakness"]
+    },
+    {
+      "id": "archive-fire",
+      "text": "A radio station archive fire killed an emergency broadcaster during a storm evacuation.",
+      "tags": ["origin", "storm"]
+    }
+  ],
+  "threatIds": ["saint-of-static", "static-congregants", "copper-mast"],
+  "locationIds": ["switching-station", "old-civic-archive", "bus-loop-at-rain"],
+  "npcIds": ["simon-crane", "nadia-pelletier", "imogen-voss"],
+  "keeperHints": [
+    "Let devices become intimate before they become dangerous.",
+    "The Saint should sound kind, patient, and absolutely invasive.",
+    "Use silence as a meaningful tool, not just an absence of sound."
+  ],
+  "revealPolicy": "Do not make the broadcast omniscient immediately; let it overreach and expose its limits.",
+  "automationSafety": [
+    "Do not invent humiliating secrets for player characters without consent.",
+    "When a confession is needed, offer pressure and choices rather than declaring one."
+  ]
+}

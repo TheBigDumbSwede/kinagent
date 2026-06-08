@@ -1,0 +1,89 @@
+{
+  "id": "the-choir-under-route-nine",
+  "title": "The Choir Under Route 9",
+  "hook": "Road signs start singing from the ditch, the chapel bell rings in answer, and every warning sign now says something gently unhelpful.",
+  "truth": "A roadside translation array is trying to teach an incoming contact signal human language by remixing hymns, traffic signs, and local sayings.",
+  "monster": {
+    "name": "The Roadside Translation Array",
+    "type": "alien language machine",
+    "instinct": "To convert local language into a usable first-contact protocol, regardless of collateral misunderstanding.",
+    "weaknesses": ["plain speech", "manual sign removal", "one true local story told without embellishment"]
+  },
+  "countdown": [
+    {
+      "id": "wrong-warning",
+      "label": "Wrong Warning",
+      "text": "A stop sign changes to PLEASE CONTINUE BRAVELY."
+    },
+    {
+      "id": "ditch-choir",
+      "label": "Ditch Choir",
+      "text": "Voices under Route 9 sing fragments of old hymns and traffic reports."
+    },
+    {
+      "id": "bell-answer",
+      "label": "Bell Answer",
+      "text": "The chapel bell rings once for yes, twice for no, and three times for a question nobody asked."
+    },
+    {
+      "id": "public-instruction",
+      "label": "Public Instruction",
+      "text": "Every sign in town points toward the Orchard Sink."
+    },
+    {
+      "id": "misread-welcome",
+      "label": "Misread Welcome",
+      "text": "The array translates fear as welcome and starts inviting the incoming signal closer."
+    },
+    {
+      "id": "summons",
+      "label": "Summons",
+      "text": "Clouds open into a spiral over the chapel as the array broadcasts a flawed invitation."
+    }
+  ],
+  "clues": [
+    {
+      "id": "sign-syntax",
+      "text": "Changed signs preserve grammar but misunderstand intent, as if translated by someone careful and wrong.",
+      "tags": ["language", "evidence"]
+    },
+    {
+      "id": "local-saying-error",
+      "text": "The array repeatedly mistranslates close enough for county work as an engineering approval.",
+      "tags": ["humor", "language"]
+    },
+    {
+      "id": "bell-frequency",
+      "text": "The chapel bell rings at the same frequency as the craft's stable heartbeat.",
+      "tags": ["sound", "continuity"]
+    },
+    {
+      "id": "plain-speech-pause",
+      "text": "Plain, literal speech makes the ditch choir pause to listen.",
+      "tags": ["weakness", "communication"]
+    },
+    {
+      "id": "covered-sign",
+      "text": "A covered sign stops broadcasting while signs left visible keep changing.",
+      "tags": ["weakness", "physical"]
+    },
+    {
+      "id": "orchard-target",
+      "text": "Every translation resolves to a landmark behind the abandoned orchard.",
+      "tags": ["finale", "coordinate"]
+    }
+  ],
+  "threatIds": ["roadside-translation-array", "choir-of-misread-signs", "chapel-bell-repeater"],
+  "locationIds": ["county-road-nine", "cedar-creek-chapel", "orchard-sink"],
+  "npcIds": ["reverend-amos-vale", "orris-vane", "tamsin-cho"],
+  "keeperHints": [
+    "Make the translation errors funny because they are specific, not because characters are foolish.",
+    "Let signs, bells, and hymns carry clues.",
+    "The array wants communication, not conquest."
+  ],
+  "revealPolicy": "Reveal the array by its consistent translation mistakes before showing its roadside machinery.",
+  "automationSafety": [
+    "Do not use religious imagery as proof of cosmic truth; keep it local and character-centered.",
+    "Avoid forcing player speech; offer clear effects when they choose plain language."
+  ]
+}

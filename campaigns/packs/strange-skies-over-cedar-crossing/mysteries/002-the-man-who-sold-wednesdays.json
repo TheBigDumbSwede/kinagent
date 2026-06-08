@@ -1,0 +1,89 @@
+{
+  "id": "the-man-who-sold-wednesdays",
+  "title": "The Man Who Sold Wednesdays",
+  "hook": "Dottie's diner has receipts for meals nobody remembers ordering, all dated Wednesday, including one from a man who has been dead for nine years.",
+  "truth": "An alien chronology accountant is correcting a mistaken interstellar ledger by repossessing small pieces of Cedar Crossing's calendar.",
+  "monster": {
+    "name": "The Chronology Accountant",
+    "type": "extraterrestrial bureaucrat",
+    "instinct": "To balance temporal accounts by filing people, places, and events under the wrong dates.",
+    "weaknesses": ["complete paper receipts", "synchronized clocks", "refusal to sign the ledger"]
+  },
+  "countdown": [
+    {
+      "id": "wrong-receipts",
+      "label": "Wrong Receipts",
+      "text": "Dottie's register prints breakfast orders dated next Wednesday."
+    },
+    {
+      "id": "missing-hour",
+      "label": "Missing Hour",
+      "text": "The noon rush lasts six minutes for some people and ninety minutes for others."
+    },
+    {
+      "id": "road-loop",
+      "label": "Road Loop",
+      "text": "County Road 9 traps three cars between mile markers for most of an afternoon."
+    },
+    {
+      "id": "dead-customer",
+      "label": "Dead Customer",
+      "text": "A dead regular sits in his old booth and complains that the coffee is late."
+    },
+    {
+      "id": "public-ledger",
+      "label": "Public Ledger",
+      "text": "Names appear on the civic hall agenda under dates that have not happened yet."
+    },
+    {
+      "id": "calendar-seizure",
+      "label": "Calendar Seizure",
+      "text": "The accountant repossesses every Wednesday in town until the ledger is corrected."
+    }
+  ],
+  "clues": [
+    {
+      "id": "register-ink",
+      "text": "Receipt ink glows under the same blue light seen over Miller's Field.",
+      "tags": ["evidence", "continuity"]
+    },
+    {
+      "id": "dead-man-tip",
+      "text": "The dead customer leaves exact change plus a coin stamped with three moons.",
+      "tags": ["alien", "money"]
+    },
+    {
+      "id": "clock-disagreement",
+      "text": "Analog clocks disagree only after someone signs a receipt.",
+      "tags": ["time", "trigger"]
+    },
+    {
+      "id": "road-scale-error",
+      "text": "The trapped mile is exactly 1.609 times too long, as if a unit conversion went badly.",
+      "tags": ["road", "math"]
+    },
+    {
+      "id": "ledger-stamp",
+      "text": "A purple stamp on the civic agenda translates roughly as unpaid local interval.",
+      "tags": ["bureaucracy", "language"]
+    },
+    {
+      "id": "unsigned-refusal",
+      "text": "A receipt left unsigned remains anchored in the correct day.",
+      "tags": ["weakness", "choice"]
+    }
+  ],
+  "threatIds": ["chronology-accountant", "receipt-ghosts", "forty-minute-mile"],
+  "locationIds": ["dottie-diner", "county-road-nine", "pell-civic-hall"],
+  "npcIds": ["dottie-bell", "caleb-ortiz", "vera-snipe"],
+  "keeperHints": [
+    "Make time loss feel mundane at first: cold fries, repeated greetings, missed appointments.",
+    "The accountant should be precise, courteous, and terrifyingly unwilling to understand context.",
+    "Use receipts and public records as strong concrete evidence."
+  ],
+  "revealPolicy": "Reveal the alien bureaucracy through paperwork and timing errors before showing the accountant directly.",
+  "automationSafety": [
+    "Do not erase major player history without explicit approval.",
+    "Keep time confusion legible enough for investigation."
+  ]
+}

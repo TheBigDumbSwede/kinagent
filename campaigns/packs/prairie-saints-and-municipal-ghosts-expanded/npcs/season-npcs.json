@@ -1,0 +1,93 @@
+[
+  {
+    "id": "night-maintenance-crew",
+    "name": "Night Maintenance Crew",
+    "role": "bystanders",
+    "pressure": "They know the tunnels are wrong but need the overtime.",
+    "tags": ["water", "workers"]
+  },
+  {
+    "id": "nadia-pelletier",
+    "name": "Nadia Pelletier",
+    "role": "municipal dispatcher",
+    "pressure": "She has heard too many impossible calls and wants proof before she loses her job.",
+    "tags": ["ally", "infrastructure"]
+  },
+  {
+    "id": "graham-vale",
+    "name": "Graham Vale",
+    "role": "returned maintenance worker",
+    "pressure": "He came back from the pump house wrong and is trying to act like a husband, father, and man.",
+    "tags": ["victim", "water"]
+  },
+  {
+    "id": "simon-crane",
+    "name": "Simon Crane",
+    "role": "radio archivist",
+    "pressure": "He knows the dead call sign and is terrified that part of him missed hearing it.",
+    "tags": ["signal", "expert"]
+  },
+  {
+    "id": "imogen-voss",
+    "name": "Imogen Voss",
+    "role": "city councillor",
+    "pressure": "The Saint broadcast her future confession, and now she wants the problem buried before the words become true.",
+    "tags": ["political", "complication"]
+  },
+  {
+    "id": "merek-soltys",
+    "name": "Merek Soltys",
+    "role": "rooming house caretaker",
+    "pressure": "He repairs what he can and lies about the rest because eviction would scatter people with nowhere to go.",
+    "tags": ["memory", "caretaker"]
+  },
+  {
+    "id": "bea-lowry",
+    "name": "Bea Lowry",
+    "role": "former tenant",
+    "pressure": "She remembers a vanished neighbour everyone else forgot and refuses to let the house keep him.",
+    "tags": ["witness", "memory"]
+  },
+  {
+    "id": "joel-august",
+    "name": "Joel August",
+    "role": "demolition contractor",
+    "pressure": "He wants the job done, but the building knows his father's old room number.",
+    "tags": ["worker", "complication"]
+  },
+  {
+    "id": "rafiq-haldar",
+    "name": "Rafiq Haldar",
+    "role": "transit planner",
+    "pressure": "He has found routes on old maps that should not exist and is deciding whether to publish them.",
+    "tags": ["transit", "maps"]
+  },
+  {
+    "id": "marisol-keeley",
+    "name": "Marisol Keeley",
+    "role": "bus driver",
+    "pressure": "She saw the Hart smile at her passengers and now refuses to stop at the edge shelter.",
+    "tags": ["witness", "hunger"]
+  },
+  {
+    "id": "darren-pike",
+    "name": "Darren Pike",
+    "role": "hungry negotiator",
+    "pressure": "He made a bargain for food and warmth and can no longer remember his sister's name.",
+    "tags": ["victim", "bargain"]
+  },
+  {
+    "id": "alana-cho",
+    "name": "Alana Cho",
+    "role": "mall security supervisor",
+    "pressure": "She knows every camera blind spot except the new one that looks down.",
+    "tags": ["retail", "ally"]
+  },
+  {
+    "id": "tessa-mallory",
+    "name": "Tessa Mallory",
+    "role": "missing teenager",
+    "pressure": "She is trapped below, tempted by a perfect version of a lost afternoon with her mother.",
+    "tags": ["victim", "retail"]
+  }
+]

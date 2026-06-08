@@ -739,6 +739,37 @@ h2 {
   font-size: 12px;
 }
 
+.game-help-panel {
+  display: grid;
+  gap: 6px;
+  border: 1px solid #d7e0e8;
+  border-radius: 6px;
+  background: #fbfcfd;
+  padding: 10px 12px;
+}
+
+.game-help-panel h3 {
+  margin: 0;
+  color: #182635;
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.game-help-panel ul {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 18px;
+  color: #4d6174;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.game-help-panel code {
+  color: #182635;
+  font-size: 12px;
+}
+
 .voice-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

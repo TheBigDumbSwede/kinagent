@@ -1,0 +1,22 @@
+[
+  {
+    "id": "county-fair-blackout",
+    "text": "Every light at the Cedar Crossing fall fair goes out except the prize pumpkin display, which shines from within and hums in three-part harmony.",
+    "tags": ["fair", "signal", "public"]
+  },
+  {
+    "id": "missing-road-mile",
+    "text": "Drivers on County Road 9 report that the mile between marker 11 and marker 12 sometimes takes forty minutes and ends with their radios tuned to a station that apologizes politely.",
+    "tags": ["road", "time", "public"]
+  },
+  {
+    "id": "cow-weather-report",
+    "text": "A dairy farmer calls because his cows are standing in a perfect arrow formation and refusing to face anything except Orion.",
+    "tags": ["farm", "animal", "sky"]
+  },
+  {
+    "id": "library-star-map",
+    "text": "The town library's microfiche reader prints star maps in the margins of old school board minutes.",
+    "tags": ["library", "records", "signal"]
+  }
+]

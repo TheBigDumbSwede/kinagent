@@ -108,6 +108,22 @@ Runtime
   -> desktop Kin or Group Scene tab
 ```
 
+Group Gaming also recognizes explicit user-originated group commands:
+
+- `/start-mystery` starts the selected campaign/mystery.
+- `/reset-mystery` clears local progress and restarts the selected mystery.
+- `/end-mystery` marks the selected mystery complete and queues or sends a closing Keeper note according to the
+  automation mode.
+
+Only user messages execute these commands. Mystery intros are generated from spoiler-free public briefing data and do not
+include hidden truth, threat data, countdowns, or hidden clues.
+
+For group play, Kin/AI messages are buffered as non-mutating context. The next user-originated message closes the turn
+and sends that buffered context plus the user message to Hermes as one game turn parcel. Autonomous mode can send
+Keeper and abstract roll-outcome messages, but Kinagent does not try to force Kindroid automatic turn-taking.
+Group-visible roll outcomes stay abstract, while full local dice, modifier, total, and outcome details remain in
+`rollHistory` for audit and post-roll Hermes narration context.
+
 Kindroid domain access is organized behind `KindroidApiClient` resource modules:
 
 - `kins` for Kin discovery from `Users/{uid}/AIs`.
@@ -338,6 +354,11 @@ static content and prompt hints only; they do not execute code. Mystery packs ca
 stages, and threat records, but imported packs are validated for internal id references and the game runtime only accepts
 state changes that reference known pack ids.
 
+Distributable campaign pack source lives separately under `campaigns/packs/`. `npm run campaigns:check` validates those
+packs with the same loader used by the app, and `npm run campaigns:build` writes downloadable zips plus
+`campaign-index.json` under `release/campaigns/`. Release builds upload those campaign zips as separate GitHub Release
+assets beside the portable app; they are not bundled into the executable.
+
 When Gaming is enabled for a monitored group, Kinagent can send group chat events to Hermes through a contained game
 runtime. Hermes returns a game decision with a Keeper message and validated local state changes. `observe` applies only
 local state changes, `suggest` stores pending Keeper decisions until reviewed from the Gaming tab, and `autonomous` may
@@ -454,11 +475,13 @@ git push origin v0.1.1
 Use `minor` or `major` instead of `patch` when appropriate. The GitHub release
 workflow runs for `vX.Y.Z` tags, verifies that the tag matches
 `package.json`, runs the Windows portable build and smoke check, then attaches
-`Kinagent-X.Y.Z-portable.exe` to the GitHub Release for that tag.
+`Kinagent-X.Y.Z-portable.exe` and distributable campaign pack zips to the
+GitHub Release for that tag.
 
 The release workflow can also be run manually from GitHub Actions. With no tag
-input, it produces a downloadable workflow artifact only. With an existing tag
-input, it verifies the version and uploads the portable exe to that release.
+input, it produces downloadable workflow artifacts only. With an existing tag
+input, it verifies the version and uploads the portable exe plus campaign
+downloads to that release.
 
 ## Configuration
 

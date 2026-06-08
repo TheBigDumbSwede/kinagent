@@ -40,6 +40,9 @@ jobs:
       - name: Build Windows portable
         run: npm run dist:win
 
+      - name: Build campaign pack downloads
+        run: npm run campaigns:build
+
       - name: Locate portable artifact
         shell: pwsh
         run: |
@@ -59,6 +62,13 @@ jobs:
           path: ${{ env.PORTABLE_EXE }}
           if-no-files-found: error
 
+      - name: Upload campaign pack workflow artifacts
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: kinagent-campaign-packs
+          path: release/campaigns/*
+          if-no-files-found: error
+
       - name: Publish GitHub release asset
         if: ${{ github.event_name == 'push' || inputs.tag != '' }}
         shell: pwsh
@@ -76,3 +86,4 @@ jobs:
               --notes "Windows portable build for Kinagent $version." `
               --target $env:GITHUB_SHA
           }
+          gh release upload $env:RELEASE_TAG release/campaigns/* --clobber

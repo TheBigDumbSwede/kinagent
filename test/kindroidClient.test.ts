@@ -105,7 +105,8 @@ describe("Kindroid client normalizers", () => {
     const document = documentLike("group-doc-1", {
       group_id: "group-1",
       group_name: "Evening Roundtable",
-      group_ais: [{ ai_id: "kin-1" }, { aiId: "kin-2" }, "kin-3"]
+      group_ais: [{ ai_id: "kin-1" }, { aiId: "kin-2" }, "kin-3"],
+      use_manual_turntaking: true
     });
 
     expect(normalizeGroupDocument(document)).toEqual([
@@ -113,7 +114,8 @@ describe("Kindroid client normalizers", () => {
         documentId: "group-doc-1",
         groupId: "group-1",
         name: "Evening Roundtable",
-        aiIds: ["kin-1", "kin-2", "kin-3"]
+        aiIds: ["kin-1", "kin-2", "kin-3"],
+        useManualTurntaking: true
       }
     ]);
   });
@@ -191,7 +193,15 @@ describe("Kindroid client normalizers", () => {
       })
     ).toMatchObject({
       group_id: "group-1",
-      message: "Visible group diagnostic message."
+      message: "Visible group diagnostic message.",
+      image_urls: null,
+      image_description: null,
+      video_url: null,
+      video_description: null,
+      internet_response: null,
+      link_url: null,
+      link_description: null,
+      client_platform: "web"
     });
   });
 
@@ -207,7 +217,8 @@ describe("Kindroid client normalizers", () => {
     ).toMatchObject({
       group_id: "group-1",
       message: "Visible group diagnostic message.",
-      internet_response: "Diagnostic hidden group context: KINAGENT-GROUP-CANARY-1234."
+      internet_response: "Diagnostic hidden group context: KINAGENT-GROUP-CANARY-1234.",
+      client_platform: "web"
     });
   });
 
@@ -221,6 +232,14 @@ describe("Kindroid client normalizers", () => {
       })
     ).toEqual({
       group_id: "group-1",
+      image_urls: null,
+      image_description: null,
+      video_url: null,
+      video_description: null,
+      internet_response: null,
+      link_url: null,
+      link_description: null,
+      client_platform: "web",
       audio_url: "https://example.test/audio.mp3"
     });
   });
@@ -267,7 +286,9 @@ describe("Kindroid client normalizers", () => {
     ).toEqual({
       ai_id: "kin-1",
       group_id: "group-1",
-      stream: false
+      stream: false,
+      request_id: "group-ai-request-1",
+      client_platform: "web"
     });
   });
 

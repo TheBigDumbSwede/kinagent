@@ -1,0 +1,86 @@
+[
+  {
+    "id": "mara-keene",
+    "name": "Mara Keene",
+    "role": "county librarian and reluctant anomaly archivist",
+    "pressure": "Wants proof carefully cataloged before the town turns every strange light into gossip.",
+    "tags": ["records", "skeptic", "ally"]
+  },
+  {
+    "id": "caleb-ortiz",
+    "name": "Caleb Ortiz",
+    "role": "deputy sheriff with an overprepared incident binder",
+    "pressure": "Needs the situation to stay boring enough for official forms.",
+    "tags": ["law", "practical", "ally"]
+  },
+  {
+    "id": "dottie-bell",
+    "name": "Dottie Bell",
+    "role": "diner owner and social switchboard",
+    "pressure": "Knows everything, charges fairly for coffee, and refuses to be impressed by aliens who do not tip.",
+    "tags": ["diner", "gossip", "grounded"]
+  },
+  {
+    "id": "orris-vane",
+    "name": "Orris Vane",
+    "role": "retired radio repairman",
+    "pressure": "Has been hearing the sky mispronounce English since 1978 and is tired of pretending that is normal.",
+    "tags": ["radio", "witness", "history"]
+  },
+  {
+    "id": "lena-pike",
+    "name": "Lena Pike",
+    "role": "grain elevator manager",
+    "pressure": "Protects her workers and her silo inventory, in that order, unless the inventory starts blinking.",
+    "tags": ["grain", "craft", "worker"]
+  },
+  {
+    "id": "reverend-amos-vale",
+    "name": "Reverend Amos Vale",
+    "role": "minister at the roadside chapel",
+    "pressure": "Wants wonder to mean something without letting fear turn it cruel.",
+    "tags": ["faith", "roadside", "counsel"]
+  },
+  {
+    "id": "tamsin-cho",
+    "name": "Tamsin Cho",
+    "role": "teen weather spotter",
+    "pressure": "Knows the clouds are repeating patterns and wants adults to stop calling it imagination.",
+    "tags": ["weather", "youth", "witness"]
+  },
+  {
+    "id": "mayor-frank-pell",
+    "name": "Mayor Frank Pell",
+    "role": "mayor of Cedar Crossing",
+    "pressure": "Wants a clean press conference even when his own reflection is several seconds late.",
+    "tags": ["politics", "public", "ego"]
+  },
+  {
+    "id": "nellie-bridger",
+    "name": "Nellie Bridger",
+    "role": "night shift clerk at the all-hours gas station",
+    "pressure": "Keeps seeing travelers who pay in coins stamped with unfamiliar moons.",
+    "tags": ["gas-station", "night", "witness"]
+  },
+  {
+    "id": "dr-sam-ibe",
+    "name": "Dr. Sam Ibe",
+    "role": "large-animal veterinarian",
+    "pressure": "Wants impossible biology handled with calm hands and clean boots.",
+    "tags": ["animals", "science", "ally"]
+  },
+  {
+    "id": "vera-snipe",
+    "name": "Vera Snipe",
+    "role": "county historical society president",
+    "pressure": "Has records of prior contact events and a filing system designed to discourage amateurs.",
+    "tags": ["history", "archives", "gatekeeper"]
+  },
+  {
+    "id": "the-polite-visitor",
+    "name": "The Polite Visitor",
+    "role": "extraterrestrial liaison wearing borrowed local manners",
+    "pressure": "Needs help repairing a contact protocol but keeps translating danger as inconvenience.",
+    "tags": ["alien", "liaison", "season"]
+  }
+]

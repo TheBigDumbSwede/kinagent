@@ -14,6 +14,7 @@ import type {
   GetKindroidChatMessagesInput,
   GetKindroidChatMessagesResult,
   GetKindroidGroupTurnInput,
+  GetKindroidGroupTurnResult,
   RewindKindroidMessagesInput,
   RewindKindroidMessagesResult,
   SendKindroidGroupMessageInput,
@@ -158,12 +159,7 @@ export class KindroidClient {
     };
   }
 
-  private async getGroupTurn(input: GetKindroidGroupTurnInput): Promise<{
-    ok: boolean;
-    status: number;
-    aiId?: string;
-    responseText?: string;
-  }> {
+  async getGroupTurn(input: GetKindroidGroupTurnInput): Promise<GetKindroidGroupTurnResult> {
     const payload = buildGetGroupTurnPayload(input);
     const response = await fetch(groupGetTurnUrl, {
       method: "POST",

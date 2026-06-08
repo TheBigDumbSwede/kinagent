@@ -1,0 +1,89 @@
+{
+  "id": "the-saucer-in-the-silo",
+  "title": "The Saucer in the Silo",
+  "hook": "A grain elevator develops a metallic heartbeat, and the night crew finds a circular door where Bin Four should be.",
+  "truth": "A small alien courier craft crash-landed decades ago and has been sleeping inside the elevator, waiting for the survey lattice and calendar correction to make delivery possible.",
+  "monster": {
+    "name": "The Sleeping Courier Craft",
+    "type": "alien vessel",
+    "instinct": "To wake, repair itself, and deliver a message to the wrong century.",
+    "weaknesses": ["matched harmonic pulse", "cool grain dust", "the pilot's name spoken correctly"]
+  },
+  "countdown": [
+    {
+      "id": "heartbeat",
+      "label": "Heartbeat",
+      "text": "Workers hear a slow metal pulse from inside an empty grain bin."
+    },
+    {
+      "id": "gravity-pocket",
+      "label": "Gravity Pocket",
+      "text": "Tools float upward in the maintenance stairwell."
+    },
+    {
+      "id": "bin-airlock",
+      "label": "Bin Airlock",
+      "text": "Bin Four opens into a clean white corridor larger than the elevator tower."
+    },
+    {
+      "id": "helmet-warning",
+      "label": "Helmet Warning",
+      "text": "Moths gather inside a cracked helmet and tap warnings against the glass."
+    },
+    {
+      "id": "wrong-delivery",
+      "label": "Wrong Delivery",
+      "text": "The craft powers up and announces delivery readiness to a recipient who died before the town was founded."
+    },
+    {
+      "id": "launch-through-town",
+      "label": "Launch Through Town",
+      "text": "The craft attempts to launch through the grain elevator, pulling half the rail spur with it."
+    }
+  ],
+  "clues": [
+    {
+      "id": "cool-grain",
+      "text": "A ring of grain stays cool and dry even beside overheated machinery.",
+      "tags": ["weakness", "craft"]
+    },
+    {
+      "id": "pilot-name-static",
+      "text": "The radio repeats a name that sounds like Lume-of-Third-Orchard when played backward.",
+      "tags": ["pilot", "signal"]
+    },
+    {
+      "id": "larger-inside",
+      "text": "Measurements inside Bin Four exceed the elevator's exterior by thirty feet.",
+      "tags": ["space", "craft"]
+    },
+    {
+      "id": "moth-letters",
+      "text": "Moths settle into letters spelling NOT WEDNESDAY.",
+      "tags": ["artifact", "time"]
+    },
+    {
+      "id": "worker-whistle",
+      "text": "A safety whistle changes the craft's heartbeat into a stable rhythm.",
+      "tags": ["weakness", "sound"]
+    },
+    {
+      "id": "delivery-coordinate",
+      "text": "The delivery coordinate points to the Orchard Sink, not to space.",
+      "tags": ["finale", "coordinate"]
+    }
+  ],
+  "threatIds": ["sleeping-courier-craft", "grain-elevator-containment", "helmet-full-of-moths"],
+  "locationIds": ["bramley-grain-elevator", "all-hours-gas", "orchard-sink"],
+  "npcIds": ["lena-pike", "orris-vane", "nellie-bridger"],
+  "keeperHints": [
+    "Let the craft be wondrous, old, and slightly bad at customer service.",
+    "Use workplace safety details to ground the impossible interior.",
+    "The helmet is comic in image but useful as a serious warning system."
+  ],
+  "revealPolicy": "Reveal the craft through impossible architecture and repair behavior before confirming it is a courier vessel.",
+  "automationSafety": [
+    "Do not trap player characters inside the craft without a clear exit or consent.",
+    "Do not launch the craft through town unless the countdown reaches its end."
+  ]
+}

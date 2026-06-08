@@ -1,0 +1,89 @@
+{
+  "id": "a-house-that-remembers-every-tenant",
+  "title": "A House That Remembers Every Tenant",
+  "hook": "A rooming house slated for demolition begins rearranging itself into bedrooms from every decade of its existence.",
+  "truth": "The house is a memory engine built from grief, rent receipts, and a landlord's old bargain with something beneath the foundation.",
+  "monster": {
+    "name": "The Tenant Archive",
+    "type": "memory-house",
+    "instinct": "To preserve every tenant forever by making them part of the house.",
+    "weaknesses": ["a complete true ledger", "returning stolen keepsakes", "opening the sealed root cellar at sunrise"]
+  },
+  "countdown": [
+    {
+      "id": "wrong-room",
+      "label": "First Sign",
+      "text": "A tenant wakes in a room decorated for 1978, with snow outside the window in June."
+    },
+    {
+      "id": "missing-tenant",
+      "label": "First Loss",
+      "text": "A new renter disappears and their name appears on an old mailbox."
+    },
+    {
+      "id": "room-growth",
+      "label": "Expansion",
+      "text": "The house gains an extra hallway visible only to people carrying unpaid bills."
+    },
+    {
+      "id": "keepsake-theft",
+      "label": "Pressure",
+      "text": "Personal objects vanish across the block and reappear in rooms no one can enter."
+    },
+    {
+      "id": "demolition-backfire",
+      "label": "Crisis",
+      "text": "The demolition crew opens a wall and hears dozens of people breathing inside."
+    },
+    {
+      "id": "archive-lock",
+      "label": "Finale",
+      "text": "The house folds the whole street into one impossible interior and begins assigning rooms."
+    }
+  ],
+  "clues": [
+    {
+      "id": "rent-ledger",
+      "text": "A rent ledger contains names that do not appear in any city record.",
+      "tags": ["document", "origin"]
+    },
+    {
+      "id": "keepsake-wall",
+      "text": "The plaster hides a neat grid of watches, photographs, keys, and baby teeth.",
+      "tags": ["body", "keepsake"]
+    },
+    {
+      "id": "sunrise-cellar",
+      "text": "The cellar door unlocks only when the sun hits the kitchen window.",
+      "tags": ["weakness", "place"]
+    },
+    {
+      "id": "missing-suite",
+      "text": "Suite 2B appears in tax records but not on any floor plan.",
+      "tags": ["infrastructure", "map"]
+    },
+    {
+      "id": "apology-receipt",
+      "text": "A receipt written as an apology is hidden inside the baseboard.",
+      "tags": ["emotional", "ledger"]
+    },
+    {
+      "id": "tenant-song",
+      "text": "A lullaby moves from room to room in the order tenants disappeared.",
+      "tags": ["pattern", "sound"]
+    }
+  ],
+  "threatIds": ["tenant-archive", "memory-landlord", "sealed-root-cellar"],
+  "locationIds": ["ellice-rooming-house", "old-civic-archive", "root-cellar-door"],
+  "npcIds": ["merek-soltys", "bea-lowry", "joel-august"],
+  "keeperHints": [
+    "Treat rooms as emotional evidence, not puzzle boxes only.",
+    "Let the house preserve people with terrible tenderness.",
+    "Use practical tenant details: mail, rent, repairs, bad locks, old carpet."
+  ],
+  "revealPolicy": "Reveal the house's motive through tenant rooms and stolen keepsakes before exposing the bargain.",
+  "automationSafety": [
+    "Do not trap a player character permanently without a clear escape path.",
+    "Keep memory alteration reversible unless the user explicitly wants harsher stakes."
+  ]
+}

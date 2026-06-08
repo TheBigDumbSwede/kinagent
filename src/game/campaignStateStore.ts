@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { AppConfig } from "../config/types.js";
 import type { CampaignPack, MysteryEntry } from "./campaignPack.js";
+import type { RollRequest, RollResult } from "./gameMoves.js";
 import type { GamingAutomationMode } from "./groupGamingPreferences.js";
 
 export type GameDecisionConfidence = "low" | "medium" | "high";
@@ -10,7 +11,7 @@ export interface GameKeeperDecision {
   keeperMessage?: string;
   stateChanges: GameStateChange[];
   moveCall?: Record<string, unknown>;
-  rollRequest?: Record<string, unknown>;
+  rollRequest?: RollRequest;
   pressureCategory?: string;
   confidence?: GameDecisionConfidence;
   reason?: string;
@@ -31,8 +32,16 @@ export interface PendingGameDecision {
   automationMode: GamingAutomationMode;
   keeperMessage?: string;
   moveCall?: Record<string, unknown>;
-  rollRequest?: Record<string, unknown>;
   pressureCategory?: string;
+  confidence?: GameDecisionConfidence;
+  reason?: string;
+}
+
+export interface PendingRollRequest {
+  sourceDocumentId: string;
+  createdAt: string;
+  automationMode: GamingAutomationMode;
+  request: RollRequest;
   confidence?: GameDecisionConfidence;
   reason?: string;
 }
@@ -43,6 +52,22 @@ export interface SentKeeperMessage {
   requestId: string;
   idempotencyKey: string;
   sourceDocumentId: string;
+}
+
+export interface StoredRollResult {
+  sourceDocumentId: string;
+  resolvedAt: string;
+  automationMode: GamingAutomationMode;
+  request: RollRequest;
+  result: RollResult;
+  message: string;
+  sent?: {
+    ok: boolean;
+    status: number;
+    requestId?: string;
+    idempotencyKey?: string;
+    responseText?: string;
+  };
 }
 
 export interface GroupCampaignState {
@@ -59,9 +84,13 @@ export interface GroupCampaignState {
   visitedLocationIds: string[];
   notes: string[];
   processedSourceDocumentIds: string[];
+  rollHistory: StoredRollResult[];
+  pendingRollRequest?: PendingRollRequest;
   pendingDecision?: PendingGameDecision;
   lastKeeperMessage?: SentKeeperMessage;
 }
+
+const rollHistoryLimit = 24;
 
 interface CampaignStateFile {
   groups?: Record<string, GroupCampaignState>;
@@ -102,11 +131,105 @@ export class CampaignStateStore {
       revealedNpcIds: [],
       visitedLocationIds: [],
       notes: [],
-      processedSourceDocumentIds: []
+      processedSourceDocumentIds: [],
+      rollHistory: []
     };
     groups[input.groupId] = next;
     this.write({ ...file, groups });
     return next;
+  }
+
+  activate(input: {
+    groupId: string;
+    campaign: CampaignPack;
+    mysteryId?: string;
+    sourceDocumentId?: string;
+  }): GroupCampaignState {
+    const current = this.ensureInitialized({
+      groupId: input.groupId,
+      campaign: input.campaign,
+      mysteryId: input.mysteryId
+    });
+    if (input.sourceDocumentId && isProcessedSourceDocument(current, input.sourceDocumentId)) {
+      return current;
+    }
+
+    const now = new Date().toISOString();
+    const updated: GroupCampaignState = {
+      ...current,
+      status: "active",
+      updatedAt: now,
+      processedSourceDocumentIds: input.sourceDocumentId
+        ? appendProcessedSourceDocumentId(current.processedSourceDocumentIds, input.sourceDocumentId)
+        : current.processedSourceDocumentIds
+    };
+    this.saveGroupState(input.groupId, updated);
+    return updated;
+  }
+
+  resetInitialized(input: {
+    groupId: string;
+    campaign: CampaignPack;
+    mysteryId?: string;
+    sourceDocumentId?: string;
+  }): GroupCampaignState {
+    const mystery = findMystery(input.campaign, input.mysteryId);
+    const file = this.read();
+    const groups = file.groups ?? {};
+    const previous = groups[input.groupId];
+    if (
+      input.sourceDocumentId &&
+      previous?.campaignId === input.campaign.id &&
+      previous.mysteryId === mystery.id &&
+      isProcessedSourceDocument(stateWithDefaults(previous), input.sourceDocumentId)
+    ) {
+      return stateWithDefaults(previous);
+    }
+
+    const now = new Date().toISOString();
+    const next = initialGroupCampaignState({
+      groupId: input.groupId,
+      campaignId: input.campaign.id,
+      mysteryId: mystery.id,
+      status: "active",
+      now,
+      processedSourceDocumentIds: input.sourceDocumentId
+        ? appendProcessedSourceDocumentId([], input.sourceDocumentId)
+        : []
+    });
+    groups[input.groupId] = next;
+    this.write({ ...file, groups });
+    return next;
+  }
+
+  complete(input: {
+    groupId: string;
+    campaign: CampaignPack;
+    mysteryId?: string;
+    sourceDocumentId?: string;
+  }): GroupCampaignState {
+    const current = this.ensureInitialized({
+      groupId: input.groupId,
+      campaign: input.campaign,
+      mysteryId: input.mysteryId
+    });
+    if (input.sourceDocumentId && isProcessedSourceDocument(current, input.sourceDocumentId)) {
+      return current;
+    }
+
+    const now = new Date().toISOString();
+    const updated: GroupCampaignState = {
+      ...current,
+      status: "completed",
+      pendingDecision: undefined,
+      pendingRollRequest: undefined,
+      updatedAt: now,
+      processedSourceDocumentIds: input.sourceDocumentId
+        ? appendProcessedSourceDocumentId(current.processedSourceDocumentIds, input.sourceDocumentId)
+        : current.processedSourceDocumentIds
+    };
+    this.saveGroupState(input.groupId, updated);
+    return updated;
   }
 
   applyDecision(input: {
@@ -129,6 +252,7 @@ export class CampaignStateStore {
     }
     const next = applyStateChanges(current, input.decision.stateChanges, mystery, now);
     const pendingDecision = pendingDecisionFrom(input, now);
+    const pendingRollRequest = pendingRollRequestFrom(input, now) ?? next.pendingRollRequest;
     const updated: GroupCampaignState = {
       ...next,
       updatedAt: now,
@@ -136,6 +260,7 @@ export class CampaignStateStore {
         next.processedSourceDocumentIds,
         input.sourceDocumentId
       ),
+      ...(pendingRollRequest ? { pendingRollRequest } : {}),
       ...(pendingDecision ? { pendingDecision } : { pendingDecision: undefined })
     };
 
@@ -166,6 +291,106 @@ export class CampaignStateStore {
         sentAt: new Date().toISOString()
       },
       updatedAt: new Date().toISOString()
+    };
+    this.saveGroupState(input.groupId, updated);
+    return updated;
+  }
+
+  recordRollResult(input: {
+    groupId: string;
+    sourceDocumentId: string;
+    automationMode: GamingAutomationMode;
+    request: RollRequest;
+    result: RollResult;
+    message: string;
+    sent?: StoredRollResult["sent"];
+  }): GroupCampaignState | null {
+    const current = this.getForGroup(input.groupId);
+    if (!current) {
+      return null;
+    }
+
+    const entry: StoredRollResult = {
+      sourceDocumentId: input.sourceDocumentId,
+      resolvedAt: new Date().toISOString(),
+      automationMode: input.automationMode,
+      request: input.request,
+      result: input.result,
+      message: input.message,
+      ...(input.sent ? { sent: input.sent } : {})
+    };
+    const updated: GroupCampaignState = {
+      ...current,
+      pendingRollRequest: undefined,
+      rollHistory: [...current.rollHistory, entry].slice(-rollHistoryLimit),
+      updatedAt: entry.resolvedAt
+    };
+    this.saveGroupState(input.groupId, updated);
+    return updated;
+  }
+
+  markRollResultSent(input: {
+    groupId: string;
+    sourceDocumentId: string;
+    message: string;
+    sent: StoredRollResult["sent"];
+  }): GroupCampaignState | null {
+    const current = this.getForGroup(input.groupId);
+    if (!current) {
+      return null;
+    }
+
+    let index = -1;
+    for (let candidate = current.rollHistory.length - 1; candidate >= 0; candidate -= 1) {
+      if (current.rollHistory[candidate]?.sourceDocumentId === input.sourceDocumentId) {
+        index = candidate;
+        break;
+      }
+    }
+    if (index < 0) {
+      return current;
+    }
+
+    const updatedHistory = [...current.rollHistory];
+    updatedHistory[index] = {
+      ...updatedHistory[index],
+      message: input.message,
+      ...(input.sent ? { sent: input.sent } : {})
+    };
+    const updated: GroupCampaignState = {
+      ...current,
+      rollHistory: updatedHistory,
+      updatedAt: new Date().toISOString()
+    };
+    this.saveGroupState(input.groupId, updated);
+    return updated;
+  }
+
+  storePendingKeeperDecision(input: {
+    groupId: string;
+    sourceDocumentId: string;
+    automationMode: GamingAutomationMode;
+    keeperMessage: string;
+    confidence?: GameDecisionConfidence;
+    reason?: string;
+  }): GroupCampaignState | null {
+    const current = this.getForGroup(input.groupId);
+    if (!current) {
+      return null;
+    }
+
+    const now = new Date().toISOString();
+    const updated: GroupCampaignState = {
+      ...current,
+      pendingDecision: {
+        sourceDocumentId: input.sourceDocumentId,
+        createdAt: now,
+        automationMode: input.automationMode,
+        keeperMessage: input.keeperMessage,
+        ...(input.confidence ? { confidence: input.confidence } : {}),
+        ...(input.reason ? { reason: input.reason } : {})
+      },
+      updatedAt: now
     };
     this.saveGroupState(input.groupId, updated);
     return updated;
@@ -210,6 +435,32 @@ function sortStateFile(file: CampaignStateFile): CampaignStateFile {
     Object.entries(file.groups ?? {}).sort(([left], [right]) => left.localeCompare(right))
   );
   return { groups };
+}
+
+function initialGroupCampaignState(input: {
+  groupId: string;
+  campaignId: string;
+  mysteryId: string;
+  status: GroupCampaignState["status"];
+  now: string;
+  processedSourceDocumentIds?: string[];
+}): GroupCampaignState {
+  return {
+    groupId: input.groupId,
+    campaignId: input.campaignId,
+    mysteryId: input.mysteryId,
+    status: input.status,
+    initializedAt: input.now,
+    updatedAt: input.now,
+    currentCountdownIndex: 0,
+    discoveredClueIds: [],
+    revealedThreatIds: [],
+    revealedNpcIds: [],
+    visitedLocationIds: [],
+    notes: [],
+    processedSourceDocumentIds: input.processedSourceDocumentIds ?? [],
+    rollHistory: []
+  };
 }
 
 function applyStateChanges(
@@ -271,7 +522,7 @@ function pendingDecisionFrom(
   if (input.automationMode === "observe") {
     return undefined;
   }
-  if (!decision.keeperMessage && !decision.moveCall && !decision.rollRequest) {
+  if (!decision.keeperMessage && !decision.moveCall) {
     return undefined;
   }
 
@@ -281,10 +532,32 @@ function pendingDecisionFrom(
     automationMode: input.automationMode,
     ...(decision.keeperMessage ? { keeperMessage: decision.keeperMessage } : {}),
     ...(decision.moveCall ? { moveCall: decision.moveCall } : {}),
-    ...(decision.rollRequest ? { rollRequest: decision.rollRequest } : {}),
     ...(decision.pressureCategory ? { pressureCategory: decision.pressureCategory } : {}),
     ...(decision.confidence ? { confidence: decision.confidence } : {}),
     ...(decision.reason ? { reason: decision.reason } : {})
+  };
+}
+
+function pendingRollRequestFrom(
+  input: {
+    sourceDocumentId: string;
+    automationMode: GamingAutomationMode;
+    decision: GameKeeperDecision;
+  },
+  createdAt: string
+): PendingRollRequest | undefined {
+  const request = input.decision.rollRequest;
+  if (!request) {
+    return undefined;
+  }
+
+  return {
+    sourceDocumentId: input.sourceDocumentId,
+    createdAt,
+    automationMode: input.automationMode,
+    request,
+    ...(input.decision.confidence ? { confidence: input.decision.confidence } : {}),
+    ...(input.decision.reason ? { reason: input.decision.reason } : {})
   };
 }
 
@@ -307,13 +580,19 @@ function appendProcessedSourceDocumentId(values: string[], sourceDocumentId: str
 }
 
 function stateWithDefaults(state: GroupCampaignState): GroupCampaignState {
+  const currentState = { ...state } as GroupCampaignState & { turnGuard?: unknown };
+  delete currentState.turnGuard;
   return {
-    ...state,
+    ...currentState,
     discoveredClueIds: state.discoveredClueIds ?? [],
     revealedThreatIds: state.revealedThreatIds ?? [],
     revealedNpcIds: state.revealedNpcIds ?? [],
     visitedLocationIds: state.visitedLocationIds ?? [],
     notes: state.notes ?? [],
-    processedSourceDocumentIds: state.processedSourceDocumentIds ?? []
+    processedSourceDocumentIds: state.processedSourceDocumentIds ?? [],
+    rollHistory: state.rollHistory ?? [],
+    ...(state.pendingRollRequest ? { pendingRollRequest: state.pendingRollRequest } : {}),
+    ...(state.pendingDecision ? { pendingDecision: state.pendingDecision } : {}),
+    ...(state.lastKeeperMessage ? { lastKeeperMessage: state.lastKeeperMessage } : {})
   };
 }

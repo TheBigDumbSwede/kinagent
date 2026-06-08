@@ -1,0 +1,98 @@
+[
+  {
+    "id": "cedar-crossing-main-street",
+    "name": "Cedar Crossing Main Street",
+    "description": "Two blocks of brick storefronts, a blinking courthouse clock, and more opinions than parking spaces.",
+    "sensoryPalette": ["sun-faded signs", "coffee steam", "distant grain trucks"],
+    "soundscapeHints": ["small town street", "light traffic", "distant voices"],
+    "tags": ["town", "public"]
+  },
+  {
+    "id": "dottie-diner",
+    "name": "Dottie's All-Night Diner",
+    "description": "A chrome-edged diner where the coffee is strong and the jukebox sometimes plays songs that have not been written.",
+    "sensoryPalette": ["hot grease", "neon buzz", "old vinyl seats"],
+    "soundscapeHints": ["diner ambience", "soft kitchen clatter"],
+    "tags": ["diner", "social"]
+  },
+  {
+    "id": "miller-field",
+    "name": "Miller's North Field",
+    "description": "A square mile of corn, windbreaks, and suspiciously geometric cow behavior.",
+    "sensoryPalette": ["dry stalks", "manure", "ozone after lightning"],
+    "soundscapeHints": ["open field wind", "distant cattle"],
+    "tags": ["farm", "countryside"]
+  },
+  {
+    "id": "county-road-nine",
+    "name": "County Road 9",
+    "description": "A straight rural road that occasionally takes liberties with distance, time, and roadside signage.",
+    "sensoryPalette": ["asphalt heat", "ditch weeds", "headlights in dust"],
+    "soundscapeHints": ["rural road night", "distant tires"],
+    "tags": ["road", "time"]
+  },
+  {
+    "id": "bramley-grain-elevator",
+    "name": "Bramley Grain Elevator",
+    "description": "A corrugated tower, rail spur, and office ledger that recently acquired a quiet metallic heartbeat.",
+    "sensoryPalette": ["grain dust", "warm metal", "low vibration"],
+    "soundscapeHints": ["industrial hum", "grain elevator creaks"],
+    "tags": ["grain", "craft"]
+  },
+  {
+    "id": "old-meteorology-station",
+    "name": "Old Meteorology Station",
+    "description": "A decommissioned weather station filled with cracked instruments that still point to incoming events.",
+    "sensoryPalette": ["dry paper", "spinning cups", "electrical dust"],
+    "soundscapeHints": ["weather mast wind", "soft instrument clicks"],
+    "tags": ["weather", "science"]
+  },
+  {
+    "id": "cedar-creek-chapel",
+    "name": "Cedar Creek Chapel",
+    "description": "A small roadside chapel with a bell that rings whenever something above the clouds gets embarrassed.",
+    "sensoryPalette": ["polished pews", "dust in sunlight", "brass bell metal"],
+    "soundscapeHints": ["quiet chapel", "rural wind"],
+    "tags": ["faith", "roadside"]
+  },
+  {
+    "id": "county-library-basement",
+    "name": "County Library Basement",
+    "description": "Archive shelves, microfiche cabinets, and a boiler room wall marked with pencil notes from prior strange weeks.",
+    "sensoryPalette": ["old paper", "warm pipes", "toner"],
+    "soundscapeHints": ["library basement", "soft HVAC"],
+    "tags": ["records", "history"]
+  },
+  {
+    "id": "orchard-sink",
+    "name": "The Orchard Sink",
+    "description": "A shallow depression behind an abandoned apple orchard where compasses point politely downward.",
+    "sensoryPalette": ["fallen apples", "cold soil", "static in the teeth"],
+    "soundscapeHints": ["orchard wind", "low sub-bass hum"],
+    "tags": ["countryside", "portal"]
+  },
+  {
+    "id": "all-hours-gas",
+    "name": "All-Hours Gas and Bait",
+    "description": "A gas station at the highway split, selling minnows, motor oil, and a surprising number of emergency blankets.",
+    "sensoryPalette": ["diesel", "freezer hum", "wet gravel"],
+    "soundscapeHints": ["gas station night", "fluorescent buzz"],
+    "tags": ["road", "night"]
+  },
+  {
+    "id": "pell-civic-hall",
+    "name": "Pell Civic Hall",
+    "description": "A municipal hall with folding chairs, bad acoustics, and one locked records room that keeps changing door numbers.",
+    "sensoryPalette": ["floor wax", "paper cups", "microphone feedback"],
+    "soundscapeHints": ["town hall room tone", "distant murmurs"],
+    "tags": ["town", "politics"]
+  },
+  {
+    "id": "hayward-quarry",
+    "name": "Hayward Quarry",
+    "description": "An abandoned limestone quarry where still water reflects constellations not visible overhead.",
+    "sensoryPalette": ["chalk dust", "cold water", "echoing stone"],
+    "soundscapeHints": ["empty quarry", "distant water"],
+    "tags": ["quarry", "finale"]
+  }
+]

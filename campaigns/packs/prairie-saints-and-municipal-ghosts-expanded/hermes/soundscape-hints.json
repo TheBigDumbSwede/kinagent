@@ -1,0 +1,43 @@
+{
+  "globalPalette": [
+    "rain on concrete",
+    "distant traffic",
+    "failing fluorescent lights",
+    "muffled public-address systems",
+    "paper records shifting",
+    "low civic rumble"
+  ],
+  "byMystery": {
+    "the-thing-in-the-floodway": [
+      "dripping tunnel water",
+      "pump thrum",
+      "tires over wet pavement",
+      "phone static near puddles"
+    ],
+    "the-saint-of-static": ["radio scan clicks", "electrical hum", "brief dead air", "voices under emergency tones"],
+    "a-house-that-remembers-every-tenant": [
+      "radiator knocks",
+      "floorboard creaks",
+      "muffled lullaby",
+      "keys shifting behind plaster"
+    ],
+    "the-deer-with-human-teeth": ["wind across fields", "branches tapping", "soft chewing", "far train horn"],
+    "the-mall-beneath-the-mall": [
+      "old mall music",
+      "escalator clack",
+      "cash drawer chime",
+      "distant announcement echo"
+    ],
+    "the-city-built-over-a-mouth": [
+      "maps unfolding",
+      "basement metal groan",
+      "routes announcing wrong stops",
+      "six thresholds breathing"
+    ]
+  },
+  "quietMoments": [
+    "Let silence matter before a broadcast or confession.",
+    "Use one ordinary room tone before introducing a supernatural sound.",
+    "After a clue reveal, let the last sound point toward the next pressure."
+  ]
+}

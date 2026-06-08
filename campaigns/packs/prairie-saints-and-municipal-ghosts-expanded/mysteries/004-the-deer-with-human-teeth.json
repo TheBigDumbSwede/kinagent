@@ -1,0 +1,93 @@
+{
+  "id": "the-deer-with-human-teeth",
+  "title": "The Deer With Human Teeth",
+  "hook": "At the edge of the city, a deer steps from a shelterbelt and smiles with the missing teeth of people who vanished from a rural bus stop.",
+  "truth": "The animal is a mask worn by a famine spirit that trades hunger for obedience and leaves human marks in animal mouths.",
+  "monster": {
+    "name": "The White-Browed Hart",
+    "type": "famine-mask",
+    "instinct": "To make hungry people bargain away their names, teeth, and choices.",
+    "weaknesses": [
+      "bread shared freely at a crossroads",
+      "iron touched to antler velvet",
+      "calling each taken person's full name before dawn"
+    ]
+  },
+  "countdown": [
+    {
+      "id": "smiling-animal",
+      "label": "First Sign",
+      "text": "A deer watches traffic from the ditch and smiles with a child's missing front tooth."
+    },
+    {
+      "id": "empty-bus-stop",
+      "label": "First Loss",
+      "text": "A commuter disappears, leaving lunch untouched and steaming in the shelter."
+    },
+    {
+      "id": "hunger-dreams",
+      "label": "Spread",
+      "text": "People nearby dream of chewing snow and wake with sore gums."
+    },
+    {
+      "id": "name-bargain",
+      "label": "Bargain",
+      "text": "The Hart offers food, warmth, and safety in exchange for a name."
+    },
+    {
+      "id": "herd-arrival",
+      "label": "Crisis",
+      "text": "A silent herd surrounds the bus loop and every animal has one human tooth."
+    },
+    {
+      "id": "winter-mouth",
+      "label": "Finale",
+      "text": "The shelterbelt opens into a white winter road where the taken walk without names."
+    }
+  ],
+  "clues": [
+    {
+      "id": "tooth-pattern",
+      "text": "Dental records match teeth found in the mouths of living deer.",
+      "tags": ["body", "evidence"]
+    },
+    {
+      "id": "bread-crossroads",
+      "text": "Animals refuse bread left alone but bow when it is shared among strangers.",
+      "tags": ["weakness", "ritual"]
+    },
+    {
+      "id": "iron-velvet",
+      "text": "A gate latch burns a pale mark into velvet shed from an antler.",
+      "tags": ["weakness", "iron"]
+    },
+    {
+      "id": "missing-names",
+      "text": "The missing are remembered by faces and habits, but their names slide away.",
+      "tags": ["memory", "name"]
+    },
+    {
+      "id": "empty-lunches",
+      "text": "Untouched lunches at the bus stop are all missing bread.",
+      "tags": ["pattern", "hunger"]
+    },
+    {
+      "id": "snow-in-june",
+      "text": "A thin line of snow cuts through the shelterbelt despite warm weather.",
+      "tags": ["portal", "season"]
+    }
+  ],
+  "threatIds": ["white-browed-hart", "tooth-herd", "winter-road"],
+  "locationIds": ["willow-shelterbelt", "edge-bus-shelter", "grain-elevator-foundation"],
+  "npcIds": ["rafiq-haldar", "marisol-keeley", "darren-pike"],
+  "keeperHints": [
+    "Make the rural edge feel close to the city, not distant wilderness.",
+    "The Hart should be polite, patient, and visibly hungry.",
+    "Use teeth and names sparingly so each appearance lands."
+  ],
+  "revealPolicy": "Reveal the bargain economy before revealing the Hart's full road into winter.",
+  "automationSafety": [
+    "Do not remove a player character's name or body part without explicit permission.",
+    "Offer bargains clearly as choices, with costs visible enough to matter."
+  ]
+}

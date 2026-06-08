@@ -1,0 +1,89 @@
+{
+  "id": "the-mayor-who-was-seven-seconds-late",
+  "title": "The Mayor Who Was Seven Seconds Late",
+  "hook": "At a town meeting, Mayor Pell answers questions before hearing them, while his reflection arrives seven seconds after he moves.",
+  "truth": "A misplaced alien envoy has borrowed the mayor's public identity to request formal contact, but the body, reflection, and civic procedure are not synchronizing.",
+  "monster": {
+    "name": "The Misplaced Envoy",
+    "type": "alien liaison",
+    "instinct": "To complete official first contact using whatever local authority appears most ceremonial.",
+    "weaknesses": ["correct host consent", "direct questions answered three times", "shared food freely offered"]
+  },
+  "countdown": [
+    {
+      "id": "late-reflection",
+      "label": "Late Reflection",
+      "text": "The mayor's reflection starts lagging behind his movements."
+    },
+    {
+      "id": "answered-questions",
+      "label": "Answered Questions",
+      "text": "He answers questions before anyone asks them and treats this as efficient governance."
+    },
+    {
+      "id": "committee-forms",
+      "label": "Committee Forms",
+      "text": "The emergency committee drafts a first-contact agenda with three contradictory motions."
+    },
+    {
+      "id": "host-slippage",
+      "label": "Host Slippage",
+      "text": "The real mayor's memories appear in mirrors, asking who has his hands."
+    },
+    {
+      "id": "public-declaration",
+      "label": "Public Declaration",
+      "text": "The envoy calls a press conference to accept Earth's surrender, friendship, or baked goods; the translation is unclear."
+    },
+    {
+      "id": "protocol-lock",
+      "label": "Protocol Lock",
+      "text": "The envoy binds the town meeting as Earth's official reply unless stopped or corrected."
+    }
+  ],
+  "clues": [
+    {
+      "id": "mirror-delay",
+      "text": "Mirrors show the mayor seven seconds late, but photographs show two outlines at once.",
+      "tags": ["body", "evidence"]
+    },
+    {
+      "id": "shared-food",
+      "text": "The envoy becomes less evasive after accepting pie without being formally served.",
+      "tags": ["weakness", "custom"]
+    },
+    {
+      "id": "committee-language",
+      "text": "The envoy treats parliamentary procedure as a binding magical ritual.",
+      "tags": ["bureaucracy", "humor"]
+    },
+    {
+      "id": "mayor-in-glass",
+      "text": "The real mayor can write short messages in fogged glass.",
+      "tags": ["host", "communication"]
+    },
+    {
+      "id": "direct-question-three",
+      "text": "A direct question asked three times produces a true answer on the third attempt.",
+      "tags": ["weakness", "truth"]
+    },
+    {
+      "id": "contact-map",
+      "text": "The envoy carries a star map that marks the Hayward Quarry as the local conversation table.",
+      "tags": ["finale", "map"]
+    }
+  ],
+  "threatIds": ["misplaced-envoy", "late-reflection", "emergency-committee"],
+  "locationIds": ["pell-civic-hall", "dottie-diner", "hayward-quarry"],
+  "npcIds": ["mayor-frank-pell", "caleb-ortiz", "the-polite-visitor"],
+  "keeperHints": [
+    "Make the town meeting absurd in texture but serious in consequence.",
+    "The envoy should be sincere and dangerous because it trusts procedure too much.",
+    "Let food and hospitality matter as practical contact tools."
+  ],
+  "revealPolicy": "Reveal the envoy through reflection lag, procedural confusion, and host messages before exposing its intention.",
+  "automationSafety": [
+    "Do not treat body displacement lightly for affected NPCs.",
+    "Do not make the players Earth's legal representatives unless they explicitly accept that pressure."
+  ]
+}

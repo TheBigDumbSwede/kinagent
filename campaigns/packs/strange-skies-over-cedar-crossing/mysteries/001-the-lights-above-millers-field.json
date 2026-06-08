@@ -1,0 +1,89 @@
+{
+  "id": "the-lights-above-millers-field",
+  "title": "The Lights Above Miller's Field",
+  "hook": "Blue-white lights drift over a cornfield, the cows arrange themselves into arrows, and every scarecrow is wearing someone else's coat.",
+  "truth": "An alien survey lattice has mistaken rural anxiety, livestock behavior, and crop patterns for an official human greeting protocol.",
+  "monster": {
+    "name": "The Field Survey Lattice",
+    "type": "alien survey instrument",
+    "instinct": "To map emotional response by arranging the local environment into readable patterns.",
+    "weaknesses": ["grounded iron stakes", "unpatterned noise", "a calm invitation given in plain speech"]
+  },
+  "countdown": [
+    {
+      "id": "first-pattern",
+      "label": "First Pattern",
+      "text": "Cows stand in a perfect arrow pointing at the old meteorology station."
+    },
+    {
+      "id": "borrowed-clothes",
+      "label": "Borrowed Clothes",
+      "text": "Scarecrows appear wearing coats and hats taken from sleeping residents."
+    },
+    {
+      "id": "field-lift",
+      "label": "Field Lift",
+      "text": "A square of corn rises six feet off the ground and stays there, roots dangling politely."
+    },
+    {
+      "id": "weather-answer",
+      "label": "Weather Answer",
+      "text": "Every anxious question spoken outdoors is answered by a targeted gust of wind."
+    },
+    {
+      "id": "witness-swap",
+      "label": "Witness Swap",
+      "text": "A missing farmhand returns with soil in his shoes and no memory of the last twelve hours."
+    },
+    {
+      "id": "survey-lock",
+      "label": "Survey Lock",
+      "text": "The lattice decides Cedar Crossing has consented to full contact sampling and lowers a silent grid over the field."
+    }
+  ],
+  "clues": [
+    {
+      "id": "iron-post-burns",
+      "text": "Fence posts with old iron wire remain untouched while newer aluminum gates glow faintly blue.",
+      "tags": ["weakness", "field"]
+    },
+    {
+      "id": "cow-arrow-orion",
+      "text": "The cow formation points toward Orion before pivoting toward the meteorology station.",
+      "tags": ["animal", "sky"]
+    },
+    {
+      "id": "borrowed-coats",
+      "text": "The scarecrow coats are taken only from people who witnessed the first lights.",
+      "tags": ["mimic", "witness"]
+    },
+    {
+      "id": "frosted-fear",
+      "text": "Cold frost forms on corn leaves around anyone who admits they are frightened.",
+      "tags": ["emotion", "survey"]
+    },
+    {
+      "id": "station-needle",
+      "text": "The old weather station needle moves when people speak calmly, not when the wind changes.",
+      "tags": ["device", "weakness"]
+    },
+    {
+      "id": "plain-invitation",
+      "text": "A handwritten welcome sign stops a light from descending, but only while nobody jokes nervously.",
+      "tags": ["communication", "solution"]
+    }
+  ],
+  "threatIds": ["field-survey-lattice", "borrowed-scarecrows", "weather-that-listens"],
+  "locationIds": ["miller-field", "old-meteorology-station", "dottie-diner"],
+  "npcIds": ["tamsin-cho", "dr-sam-ibe", "dottie-bell"],
+  "keeperHints": [
+    "Start with rural inconvenience and social embarrassment before making the sky feel vast.",
+    "Let the cows be funny because the people are not treating danger lightly.",
+    "The lattice is not malicious; it is dangerous because it is confidently wrong."
+  ],
+  "revealPolicy": "Reveal the survey through repeated patterns and emotional responses before naming it as extraterrestrial.",
+  "automationSafety": [
+    "Do not harm animals graphically.",
+    "Do not force a player character into missing time without consent."
+  ]
+}

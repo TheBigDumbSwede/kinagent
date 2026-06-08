@@ -163,6 +163,50 @@ export interface GroupCampaignStateSummary {
   visitedLocationIds: string[];
   notes: string[];
   processedSourceDocumentIds: string[];
+  rollHistory: Array<{
+    sourceDocumentId: string;
+    resolvedAt: string;
+    automationMode: GamingAutomationMode;
+    request: {
+      moveId: string;
+      actor?: string;
+      modifier: number;
+      prompt?: string;
+      reason?: string;
+    };
+    result: {
+      moveId: string;
+      moveName: string;
+      actor?: string;
+      dice: [number, number];
+      modifier: number;
+      total: number;
+      outcome: "10+" | "7-9" | "6-";
+      outcomeText: string;
+    };
+    message: string;
+    sent?: {
+      ok: boolean;
+      status: number;
+      requestId?: string;
+      idempotencyKey?: string;
+      responseText?: string;
+    };
+  }>;
+  pendingRollRequest?: {
+    sourceDocumentId: string;
+    createdAt: string;
+    automationMode: GamingAutomationMode;
+    request: {
+      moveId: string;
+      actor?: string;
+      modifier: number;
+      prompt?: string;
+      reason?: string;
+    };
+    confidence?: "low" | "medium" | "high";
+    reason?: string;
+  };
   pendingDecision?: {
     sourceDocumentId: string;
     createdAt: string;
