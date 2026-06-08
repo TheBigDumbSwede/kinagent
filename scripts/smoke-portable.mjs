@@ -10,30 +10,28 @@ if (!fs.existsSync(releaseDir)) {
   fail("release directory does not exist.");
 }
 
-const portableExe = fs
-  .readdirSync(releaseDir)
-  .filter((file) => /^Kinagent-\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?-portable\.exe$/i.test(file))
-  .map((file) => {
-    const fullPath = path.join(releaseDir, file);
-    return {
-      file,
-      fullPath,
-      size: fs.statSync(fullPath).size
-    };
-  })
-  .sort((left, right) => right.size - left.size)[0];
+const portableExe = findReleaseExe(/Kinagent-\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?-portable\.exe/i);
+const installerExe = findReleaseExe(/Kinagent-\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?-setup\.exe/i);
 
 if (!portableExe) {
   fail("portable Kinagent exe was not found in release/.");
+}
+
+if (!installerExe) {
+  fail("installer Kinagent exe was not found in release/.");
 }
 
 if (portableExe.size < 50_000_000) {
   fail(`${portableExe.file} is unexpectedly small (${portableExe.size} bytes).`);
 }
 
+if (installerExe.size < 50_000_000) {
+  fail(`${installerExe.file} is unexpectedly small (${installerExe.size} bytes).`);
+}
+
 if (process.platform !== "win32") {
   process.stdout.write(
-    `Portable smoke found ${portableExe.file} (${portableExe.size} bytes); launch skipped on ${process.platform}.\n`
+    `Windows artifact smoke found ${portableExe.file} (${portableExe.size} bytes) and ${installerExe.file} (${installerExe.size} bytes); launch skipped on ${process.platform}.\n`
   );
   process.exit(0);
 }
@@ -84,8 +82,25 @@ child.on("exit", (code) => {
     fail(`portable app exited with code ${code ?? "unknown"}.${formatLogHint(logPath)}`);
   }
 
-  process.stdout.write(`Portable smoke passed: ${portableExe.file} (${portableExe.size} bytes).\n`);
+  process.stdout.write(
+    `Portable smoke passed: ${portableExe.file} (${portableExe.size} bytes); installer sanity passed: ${installerExe.file} (${installerExe.size} bytes).\n`
+  );
 });
+
+function findReleaseExe(pattern) {
+  return fs
+    .readdirSync(releaseDir)
+    .filter((file) => pattern.test(file))
+    .map((file) => {
+      const fullPath = path.join(releaseDir, file);
+      return {
+        file,
+        fullPath,
+        size: fs.statSync(fullPath).size
+      };
+    })
+    .sort((left, right) => right.size - left.size)[0];
+}
 
 function fail(message) {
   process.stderr.write(`Portable smoke failed: ${message}\n`);
