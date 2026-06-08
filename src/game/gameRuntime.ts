@@ -10,8 +10,9 @@ import { loadCampaignPacks, type LoadedCampaignPack } from "./campaignPack.js";
 import { CampaignStateStore, type GameKeeperDecision, type GroupCampaignState } from "./campaignStateStore.js";
 import { parseGameCommand, type GameCommand } from "./gameCommands.js";
 import { parseGameDecisionContent, normalizeGameDecision } from "./gameDecision.js";
-import { genericMysteryMoves } from "./gameMoves.js";
+import { genericMysteryMoves, randomDiceRoller, resolvePbtARoll, type DiceRoller } from "./gameMoves.js";
 import { GroupGamingPreferenceStore, type GamingAutomationMode } from "./groupGamingPreferences.js";
+import { formatRollResultMessage, rollOutcomeSummary } from "./rollFormatting.js";
 import { spoilerFreeMysteryBrief, type SpoilerFreeMysteryBrief } from "./spoilerFreeBrief.js";
 
 interface HermesChatCompletionResult {
@@ -27,6 +28,11 @@ interface GameMysteryIntro {
   reason?: string;
 }
 
+interface PostRollKeeperNarration {
+  keeperMessage: string;
+  reason?: string;
+}
+
 type GameKindroidClient = Pick<KindroidClient, "sendGroupMessage" | "updateGroupCurrentScene">;
 
 export interface GameRuntimeOptions {
@@ -36,6 +42,7 @@ export interface GameRuntimeOptions {
   campaignStates: CampaignStateStore;
   dedupeStore: DedupeStore;
   kindroidClient?: GameKindroidClient;
+  diceRoller?: DiceRoller;
   onStateUpdated?: (state: GroupCampaignState) => void;
   onKeeperMessageSent?: (event: GameKeeperMessageSentEvent) => void;
   onPendingDecision?: (state: GroupCampaignState) => void;
@@ -98,10 +105,12 @@ const turnBufferSeenDocumentIdLimit = 100;
 
 export class GameRuntime {
   private readonly kindroidClient: GameKindroidClient;
+  private readonly diceRoller: DiceRoller;
   private readonly turnBuffers = new Map<string, GameTurnBuffer>();
 
   constructor(private readonly options: GameRuntimeOptions) {
     this.kindroidClient = options.kindroidClient ?? new KindroidClient(options.config, options.logger);
+    this.diceRoller = options.diceRoller ?? randomDiceRoller;
   }
 
   async handleGroupChatChanged(
@@ -219,7 +228,12 @@ export class GameRuntime {
     });
     const eventFilteredDecision = applyGameEventPolicy(decision, eventPolicy);
     const policyDecision = formatDecisionForGroupTransport(
-      decisionForPolicy(eventFilteredDecision, preference.automationMode)
+      surfaceAutonomousUserDecision({
+        decision: decisionForPolicy(eventFilteredDecision, preference.automationMode),
+        notification,
+        automationMode: preference.automationMode,
+        state: currentState
+      })
     );
     const pacedDecision = applyKeeperSpeechPacing(policyDecision, preference.automationMode, keeperSpeechPacing);
     const updated = this.options.campaignStates.applyDecision({
@@ -271,12 +285,25 @@ export class GameRuntime {
           source: "autonomous"
         }
       );
+      const rollResolved = await this.resolveAutonomousRollIfPending(group);
       return {
         gameHandled: true,
         keeperMessageAttempted,
-        keeperMessageSent,
+        keeperMessageSent: keeperMessageSent || rollResolved,
         keeperMessageSuppressed
       };
+    }
+
+    if (preference.automationMode === "autonomous") {
+      const rollResolved = await this.resolveAutonomousRollIfPending(group);
+      if (rollResolved) {
+        return {
+          gameHandled: true,
+          keeperMessageAttempted: true,
+          keeperMessageSent: true,
+          keeperMessageSuppressed
+        };
+      }
     }
 
     return {
@@ -312,6 +339,74 @@ export class GameRuntime {
     if (!updated) {
       throw new Error("Group campaign state was not available after sending the Keeper suggestion.");
     }
+    return updated;
+  }
+
+  async resolvePendingGroupRoll(group: KindroidGroup): Promise<GroupCampaignState> {
+    const state = this.options.campaignStates.getForGroup(group.groupId);
+    if (!state?.pendingRollRequest) {
+      throw new Error("No pending roll is available for this Group.");
+    }
+
+    const pending = state.pendingRollRequest;
+    const result = resolvePbtARoll(pending.request, { roller: this.diceRoller });
+    const recorded = this.options.campaignStates.recordRollResult({
+      groupId: group.groupId,
+      sourceDocumentId: pending.sourceDocumentId,
+      automationMode: pending.automationMode,
+      request: pending.request,
+      result,
+      message: formatRollResultMessage(result)
+    });
+    if (!recorded) {
+      throw new Error("Group campaign state was not available after resolving the roll.");
+    }
+    this.options.onStateUpdated?.(recorded);
+
+    const narration =
+      (await this.requestPostRollKeeperNarration({
+        group,
+        state: recorded,
+        pending,
+        result
+      })) ?? fallbackPostRollNarration(result);
+    const message = formatKeeperMessageForGroupChat(`${rollResultPrefix(result)} ${narration.keeperMessage}`);
+    const sendResult = await this.sendKeeperMessageWithResult(group, pending.sourceDocumentId, message, {
+      source: "roll-result",
+      triggerAiResponse: false
+    });
+    if (!sendResult.ok) {
+      this.options.logger.warn("Group Gaming post-roll Keeper message send failed.", {
+        groupId: group.groupId,
+        sourceDocumentId: pending.sourceDocumentId,
+        status: sendResult.status,
+        responseText: sendResult.responseText
+      });
+    }
+
+    const updated =
+      this.options.campaignStates.markRollResultSent({
+        groupId: group.groupId,
+        sourceDocumentId: pending.sourceDocumentId,
+        message,
+        sent: {
+          ok: sendResult.ok,
+          status: sendResult.status,
+          requestId: sendResult.requestId,
+          idempotencyKey: sendResult.idempotencyKey,
+          ...(sendResult.responseText ? { responseText: sendResult.responseText } : {})
+        }
+      }) ?? recorded;
+    this.options.onStateUpdated?.(updated);
+    return updated;
+  }
+
+  dismissPendingGroupRoll(group: KindroidGroup): GroupCampaignState {
+    const updated = this.options.campaignStates.dismissPendingRollRequest({ groupId: group.groupId });
+    if (!updated) {
+      throw new Error("Group campaign state was not available for this Group.");
+    }
+    this.options.onStateUpdated?.(updated);
     return updated;
   }
 
@@ -569,6 +664,66 @@ export class GameRuntime {
     }
   }
 
+  private async requestPostRollKeeperNarration(input: {
+    group: KindroidGroup;
+    state: GroupCampaignState;
+    pending: NonNullable<GroupCampaignState["pendingRollRequest"]>;
+    result: ReturnType<typeof resolvePbtARoll>;
+  }): Promise<PostRollKeeperNarration | null> {
+    try {
+      const response = await fetch(`${normalizeBaseUrl(this.options.config.hermes.baseUrl)}/chat/completions`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${this.options.config.hermes.apiKey}`
+        },
+        body: JSON.stringify({
+          model: "hermes-agent",
+          messages: [
+            {
+              role: "system",
+              content: postRollKeeperSystemPrompt()
+            },
+            {
+              role: "user",
+              content: JSON.stringify(postRollKeeperPromptPayload(input))
+            }
+          ]
+        })
+      });
+
+      const responseText = await response.text();
+      if (!response.ok) {
+        this.options.logger.warn("Hermes Group Gaming post-roll request failed.", {
+          groupId: input.group.groupId,
+          sourceDocumentId: input.pending.sourceDocumentId,
+          status: response.status,
+          responseText: responseText.slice(0, 500)
+        });
+        return null;
+      }
+
+      const result = JSON.parse(responseText) as HermesChatCompletionResult;
+      const content = result.choices?.[0]?.message?.content ?? "";
+      const narration = normalizePostRollKeeperNarration(parseGameDecisionContent(content));
+      if (!narration) {
+        this.options.logger.warn("Hermes Group Gaming post-roll response did not include Keeper narration.", {
+          groupId: input.group.groupId,
+          sourceDocumentId: input.pending.sourceDocumentId
+        });
+        return null;
+      }
+      return narration;
+    } catch (error) {
+      this.options.logger.warn("Hermes Group Gaming post-roll request failed.", {
+        groupId: input.group.groupId,
+        sourceDocumentId: input.pending.sourceDocumentId,
+        error: error instanceof Error ? error.message : String(error)
+      });
+      return null;
+    }
+  }
+
   private bufferTurnContext(groupId: string, notification: KindroidGroupChatChangeNotification): boolean {
     const buffer = this.prunedTurnBuffer(groupId, notification.timestamp);
     if (buffer.seenDocumentIds.includes(notification.documentId)) {
@@ -611,6 +766,24 @@ export class GameRuntime {
     this.turnBuffers.delete(groupId);
   }
 
+  private async resolveAutonomousRollIfPending(group: KindroidGroup): Promise<boolean> {
+    const state = this.options.campaignStates.getForGroup(group.groupId);
+    if (!state?.pendingRollRequest) {
+      return false;
+    }
+
+    try {
+      const updated = await this.resolvePendingGroupRoll(group);
+      return updated.rollHistory.at(-1)?.sent?.ok === true;
+    } catch (error) {
+      this.options.logger.warn("Group Gaming autonomous roll resolution failed.", {
+        groupId: group.groupId,
+        error: error instanceof Error ? error.message : String(error)
+      });
+      return false;
+    }
+  }
+
   private prunedTurnBuffer(groupId: string, timestamp: string | null | undefined): GameTurnBuffer {
     const current = this.turnBuffers.get(groupId) ?? { messages: [], seenDocumentIds: [] };
     const pruned = {
@@ -627,6 +800,16 @@ export class GameRuntime {
     message: string,
     input: { source: "autonomous" | "approved-suggestion"; triggerAiResponse?: boolean }
   ): Promise<boolean> {
+    const result = await this.sendKeeperMessageWithResult(group, sourceDocumentId, message, input);
+    return result.ok;
+  }
+
+  private async sendKeeperMessageWithResult(
+    group: KindroidGroup,
+    sourceDocumentId: string,
+    message: string,
+    input: { source: "autonomous" | "approved-suggestion" | "roll-result"; triggerAiResponse?: boolean }
+  ): Promise<SendKindroidGroupMessageResult> {
     const requestId = newRequestId();
     const idempotencyKey = newRequestId();
     const triggerAiResponse = input.triggerAiResponse ?? false;
@@ -678,7 +861,7 @@ export class GameRuntime {
       result
     });
 
-    return result.ok;
+    return result;
   }
 
   private async sendKeeperGroupMessage(input: {
@@ -804,6 +987,18 @@ function mysteryIntroSystemPrompt(): string {
   ].join("\n");
 }
 
+function postRollKeeperSystemPrompt(): string {
+  return [
+    "You are Hermes writing only the Keeper narration for an already resolved original mystery-horror group game roll.",
+    "Kinagent is the dice authority. The roll result in the payload is final and read-only.",
+    "Do not alter, reinterpret, reroll, omit, or contradict the supplied roll outcome.",
+    "Do not include dice, totals, move names, or a roll summary in your Keeper message; Kinagent prepends that.",
+    "Do not return state changes, roll requests, dice, totals, or outcomes.",
+    'Return only compact JSON: {"keeperMessage":"","reason":""}.',
+    "Keeper messages should be concise, playable group-chat narration."
+  ].join("\n");
+}
+
 function gamePromptPayload(input: {
   group: KindroidGroup;
   notification: KindroidGroupChatChangeNotification;
@@ -872,6 +1067,36 @@ function mysteryIntroPromptPayload(
   };
 }
 
+function postRollKeeperPromptPayload(input: {
+  group: KindroidGroup;
+  state: GroupCampaignState;
+  pending: NonNullable<GroupCampaignState["pendingRollRequest"]>;
+  result: ReturnType<typeof resolvePbtARoll>;
+}) {
+  const rollSummary = rollOutcomeSummary(input.result);
+  return {
+    type: "kinagent.game.post_roll_narration",
+    instruction:
+      "Write only the immediate Keeper narration caused by this fixed roll result. The roll result is authoritative.",
+    group: {
+      groupId: input.group.groupId,
+      name: input.group.name,
+      aiIds: input.group.aiIds
+    },
+    roll: {
+      summary: rollSummary,
+      outcome: input.result.outcome,
+      total: input.result.total,
+      dice: input.result.dice,
+      modifier: input.result.modifier,
+      actor: input.result.actor ?? null,
+      requestPrompt: input.pending.request.prompt ?? null,
+      requestReason: input.pending.request.reason ?? null
+    },
+    state: input.state
+  };
+}
+
 function normalizeMysteryIntro(input: unknown): GameMysteryIntro | null {
   const record =
     input && typeof input === "object" && !Array.isArray(input) ? (input as Record<string, unknown>) : null;
@@ -885,6 +1110,24 @@ function normalizeMysteryIntro(input: unknown): GameMysteryIntro | null {
   };
 }
 
+function normalizePostRollKeeperNarration(input: unknown): PostRollKeeperNarration | null {
+  const record =
+    input && typeof input === "object" && !Array.isArray(input) ? (input as Record<string, unknown>) : null;
+  const keeperMessage = stripRollSummaryPrefix(optionalIntroText(record?.keeperMessage, 1400));
+  if (!keeperMessage) {
+    return null;
+  }
+  return {
+    keeperMessage,
+    ...(optionalIntroText(record?.reason, 300) ? { reason: optionalIntroText(record?.reason, 300) } : {})
+  };
+}
+
+function stripRollSummaryPrefix(value: string | undefined): string | undefined {
+  const normalized = value?.replace(/^\(?\s*roll\s*:\s*[^.)]+[.)]\s*/i, "").trim();
+  return normalized || undefined;
+}
+
 function optionalIntroText(value: unknown, maxLength: number): string | undefined {
   const normalized = typeof value === "string" ? value.trim().replace(/\s+/g, " ") : "";
   return normalized ? normalized.slice(0, maxLength) : undefined;
@@ -894,12 +1137,32 @@ function decisionForPolicy(decision: GameKeeperDecision, mode: GamingAutomationM
   if (mode === "observe") {
     return {
       stateChanges: decision.stateChanges,
+      ...(decision.rollRequest ? { rollRequest: decision.rollRequest } : {}),
       confidence: decision.confidence,
       reason: decision.reason
     };
   }
 
   return decision;
+}
+
+function surfaceAutonomousUserDecision(input: {
+  decision: GameKeeperDecision;
+  notification: KindroidChatNotification;
+  automationMode: GamingAutomationMode;
+  state: GroupCampaignState;
+}): GameKeeperDecision {
+  if (input.automationMode !== "autonomous" || input.notification.sender !== "user" || input.decision.keeperMessage) {
+    return input.decision;
+  }
+
+  return {
+    ...input.decision,
+    keeperMessage:
+      input.decision.rollRequest || input.state.pendingRollRequest
+        ? undefined
+        : "The moment hangs unresolved. What do you do next?"
+  };
 }
 
 function applyKeeperSpeechPacing(
@@ -974,6 +1237,20 @@ function formatDecisionForGroupTransport(decision: GameKeeperDecision): GameKeep
   return {
     ...decision,
     keeperMessage: formatKeeperMessageForGroupChat(decision.keeperMessage)
+  };
+}
+
+function rollResultPrefix(result: ReturnType<typeof resolvePbtARoll>): string {
+  return `(Roll: ${rollOutcomeSummary(result)}.)`;
+}
+
+function fallbackPostRollNarration(result: ReturnType<typeof resolvePbtARoll>): PostRollKeeperNarration {
+  const summary = rollOutcomeSummary(result);
+  return {
+    keeperMessage:
+      summary === "success" || summary === "perfect success"
+        ? "The action lands cleanly, and the scene opens a little wider."
+        : "The consequence lands immediately, and the situation turns worse."
   };
 }
 

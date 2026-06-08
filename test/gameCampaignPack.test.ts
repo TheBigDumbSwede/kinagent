@@ -9,7 +9,7 @@ import { importCampaignPack } from "../src/game/campaignPackImport.js";
 import { CampaignStateStore } from "../src/game/campaignStateStore.js";
 import { parseGameCommand } from "../src/game/gameCommands.js";
 import { formatKeeperMessageForGroupChat, GameRuntime } from "../src/game/gameRuntime.js";
-import { createSequenceDiceRoller, resolvePbtARoll } from "../src/game/gameMoves.js";
+import { createSequenceDiceRoller, resolvePbtARoll, type DiceRoller } from "../src/game/gameMoves.js";
 import { GroupGamingPreferenceStore, groupGamingPreferencesPath } from "../src/game/groupGamingPreferences.js";
 import { spoilerFreeMysteryBrief } from "../src/game/spoilerFreeBrief.js";
 import { shouldSkipGenericHermesGroupHandling } from "../src/runtime/bridgeRuntime.js";
@@ -383,6 +383,10 @@ describe("game campaign foundations", () => {
       automationMode: "suggest",
       decision: {
         keeperMessage: "A pending Keeper note.",
+        rollRequest: {
+          moveId: "interpret_evidence",
+          modifier: 1
+        },
         stateChanges: [
           { type: "advance_countdown", by: 2 },
           { type: "add_discovered_clue", clueId: "static-phone" },
@@ -399,6 +403,23 @@ describe("game campaign foundations", () => {
       requestId: "request-1",
       idempotencyKey: "idem-1",
       sourceDocumentId: "doc-progress"
+    });
+    store.recordRollResult({
+      groupId: "group-a",
+      sourceDocumentId: "doc-progress",
+      automationMode: "suggest",
+      request: {
+        moveId: "interpret_evidence",
+        modifier: 1
+      },
+      result: resolvePbtARoll(
+        {
+          moveId: "interpret_evidence",
+          modifier: 1
+        },
+        { roller: createSequenceDiceRoller([4, 5]) }
+      ),
+      message: "Roll result."
     });
 
     const state = store.resetInitialized({
@@ -421,6 +442,7 @@ describe("game campaign foundations", () => {
     expect(state.pendingDecision).toBeUndefined();
     expect(state.pendingRollRequest).toBeUndefined();
     expect(state.lastKeeperMessage).toBeUndefined();
+    expect(state.rollHistory).toEqual([]);
   });
 
   it("builds spoiler-free mystery intro briefs from public campaign fields only", () => {
@@ -928,21 +950,21 @@ describe("game campaign foundations", () => {
 
   it("resolves PbtA 10+, 7-9, and 6- roll outcomes with deterministic dice", () => {
     expect(
-      resolvePbtARoll({ moveId: "investigate", modifier: 0 }, { roller: createSequenceDiceRoller([6, 4]) })
+      resolvePbtARoll({ moveId: "interpret_evidence", modifier: 0 }, { roller: createSequenceDiceRoller([6, 4]) })
     ).toMatchObject({
       dice: [6, 4],
       total: 10,
       outcome: "10+"
     });
     expect(
-      resolvePbtARoll({ moveId: "investigate", modifier: 0 }, { roller: createSequenceDiceRoller([3, 4]) })
+      resolvePbtARoll({ moveId: "interpret_evidence", modifier: 0 }, { roller: createSequenceDiceRoller([3, 4]) })
     ).toMatchObject({
       dice: [3, 4],
       total: 7,
       outcome: "7-9"
     });
     expect(
-      resolvePbtARoll({ moveId: "investigate", modifier: 0 }, { roller: createSequenceDiceRoller([3, 3]) })
+      resolvePbtARoll({ moveId: "interpret_evidence", modifier: 0 }, { roller: createSequenceDiceRoller([3, 3]) })
     ).toMatchObject({
       dice: [3, 3],
       total: 6,
@@ -950,7 +972,7 @@ describe("game campaign foundations", () => {
     });
   });
 
-  it("stores Hermes roll requests as pending campaign state without resolving them", async () => {
+  it("stores suggest-mode Hermes roll requests without resolving them", async () => {
     const config = testConfig({ hermesEnabled: true });
     const preferences = GroupGamingPreferenceStore.fromConfig(config);
     preferences.set("group-a", {
@@ -968,7 +990,7 @@ describe("game campaign foundations", () => {
         keeperMessage: undefined,
         stateChanges: [],
         rollRequest: {
-          moveId: "investigate",
+          moveId: "interpret_evidence",
           actor: "Velma",
           modifier: 2,
           prompt: "Roll +Sharp to read the phone static.",
@@ -985,7 +1007,7 @@ describe("game campaign foundations", () => {
         sourceDocumentId: "doc-1",
         automationMode: "suggest",
         request: {
-          moveId: "investigate",
+          moveId: "interpret_evidence",
           actor: "Velma",
           modifier: 2,
           prompt: "Roll +Sharp to read the phone static.",
@@ -995,6 +1017,385 @@ describe("game campaign foundations", () => {
     });
     expect(store.getForGroup("group-a")?.pendingDecision).toBeUndefined();
     expect(store.getForGroup("group-a")?.lastKeeperMessage).toBeUndefined();
+    expect(store.getForGroup("group-a")?.rollHistory).toEqual([]);
+  });
+
+  it("stores observe-mode Hermes roll requests without resolving them", async () => {
+    const config = testConfig({ hermesEnabled: true });
+    const preferences = GroupGamingPreferenceStore.fromConfig(config);
+    preferences.set("group-a", {
+      enabled: true,
+      campaignId: "prairie-saints-and-municipal-ghosts",
+      mysteryId: "the-thing-in-the-floodway",
+      automationMode: "observe"
+    });
+    const store = CampaignStateStore.fromConfig(config);
+    const sends: unknown[] = [];
+    const runtime = testGameRuntime(
+      config,
+      preferences,
+      store,
+      hermesDecisionResponse({
+        keeperMessage: undefined,
+        stateChanges: [],
+        rollRequest: {
+          moveId: "interpret_evidence",
+          actor: "Velma",
+          modifier: 2,
+          prompt: "Roll +Sharp to read the phone static."
+        }
+      }),
+      {
+        sendGroupMessage: async (input) => {
+          sends.push(input);
+          return {
+            status: 200,
+            ok: true,
+            requestId: input.requestId,
+            idempotencyKey: input.idempotencyKey
+          };
+        },
+        updateGroupCurrentScene: async () => ({
+          status: 200,
+          ok: true
+        })
+      }
+    );
+
+    await runtime.handleGroupChatChanged(group(), groupNotification("doc-1", "I inspect the phone static."));
+
+    expect(sends).toHaveLength(0);
+    expect(store.getForGroup("group-a")).toMatchObject({
+      pendingRollRequest: {
+        sourceDocumentId: "doc-1",
+        automationMode: "observe",
+        request: {
+          moveId: "interpret_evidence",
+          modifier: 2
+        }
+      },
+      rollHistory: []
+    });
+  });
+
+  it("auto-resolves autonomous roll requests with Kinagent dice", async () => {
+    const config = testConfig({ hermesEnabled: true });
+    const preferences = GroupGamingPreferenceStore.fromConfig(config);
+    preferences.set("group-a", {
+      enabled: true,
+      campaignId: "prairie-saints-and-municipal-ghosts",
+      mysteryId: "the-thing-in-the-floodway",
+      automationMode: "autonomous"
+    });
+    const store = CampaignStateStore.fromConfig(config);
+    const sends: unknown[] = [];
+    const hermesPayloads: Record<string, unknown>[] = [];
+    const runtime = testGameRuntime(
+      config,
+      preferences,
+      store,
+      [
+        hermesDecisionResponse({
+          keeperMessage: undefined,
+          stateChanges: [],
+          rollRequest: {
+            moveId: "interpret_evidence",
+            actor: "Velma",
+            modifier: 2,
+            prompt: "Roll +Sharp to read the phone static.",
+            reason: "The player is investigating a clue under uncertainty."
+          }
+        }),
+        hermesPostRollResponse("The static resolves into a clear street address.")
+      ],
+      {
+        sendGroupMessage: async (input) => {
+          sends.push(input);
+          return {
+            status: 200,
+            ok: true,
+            requestId: input.requestId,
+            idempotencyKey: input.idempotencyKey
+          };
+        },
+        updateGroupCurrentScene: async () => ({
+          status: 200,
+          ok: true
+        })
+      },
+      {
+        diceRoller: createSequenceDiceRoller([4, 5]),
+        onFetch: (_input, init) => {
+          hermesPayloads.push(gamePromptPayloadFromFetchInit(init));
+        }
+      }
+    );
+
+    await runtime.handleGroupChatChanged(group(), groupNotification("doc-1", "I inspect the phone static."));
+
+    expect(sends).toHaveLength(1);
+    expect(sends[0]).toMatchObject({
+      groupId: "group-a",
+      message: "*(Roll: success.) The static resolves into a clear street address.*",
+      triggerAiResponse: false
+    });
+    expect(hermesPayloads[1]).toMatchObject({
+      type: "kinagent.game.post_roll_narration",
+      roll: {
+        summary: "success",
+        outcome: "10+",
+        total: 11,
+        dice: [4, 5],
+        modifier: 2
+      }
+    });
+    expect(store.getForGroup("group-a")?.pendingRollRequest).toBeUndefined();
+    expect(store.getForGroup("group-a")).toMatchObject({
+      rollHistory: [
+        {
+          sourceDocumentId: "doc-1",
+          automationMode: "autonomous",
+          result: {
+            dice: [4, 5],
+            modifier: 2,
+            total: 11,
+            outcome: "10+"
+          },
+          sent: {
+            ok: true,
+            status: 200
+          }
+        }
+      ]
+    });
+    expect(store.getForGroup("group-a")?.lastKeeperMessage).toMatchObject({
+      text: "*(Roll: success.) The static resolves into a clear street address.*",
+      sourceDocumentId: "doc-1"
+    });
+  });
+
+  it("resolves pending suggest-mode rolls on explicit runtime request", async () => {
+    const config = testConfig({ hermesEnabled: true });
+    const preferences = GroupGamingPreferenceStore.fromConfig(config);
+    preferences.set("group-a", {
+      enabled: true,
+      campaignId: "prairie-saints-and-municipal-ghosts",
+      mysteryId: "the-thing-in-the-floodway",
+      automationMode: "suggest"
+    });
+    const store = CampaignStateStore.fromConfig(config);
+    const sends: unknown[] = [];
+    const runtime = testGameRuntime(
+      config,
+      preferences,
+      store,
+      [
+        hermesDecisionResponse({
+          keeperMessage: undefined,
+          stateChanges: [],
+          rollRequest: {
+            moveId: "interpret_evidence",
+            actor: "Velma",
+            modifier: 1,
+            prompt: "Roll +Sharp to read the phone static."
+          }
+        }),
+        hermesPostRollResponse("The clue is useful, but the phone line stays open both ways.")
+      ],
+      {
+        sendGroupMessage: async (input) => {
+          sends.push(input);
+          return {
+            status: 200,
+            ok: true,
+            requestId: input.requestId,
+            idempotencyKey: input.idempotencyKey
+          };
+        },
+        updateGroupCurrentScene: async () => ({
+          status: 200,
+          ok: true
+        })
+      },
+      { diceRoller: createSequenceDiceRoller([3, 4]) }
+    );
+
+    await runtime.handleGroupChatChanged(group(), groupNotification("doc-1", "I inspect the phone static."));
+    await runtime.resolvePendingGroupRoll(group());
+
+    expect(sends).toHaveLength(1);
+    expect(sends[0]).toMatchObject({
+      message:
+        "*(Roll: partial success with complication.) The clue is useful, but the phone line stays open both ways.*"
+    });
+    expect(store.getForGroup("group-a")?.pendingRollRequest).toBeUndefined();
+    expect(store.getForGroup("group-a")).toMatchObject({
+      rollHistory: [
+        {
+          automationMode: "suggest",
+          result: {
+            dice: [3, 4],
+            modifier: 1,
+            total: 8,
+            outcome: "7-9"
+          },
+          sent: {
+            ok: true,
+            status: 200
+          }
+        }
+      ]
+    });
+  });
+
+  it("dismisses pending rolls without sending a group message", async () => {
+    const config = testConfig({ hermesEnabled: true });
+    const preferences = GroupGamingPreferenceStore.fromConfig(config);
+    preferences.set("group-a", {
+      enabled: true,
+      campaignId: "prairie-saints-and-municipal-ghosts",
+      mysteryId: "the-thing-in-the-floodway",
+      automationMode: "suggest"
+    });
+    const store = CampaignStateStore.fromConfig(config);
+    const sends: unknown[] = [];
+    const runtime = testGameRuntime(
+      config,
+      preferences,
+      store,
+      hermesDecisionResponse({
+        keeperMessage: undefined,
+        stateChanges: [],
+        rollRequest: {
+          moveId: "interpret_evidence",
+          actor: "Velma",
+          modifier: 2
+        }
+      }),
+      {
+        sendGroupMessage: async (input) => {
+          sends.push(input);
+          return {
+            status: 200,
+            ok: true,
+            requestId: input.requestId,
+            idempotencyKey: input.idempotencyKey
+          };
+        },
+        updateGroupCurrentScene: async () => ({
+          status: 200,
+          ok: true
+        })
+      }
+    );
+
+    await runtime.handleGroupChatChanged(group(), groupNotification("doc-1", "I inspect the phone static."));
+    runtime.dismissPendingGroupRoll(group());
+
+    expect(sends).toHaveLength(0);
+    expect(store.getForGroup("group-a")?.pendingRollRequest).toBeUndefined();
+    expect(store.getForGroup("group-a")?.rollHistory).toEqual([]);
+  });
+
+  it("records resolved rolls even when sending the roll result fails", async () => {
+    const config = testConfig({ hermesEnabled: true });
+    const preferences = GroupGamingPreferenceStore.fromConfig(config);
+    preferences.set("group-a", {
+      enabled: true,
+      campaignId: "prairie-saints-and-municipal-ghosts",
+      mysteryId: "the-thing-in-the-floodway",
+      automationMode: "suggest"
+    });
+    const store = CampaignStateStore.fromConfig(config);
+    const runtime = testGameRuntime(
+      config,
+      preferences,
+      store,
+      hermesDecisionResponse({
+        keeperMessage: undefined,
+        stateChanges: [],
+        rollRequest: {
+          moveId: "interpret_evidence",
+          actor: "Velma",
+          modifier: 0
+        }
+      }),
+      {
+        sendGroupMessage: async (input) => ({
+          status: 503,
+          ok: false,
+          requestId: input.requestId,
+          idempotencyKey: input.idempotencyKey,
+          responseText: "temporary failure"
+        }),
+        updateGroupCurrentScene: async () => ({
+          status: 200,
+          ok: true
+        })
+      },
+      { diceRoller: createSequenceDiceRoller([3, 3]) }
+    );
+
+    await runtime.handleGroupChatChanged(group(), groupNotification("doc-1", "I inspect the phone static."));
+    await runtime.resolvePendingGroupRoll(group());
+
+    expect(store.getForGroup("group-a")?.pendingRollRequest).toBeUndefined();
+    expect(store.getForGroup("group-a")).toMatchObject({
+      rollHistory: [
+        {
+          result: {
+            dice: [3, 3],
+            total: 6,
+            outcome: "6-"
+          },
+          sent: {
+            ok: false,
+            status: 503,
+            responseText: "temporary failure"
+          }
+        }
+      ]
+    });
+    expect(store.getForGroup("group-a")?.lastKeeperMessage).toBeUndefined();
+  });
+
+  it("bounds roll history to the most recent entries", async () => {
+    const config = testConfig({ hermesEnabled: true });
+    const preferences = GroupGamingPreferenceStore.fromConfig(config);
+    preferences.set("group-a", {
+      enabled: true,
+      campaignId: "prairie-saints-and-municipal-ghosts",
+      mysteryId: "the-thing-in-the-floodway",
+      automationMode: "suggest"
+    });
+    const store = CampaignStateStore.fromConfig(config);
+    const runtime = testGameRuntime(config, preferences, store, hermesDecisionResponse(), undefined, {
+      diceRoller: createSequenceDiceRoller(Array.from({ length: 60 }, () => 4))
+    });
+    const campaign = loadCampaignPacks(config)[0];
+
+    for (let index = 0; index < 30; index += 1) {
+      store.applyDecision({
+        groupId: "group-a",
+        campaign,
+        mysteryId: "the-thing-in-the-floodway",
+        sourceDocumentId: `doc-${index}`,
+        automationMode: "suggest",
+        decision: {
+          stateChanges: [],
+          rollRequest: {
+            moveId: "interpret_evidence",
+            modifier: 0
+          }
+        }
+      });
+      await runtime.resolvePendingGroupRoll(group());
+    }
+
+    const history = store.getForGroup("group-a")?.rollHistory ?? [];
+    expect(history).toHaveLength(24);
+    expect(history[0]?.sourceDocumentId).toBe("doc-6");
+    expect(history[23]?.sourceDocumentId).toBe("doc-29");
   });
 
   it("sends autonomous Keeper messages through the group send port", async () => {
@@ -1306,7 +1707,7 @@ describe("game campaign foundations", () => {
     expect(store.getForGroup("group-a")?.lastKeeperMessage).toBeUndefined();
   });
 
-  it("ignores non-JSON Hermes decisions without mutation or Keeper send", async () => {
+  it("surfaces empty autonomous Hermes decisions instead of silently consuming user turns", async () => {
     const config = testConfig({ hermesEnabled: true });
     const preferences = GroupGamingPreferenceStore.fromConfig(config);
     preferences.set("group-a", {
@@ -1335,14 +1736,22 @@ describe("game campaign foundations", () => {
 
     await runtime.handleGroupChatChanged(group(), groupNotification("doc-1", "I inspect the phone static."));
 
-    expect(sends).toHaveLength(0);
+    expect(sends).toHaveLength(1);
+    expect(sends[0]).toMatchObject({
+      groupId: "group-a",
+      message: "*The moment hangs unresolved. What do you do next?*",
+      triggerAiResponse: false
+    });
     expect(store.getForGroup("group-a")).toMatchObject({
       currentCountdownIndex: 0,
       discoveredClueIds: [],
       revealedThreatIds: [],
-      processedSourceDocumentIds: ["doc-1"]
+      processedSourceDocumentIds: ["doc-1"],
+      lastKeeperMessage: {
+        text: "*The moment hangs unresolved. What do you do next?*",
+        sourceDocumentId: "doc-1"
+      }
     });
-    expect(store.getForGroup("group-a")?.pendingDecision).toBeUndefined();
   });
 
   it("ignores unknown Hermes state change types and ids", async () => {
@@ -1438,7 +1847,7 @@ function testGameRuntime(
   config: AppConfig,
   preferences: GroupGamingPreferenceStore,
   campaignStates: CampaignStateStore,
-  hermesResponse: unknown,
+  hermesResponse: unknown | unknown[],
   kindroidClient: ConstructorParameters<typeof GameRuntime>[0]["kindroidClient"] = {
     sendGroupMessage: async (input) => ({
       status: 200,
@@ -1453,14 +1862,20 @@ function testGameRuntime(
   },
   options: {
     onFetch?: (input: Parameters<typeof fetch>[0], init: Parameters<typeof fetch>[1]) => void;
+    diceRoller?: DiceRoller;
   } = {}
 ): GameRuntime {
+  const hermesResponses = Array.isArray(hermesResponse) ? [...hermesResponse] : [hermesResponse];
+  let hermesResponseIndex = 0;
   vi.stubGlobal("fetch", async (input: Parameters<typeof fetch>[0], init: Parameters<typeof fetch>[1]) => {
     options.onFetch?.(input, init);
+    const nextResponse =
+      hermesResponses[Math.min(hermesResponseIndex, hermesResponses.length - 1)] ?? hermesDecisionResponse();
+    hermesResponseIndex += 1;
     return {
       ok: true,
       status: 200,
-      text: async () => JSON.stringify(hermesResponse)
+      text: async () => JSON.stringify(nextResponse)
     };
   });
   return new GameRuntime({
@@ -1470,6 +1885,7 @@ function testGameRuntime(
     campaignStates,
     dedupeStore: new InMemoryDedupeStore(10_000),
     kindroidClient,
+    diceRoller: options.diceRoller,
     onStateUpdated: () => undefined,
     onKeeperMessageSent: () => undefined,
     onPendingDecision: () => undefined
@@ -1513,6 +1929,22 @@ function hermesIntroResponse(overrides: Record<string, unknown> = {}) {
           content: JSON.stringify({
             keeperMessage: "Rain gathers under the underpass as the first call comes in.",
             reason: "The selected mystery has just started.",
+            ...overrides
+          })
+        }
+      }
+    ]
+  };
+}
+
+function hermesPostRollResponse(keeperMessage: string, overrides: Record<string, unknown> = {}) {
+  return {
+    choices: [
+      {
+        message: {
+          content: JSON.stringify({
+            keeperMessage,
+            reason: "The fixed roll result determines the immediate consequence.",
             ...overrides
           })
         }

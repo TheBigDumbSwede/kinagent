@@ -516,6 +516,24 @@ export class BridgeRuntime {
     return this.groupGamingPreferenceResult(groupId, this.groupGamingPreferences.get(groupId));
   }
 
+  async resolveGroupGamingRoll(groupId: string): Promise<GroupGamingPreferenceResult> {
+    if (!groupId) {
+      throw new Error("Select a Group before resolving a roll.");
+    }
+
+    await this.game.resolvePendingGroupRoll(this.resolveGroup(groupId));
+    return this.groupGamingPreferenceResult(groupId, this.groupGamingPreferences.get(groupId));
+  }
+
+  dismissGroupGamingRoll(groupId: string): GroupGamingPreferenceResult {
+    if (!groupId) {
+      throw new Error("Select a Group before dismissing a roll.");
+    }
+
+    this.game.dismissPendingGroupRoll(this.resolveGroup(groupId));
+    return this.groupGamingPreferenceResult(groupId, this.groupGamingPreferences.get(groupId));
+  }
+
   pendingJournalSuggestions(): JournalSuggestion[] {
     return this.journalSuggestions.listReviewable();
   }

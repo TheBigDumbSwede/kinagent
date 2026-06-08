@@ -33,61 +33,69 @@ export interface DiceRoller {
 
 export const genericMysteryMoves: GameMove[] = [
   {
-    id: "investigate",
-    name: "Investigate a Mystery",
+    id: "interpret_evidence",
+    name: "Interpret Evidence",
     trigger: "When a player studies evidence, asks pointed questions, or follows a clue under uncertainty.",
     stat: "sharp",
     outcomes: {
-      "10+": "The player gets clear, useful answers and may ask follow-up questions.",
-      "7-9": "The player gets a useful answer, but it is incomplete, costly, or exposes new danger.",
-      "6-": "The Keeper makes pressure visible through danger, cost, lost time, or a hard clue."
+      "10+": "success",
+      "7-9": "partial success with complication",
+      "6-": "failure with complication"
     }
   },
   {
-    id: "act_under_pressure",
-    name: "Act Under Pressure",
+    id: "risky_action",
+    name: "Risky Action",
     trigger: "When a player does something risky under threat, time pressure, or unstable conditions.",
     stat: "cool",
     outcomes: {
-      "10+": "The player does it cleanly.",
-      "7-9": "The player hesitates, pays a cost, or must choose between imperfect results.",
-      "6-": "The pressure lands and the Keeper escalates the situation."
+      "10+": "success",
+      "7-9": "partial success with complication",
+      "6-": "failure with complication"
     }
   },
   {
-    id: "protect_someone",
-    name: "Protect Someone",
+    id: "shield_another",
+    name: "Shield Another",
     trigger: "When a player shields another character from immediate harm or consequences.",
     stat: "tough",
     outcomes: {
-      "10+": "The player protects them and gains a clear advantage.",
-      "7-9": "The player protects them, but suffers harm, cost, exposure, or a difficult choice.",
-      "6-": "The danger breaks through or lands somewhere worse."
+      "10+": "success",
+      "7-9": "partial success with complication",
+      "6-": "failure with complication"
     }
   },
   {
-    id: "convince",
-    name: "Convince or Press",
+    id: "social_leverage",
+    name: "Social Leverage",
     trigger: "When a player persuades, deceives, bargains, or pressures an NPC under uncertainty.",
     stat: "charm",
     outcomes: {
-      "10+": "The target accepts the leverage or offers meaningful cooperation.",
-      "7-9": "The target needs proof, payment, reassurance, or a risky concession.",
-      "6-": "The social pressure backfires or reveals a complication."
+      "10+": "success",
+      "7-9": "partial success with complication",
+      "6-": "failure with complication"
     }
   },
   {
-    id: "face_the_unknown",
+    id: "face_unknown",
     name: "Face the Unknown",
     trigger: "When a player confronts supernatural dread, impossible evidence, or a destabilizing revelation.",
     stat: "weird",
     outcomes: {
-      "10+": "The player holds steady and extracts a useful insight.",
-      "7-9": "The player holds together, but the mystery marks them or demands a cost.",
-      "6-": "The unknown overwhelms the scene and the Keeper escalates."
+      "10+": "success",
+      "7-9": "partial success with complication",
+      "6-": "failure with complication"
     }
   }
 ];
+
+const legacyMoveAliases = new Map<string, string>([
+  ["investigate", "interpret_evidence"],
+  ["act_under_pressure", "risky_action"],
+  ["protect_someone", "shield_another"],
+  ["convince", "social_leverage"],
+  ["face_the_unknown", "face_unknown"]
+]);
 
 export const randomDiceRoller: DiceRoller = {
   rollDie(sides: number): number {
@@ -113,8 +121,9 @@ export function resolvePbtARoll(
   input: { moves?: GameMove[]; roller?: DiceRoller } = {}
 ): RollResult {
   const moves = input.moves ?? genericMysteryMoves;
-  const move = moves.find((candidate) => candidate.id === request.moveId);
-  if (!move) {
+  const moveId = canonicalMoveId(request.moveId);
+  const move = moves.find((candidate) => candidate.id === moveId);
+  if (!moveId || !move) {
     throw new Error(`Unknown game move: ${request.moveId}`);
   }
 
@@ -123,7 +132,7 @@ export function resolvePbtARoll(
   const total = dice[0] + dice[1] + request.modifier;
   const outcome = pbtaOutcome(total);
   return {
-    moveId: request.moveId,
+    moveId,
     moveName: move.name,
     ...(request.actor ? { actor: request.actor } : {}),
     dice,
@@ -150,7 +159,7 @@ export function normalizeRollRequest(value: unknown, moves: GameMove[] = generic
     return undefined;
   }
 
-  const moveId = optionalText(record.moveId ?? record.move_id, 80);
+  const moveId = canonicalMoveId(optionalText(record.moveId ?? record.move_id, 80));
   if (!moveId || !moves.some((move) => move.id === moveId)) {
     return undefined;
   }
@@ -162,6 +171,10 @@ export function normalizeRollRequest(value: unknown, moves: GameMove[] = generic
     ...(optionalText(record.prompt, 280) ? { prompt: optionalText(record.prompt, 280) } : {}),
     ...(optionalText(record.reason, 280) ? { reason: optionalText(record.reason, 280) } : {})
   };
+}
+
+function canonicalMoveId(moveId: string | undefined): string | undefined {
+  return moveId ? (legacyMoveAliases.get(moveId) ?? moveId) : undefined;
 }
 
 function optionalModifier(value: unknown): number {

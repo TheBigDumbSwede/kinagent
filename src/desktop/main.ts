@@ -301,6 +301,12 @@ function registerIpcHandlers(): void {
   ipcMain.handle("gaming:approve-keeper-suggestion", async (_event, input: { groupId?: string } = {}) =>
     approveGroupGamingKeeperSuggestion(input.groupId ?? "")
   );
+  ipcMain.handle("gaming:resolve-roll", async (_event, input: { groupId?: string } = {}) =>
+    resolveGroupGamingRoll(input.groupId ?? "")
+  );
+  ipcMain.handle("gaming:dismiss-roll", async (_event, input: { groupId?: string } = {}) =>
+    dismissGroupGamingRoll(input.groupId ?? "")
+  );
   ipcMain.handle("gaming:import-campaign-pack", async () => importCampaignPackFromDialog());
   ipcMain.handle("prewarm:local-scene", async (_event, input: { scope?: "kin" | "group"; id?: string } = {}) =>
     forceLocalScenePrewarm(input.scope, input.id ?? "")
@@ -632,6 +638,34 @@ async function approveGroupGamingKeeperSuggestion(groupId: string) {
 
   const result = await requireRuntime().approveGroupGamingKeeperSuggestion(groupId);
   logger.info("Approved Group Gaming Keeper suggestion.", {
+    groupId,
+    campaignId: result.preference.campaignId,
+    mysteryId: result.preference.mysteryId
+  });
+  return result;
+}
+
+async function resolveGroupGamingRoll(groupId: string) {
+  if (!groupId) {
+    throw new Error("Select a Group before resolving a roll.");
+  }
+
+  const result = await requireRuntime().resolveGroupGamingRoll(groupId);
+  logger.info("Resolved Group Gaming roll.", {
+    groupId,
+    campaignId: result.preference.campaignId,
+    mysteryId: result.preference.mysteryId
+  });
+  return result;
+}
+
+function dismissGroupGamingRoll(groupId: string) {
+  if (!groupId) {
+    throw new Error("Select a Group before dismissing a roll.");
+  }
+
+  const result = requireRuntime().dismissGroupGamingRoll(groupId);
+  logger.info("Dismissed Group Gaming roll.", {
     groupId,
     campaignId: result.preference.campaignId,
     mysteryId: result.preference.mysteryId

@@ -49,6 +49,8 @@ export interface KinagentApi {
     preference: GroupGamingPreference;
   }): Promise<GroupGamingPreferenceResult>;
   approveGroupGamingKeeperSuggestion(input: { groupId: string }): Promise<GroupGamingPreferenceResult>;
+  resolveGroupGamingRoll(input: { groupId: string }): Promise<GroupGamingPreferenceResult>;
+  dismissGroupGamingRoll(input: { groupId: string }): Promise<GroupGamingPreferenceResult>;
   importCampaignPack(): Promise<CampaignPackImportResult>;
   forceLocalScenePrewarm(input: { scope: "kin" | "group"; id: string }): Promise<{ ok: boolean }>;
   forceSoundscapePrewarm(input: { scope: "kin" | "group"; id: string }): Promise<{ ok: boolean }>;
@@ -163,6 +165,36 @@ export interface GroupCampaignStateSummary {
   visitedLocationIds: string[];
   notes: string[];
   processedSourceDocumentIds: string[];
+  rollHistory: Array<{
+    sourceDocumentId: string;
+    resolvedAt: string;
+    automationMode: GamingAutomationMode;
+    request: {
+      moveId: string;
+      actor?: string;
+      modifier: number;
+      prompt?: string;
+      reason?: string;
+    };
+    result: {
+      moveId: string;
+      moveName: string;
+      actor?: string;
+      dice: [number, number];
+      modifier: number;
+      total: number;
+      outcome: "10+" | "7-9" | "6-";
+      outcomeText: string;
+    };
+    message: string;
+    sent?: {
+      ok: boolean;
+      status: number;
+      requestId?: string;
+      idempotencyKey?: string;
+      responseText?: string;
+    };
+  }>;
   pendingRollRequest?: {
     sourceDocumentId: string;
     createdAt: string;

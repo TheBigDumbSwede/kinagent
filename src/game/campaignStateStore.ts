@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { AppConfig } from "../config/types.js";
 import type { CampaignPack, MysteryEntry } from "./campaignPack.js";
-import type { RollRequest } from "./gameMoves.js";
+import type { RollRequest, RollResult } from "./gameMoves.js";
 import type { GamingAutomationMode } from "./groupGamingPreferences.js";
 
 export type GameDecisionConfidence = "low" | "medium" | "high";
@@ -54,6 +54,22 @@ export interface SentKeeperMessage {
   sourceDocumentId: string;
 }
 
+export interface StoredRollResult {
+  sourceDocumentId: string;
+  resolvedAt: string;
+  automationMode: GamingAutomationMode;
+  request: RollRequest;
+  result: RollResult;
+  message: string;
+  sent?: {
+    ok: boolean;
+    status: number;
+    requestId?: string;
+    idempotencyKey?: string;
+    responseText?: string;
+  };
+}
+
 export interface GroupCampaignState {
   groupId: string;
   campaignId: string;
@@ -68,10 +84,13 @@ export interface GroupCampaignState {
   visitedLocationIds: string[];
   notes: string[];
   processedSourceDocumentIds: string[];
+  rollHistory: StoredRollResult[];
   pendingRollRequest?: PendingRollRequest;
   pendingDecision?: PendingGameDecision;
   lastKeeperMessage?: SentKeeperMessage;
 }
+
+const rollHistoryLimit = 24;
 
 interface CampaignStateFile {
   groups?: Record<string, GroupCampaignState>;
@@ -112,7 +131,8 @@ export class CampaignStateStore {
       revealedNpcIds: [],
       visitedLocationIds: [],
       notes: [],
-      processedSourceDocumentIds: []
+      processedSourceDocumentIds: [],
+      rollHistory: []
     };
     groups[input.groupId] = next;
     this.write({ ...file, groups });
@@ -246,6 +266,91 @@ export class CampaignStateStore {
     return updated;
   }
 
+  recordRollResult(input: {
+    groupId: string;
+    sourceDocumentId: string;
+    automationMode: GamingAutomationMode;
+    request: RollRequest;
+    result: RollResult;
+    message: string;
+    sent?: StoredRollResult["sent"];
+  }): GroupCampaignState | null {
+    const current = this.getForGroup(input.groupId);
+    if (!current) {
+      return null;
+    }
+
+    const entry: StoredRollResult = {
+      sourceDocumentId: input.sourceDocumentId,
+      resolvedAt: new Date().toISOString(),
+      automationMode: input.automationMode,
+      request: input.request,
+      result: input.result,
+      message: input.message,
+      ...(input.sent ? { sent: input.sent } : {})
+    };
+    const updated: GroupCampaignState = {
+      ...current,
+      pendingRollRequest: undefined,
+      rollHistory: [...current.rollHistory, entry].slice(-rollHistoryLimit),
+      updatedAt: entry.resolvedAt
+    };
+    this.saveGroupState(input.groupId, updated);
+    return updated;
+  }
+
+  markRollResultSent(input: {
+    groupId: string;
+    sourceDocumentId: string;
+    message: string;
+    sent: StoredRollResult["sent"];
+  }): GroupCampaignState | null {
+    const current = this.getForGroup(input.groupId);
+    if (!current) {
+      return null;
+    }
+
+    let index = -1;
+    for (let candidate = current.rollHistory.length - 1; candidate >= 0; candidate -= 1) {
+      if (current.rollHistory[candidate]?.sourceDocumentId === input.sourceDocumentId) {
+        index = candidate;
+        break;
+      }
+    }
+    if (index < 0) {
+      return current;
+    }
+
+    const updatedHistory = [...current.rollHistory];
+    updatedHistory[index] = {
+      ...updatedHistory[index],
+      message: input.message,
+      ...(input.sent ? { sent: input.sent } : {})
+    };
+    const updated: GroupCampaignState = {
+      ...current,
+      rollHistory: updatedHistory,
+      updatedAt: new Date().toISOString()
+    };
+    this.saveGroupState(input.groupId, updated);
+    return updated;
+  }
+
+  dismissPendingRollRequest(input: { groupId: string }): GroupCampaignState | null {
+    const current = this.getForGroup(input.groupId);
+    if (!current?.pendingRollRequest) {
+      return current;
+    }
+
+    const updated: GroupCampaignState = {
+      ...current,
+      pendingRollRequest: undefined,
+      updatedAt: new Date().toISOString()
+    };
+    this.saveGroupState(input.groupId, updated);
+    return updated;
+  }
+
   storePendingKeeperDecision(input: {
     groupId: string;
     sourceDocumentId: string;
@@ -338,7 +443,8 @@ function initialGroupCampaignState(input: {
     revealedNpcIds: [],
     visitedLocationIds: [],
     notes: [],
-    processedSourceDocumentIds: input.processedSourceDocumentIds ?? []
+    processedSourceDocumentIds: input.processedSourceDocumentIds ?? [],
+    rollHistory: []
   };
 }
 
@@ -426,7 +532,7 @@ function pendingRollRequestFrom(
   createdAt: string
 ): PendingRollRequest | undefined {
   const request = input.decision.rollRequest;
-  if (input.automationMode === "observe" || !request) {
+  if (!request) {
     return undefined;
   }
 
@@ -459,14 +565,17 @@ function appendProcessedSourceDocumentId(values: string[], sourceDocumentId: str
 }
 
 function stateWithDefaults(state: GroupCampaignState): GroupCampaignState {
+  const currentState = { ...state } as GroupCampaignState & { turnGuard?: unknown };
+  delete currentState.turnGuard;
   return {
-    ...state,
+    ...currentState,
     discoveredClueIds: state.discoveredClueIds ?? [],
     revealedThreatIds: state.revealedThreatIds ?? [],
     revealedNpcIds: state.revealedNpcIds ?? [],
     visitedLocationIds: state.visitedLocationIds ?? [],
     notes: state.notes ?? [],
     processedSourceDocumentIds: state.processedSourceDocumentIds ?? [],
+    rollHistory: state.rollHistory ?? [],
     ...(state.pendingRollRequest ? { pendingRollRequest: state.pendingRollRequest } : {}),
     ...(state.pendingDecision ? { pendingDecision: state.pendingDecision } : {}),
     ...(state.lastKeeperMessage ? { lastKeeperMessage: state.lastKeeperMessage } : {})
