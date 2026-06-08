@@ -5,7 +5,21 @@ import process from "node:process";
 runNpmScript("check");
 
 const electronBuilderCli = path.join(process.cwd(), "node_modules", "electron-builder", "cli.js");
-run(process.execPath, [electronBuilderCli, "--win", "portable", "nsis", "--publish", "never"], {
+
+// Azure Trusted Signing is opt-in via KINAGENT_SIGN=1 so unsigned local/CI builds
+// keep working without Azure credentials. The values below are non-secret identifiers;
+// authentication comes from Azure Identity environment credentials.
+const signingEnabled = process.env.KINAGENT_SIGN === "1";
+const signingArgs = signingEnabled
+  ? [
+      "-c.win.azureSignOptions.publisherName=Bruce Mager",
+      "-c.win.azureSignOptions.endpoint=https://eus.codesigning.azure.net/",
+      "-c.win.azureSignOptions.codeSigningAccountName=BigDumbSwede",
+      "-c.win.azureSignOptions.certificateProfileName=BigDumbSwede"
+    ]
+  : [];
+
+run(process.execPath, [electronBuilderCli, "--win", "portable", "nsis", ...signingArgs, "--publish", "never"], {
   NODE_OPTIONS: appendNodeOption(process.env.NODE_OPTIONS, "--disable-warning=DEP0190")
 });
 
