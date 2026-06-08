@@ -1,10 +1,7 @@
 import type { AppConfig } from "../config/types.js";
 import type { KindroidGroup } from "../kindroid/client/index.js";
-import { KindroidClient } from "../kindroid/kindroidClient.js";
-import type { SendKindroidGroupMessageResult, UpdateKindroidGroupCurrentSceneResult } from "../kindroid/types.js";
 import type { KindroidChatNotification, KindroidGroupChatChangeNotification } from "../firestore/types.js";
 import type { DedupeStore } from "../state/dedupeStore.js";
-import { newRequestId } from "../util/ids.js";
 import type { Logger } from "../util/logger.js";
 import { loadCampaignPacks, type LoadedCampaignPack } from "./campaignPack.js";
 import { CampaignStateStore, type GameKeeperDecision, type GroupCampaignState } from "./campaignStateStore.js";
@@ -12,8 +9,12 @@ import { parseGameCommand, type GameCommand } from "./gameCommands.js";
 import { parseGameDecisionContent, normalizeGameDecision } from "./gameDecision.js";
 import { genericMysteryMoves, randomDiceRoller, resolvePbtARoll, type DiceRoller } from "./gameMoves.js";
 import { GroupGamingPreferenceStore, type GamingAutomationMode } from "./groupGamingPreferences.js";
+import { KeeperMessenger, type GameKeeperMessageSentEvent, type GameKindroidClient } from "./keeperMessenger.js";
 import { formatRollResultMessage, rollOutcomeSummary } from "./rollFormatting.js";
 import { spoilerFreeMysteryBrief, type SpoilerFreeMysteryBrief } from "./spoilerFreeBrief.js";
+import { TurnBuffer, type GameTurnParcel } from "./turnBuffer.js";
+
+export type { GameKeeperMessageSentEvent, GameKindroidClient } from "./keeperMessenger.js";
 
 interface HermesChatCompletionResult {
   choices?: Array<{
@@ -33,8 +34,6 @@ interface PostRollKeeperNarration {
   reason?: string;
 }
 
-type GameKindroidClient = Pick<KindroidClient, "sendGroupMessage" | "updateGroupCurrentScene">;
-
 export interface GameRuntimeOptions {
   config: AppConfig;
   logger: Logger;
@@ -46,16 +45,6 @@ export interface GameRuntimeOptions {
   onStateUpdated?: (state: GroupCampaignState) => void;
   onKeeperMessageSent?: (event: GameKeeperMessageSentEvent) => void;
   onPendingDecision?: (state: GroupCampaignState) => void;
-}
-
-export interface GameKeeperMessageSentEvent {
-  groupId: string;
-  groupName: string;
-  text: string;
-  requestId: string;
-  idempotencyKey: string;
-  sourceDocumentId: string;
-  result: SendKindroidGroupMessageResult;
 }
 
 export interface GameGroupChatResult {
@@ -84,39 +73,24 @@ interface RollResolutionResult {
   keeperMessageSent: boolean;
 }
 
-interface GameTurnBufferMessage {
-  documentId: string;
-  timestamp: string | null;
-  aiId: string | null;
-  sender: KindroidGroupChatChangeNotification["sender"];
-  role: KindroidGroupChatChangeNotification["role"];
-  text: string;
-}
-
-interface GameTurnBuffer {
-  messages: GameTurnBufferMessage[];
-  seenDocumentIds: string[];
-}
-
-interface GameTurnParcel {
-  closedBy: "user";
-  contextMessages: GameTurnBufferMessage[];
-  userMessage: GameTurnBufferMessage;
-}
-
 const autonomousKeeperCooldownMs = 30 * 1000;
-const turnBufferMaxMessages = 12;
-const turnBufferMaxAgeMs = 10 * 60 * 1000;
-const turnBufferSeenDocumentIdLimit = 100;
 
 export class GameRuntime {
-  private readonly kindroidClient: GameKindroidClient;
   private readonly diceRoller: DiceRoller;
-  private readonly turnBuffers = new Map<string, GameTurnBuffer>();
+  private readonly turnBuffer = new TurnBuffer();
+  private readonly keeperMessenger: KeeperMessenger;
 
   constructor(private readonly options: GameRuntimeOptions) {
-    this.kindroidClient = options.kindroidClient ?? new KindroidClient(options.config, options.logger);
     this.diceRoller = options.diceRoller ?? randomDiceRoller;
+    this.keeperMessenger = new KeeperMessenger({
+      config: options.config,
+      logger: options.logger,
+      campaignStates: options.campaignStates,
+      dedupeStore: options.dedupeStore,
+      kindroidClient: options.kindroidClient,
+      onStateUpdated: options.onStateUpdated,
+      onKeeperMessageSent: options.onKeeperMessageSent
+    });
   }
 
   async handleGroupChatChanged(
@@ -190,7 +164,7 @@ export class GameRuntime {
       };
     }
     if (!eventPolicy.canMutateState && !eventPolicy.canCreateKeeperDecision) {
-      const buffered = this.bufferTurnContext(group.groupId, notification);
+      const buffered = this.turnBuffer.bufferContext(group.groupId, notification);
       this.options.logger.info("Group Gaming event buffered as non-mutating turn context.", {
         groupId: group.groupId,
         documentId: notification.documentId,
@@ -220,9 +194,9 @@ export class GameRuntime {
       automationMode: preference.automationMode,
       sender: notification.sender,
       role: notification.role,
-      bufferedContextMessages: this.turnBufferContext(group.groupId, notification.timestamp).length
+      bufferedContextMessages: this.turnBuffer.context(group.groupId, notification.timestamp).length
     });
-    const turnParcel = this.buildTurnParcel(group.groupId, notification);
+    const turnParcel = this.turnBuffer.buildParcel(group.groupId, notification);
     const decision = await this.requestGameDecision({
       group,
       notification,
@@ -270,7 +244,7 @@ export class GameRuntime {
       rollResolved: Boolean(rollResolution),
       pendingDecision: Boolean(updated.pendingDecision)
     });
-    this.checkpointTurnBuffer(group.groupId, turnParcel);
+    this.turnBuffer.checkpoint(group.groupId, turnParcel);
     if (keeperMessageSuppressed) {
       this.options.logger.info("Group Gaming autonomous Keeper message suppressed by pacing.", {
         groupId: group.groupId,
@@ -332,7 +306,7 @@ export class GameRuntime {
       throw new Error("The pending game decision has no Keeper message to send.");
     }
 
-    const sendResult = await this.sendKeeperMessageWithResult(
+    const sendResult = await this.keeperMessenger.send(
       group,
       state.pendingDecision.sourceDocumentId,
       state.pendingDecision.keeperMessage,
@@ -422,7 +396,7 @@ export class GameRuntime {
       };
     }
 
-    const sendResult = await this.sendKeeperMessageWithResult(input.group, pending.sourceDocumentId, message, {
+    const sendResult = await this.keeperMessenger.send(input.group, pending.sourceDocumentId, message, {
       source: "roll-result",
       triggerAiResponse: false
     });
@@ -494,7 +468,7 @@ export class GameRuntime {
             sourceDocumentId: input.notification.documentId
           });
     if (input.command.type === "reset_mystery") {
-      this.clearTurnBuffer(input.group.groupId);
+      this.turnBuffer.clear(input.group.groupId);
     }
     this.options.onStateUpdated?.(updated);
     this.options.logger.info("Group Gaming command applied.", {
@@ -770,170 +744,14 @@ export class GameRuntime {
     }
   }
 
-  private bufferTurnContext(groupId: string, notification: KindroidGroupChatChangeNotification): boolean {
-    const buffer = this.prunedTurnBuffer(groupId, notification.timestamp);
-    if (buffer.seenDocumentIds.includes(notification.documentId)) {
-      return false;
-    }
-
-    buffer.messages.push(turnBufferMessage(notification));
-    buffer.messages = boundTurnBufferMessages(buffer.messages, notification.timestamp);
-    buffer.seenDocumentIds = boundSeenDocumentIds([...buffer.seenDocumentIds, notification.documentId]);
-    this.turnBuffers.set(groupId, buffer);
-    return true;
-  }
-
-  private buildTurnParcel(groupId: string, notification: KindroidGroupChatChangeNotification): GameTurnParcel {
-    return {
-      closedBy: "user",
-      contextMessages: this.turnBufferContext(groupId, notification.timestamp),
-      userMessage: turnBufferMessage(notification)
-    };
-  }
-
-  private turnBufferContext(groupId: string, timestamp: string | null | undefined): GameTurnBufferMessage[] {
-    const buffer = this.prunedTurnBuffer(groupId, timestamp);
-    return buffer.messages;
-  }
-
-  private checkpointTurnBuffer(groupId: string, parcel: GameTurnParcel): void {
-    const buffer = this.prunedTurnBuffer(groupId, parcel.userMessage.timestamp);
-    this.turnBuffers.set(groupId, {
-      messages: [],
-      seenDocumentIds: boundSeenDocumentIds([
-        ...buffer.seenDocumentIds,
-        ...parcel.contextMessages.map((message) => message.documentId),
-        parcel.userMessage.documentId
-      ])
-    });
-  }
-
-  private clearTurnBuffer(groupId: string): void {
-    this.turnBuffers.delete(groupId);
-  }
-
-  private prunedTurnBuffer(groupId: string, timestamp: string | null | undefined): GameTurnBuffer {
-    const current = this.turnBuffers.get(groupId) ?? { messages: [], seenDocumentIds: [] };
-    const pruned = {
-      messages: boundTurnBufferMessages(current.messages, timestamp),
-      seenDocumentIds: boundSeenDocumentIds(current.seenDocumentIds)
-    };
-    this.turnBuffers.set(groupId, pruned);
-    return pruned;
-  }
-
   private async sendKeeperMessage(
     group: KindroidGroup,
     sourceDocumentId: string,
     message: string,
     input: { source: "autonomous" | "approved-suggestion"; triggerAiResponse?: boolean }
   ): Promise<boolean> {
-    const result = await this.sendKeeperMessageWithResult(group, sourceDocumentId, message, input);
+    const result = await this.keeperMessenger.send(group, sourceDocumentId, message, input);
     return result.ok;
-  }
-
-  private async sendKeeperMessageWithResult(
-    group: KindroidGroup,
-    sourceDocumentId: string,
-    message: string,
-    input: { source: "autonomous" | "approved-suggestion" | "roll-result"; triggerAiResponse?: boolean }
-  ): Promise<SendKindroidGroupMessageResult> {
-    const requestId = newRequestId();
-    const idempotencyKey = newRequestId();
-    const triggerAiResponse = input.triggerAiResponse ?? false;
-    const result = await this.sendKeeperGroupMessage({
-      groupId: group.groupId,
-      message,
-      requestId,
-      idempotencyKey,
-      triggerAiResponse
-    });
-    this.options.logger.info("Group Gaming Keeper message sent.", {
-      groupId: group.groupId,
-      groupName: group.name,
-      sourceDocumentId,
-      source: input.source,
-      triggerAiResponse,
-      ok: result.ok,
-      status: result.status,
-      requestId
-    });
-
-    if (result.ok) {
-      await this.options.dedupeStore.recordOutbound({
-        kinId: group.groupId,
-        text: message,
-        requestId,
-        idempotencyKey
-      });
-      const updated = this.options.campaignStates.markKeeperMessageSent({
-        groupId: group.groupId,
-        text: message,
-        requestId,
-        idempotencyKey,
-        sourceDocumentId
-      });
-      if (updated) {
-        this.options.onStateUpdated?.(updated);
-      }
-      await this.syncKeeperMessageToGroupCurrentScene(group, sourceDocumentId, message);
-    }
-
-    this.options.onKeeperMessageSent?.({
-      groupId: group.groupId,
-      groupName: group.name,
-      text: message,
-      requestId,
-      idempotencyKey,
-      sourceDocumentId,
-      result
-    });
-
-    return result;
-  }
-
-  private async sendKeeperGroupMessage(input: {
-    groupId: string;
-    message: string;
-    requestId: string;
-    idempotencyKey: string;
-    triggerAiResponse: boolean;
-  }): Promise<SendKindroidGroupMessageResult> {
-    try {
-      return await this.kindroidClient.sendGroupMessage({
-        ...input,
-        triggerAiResponse: input.triggerAiResponse
-      });
-    } catch (error) {
-      return {
-        status: 0,
-        ok: false,
-        requestId: input.requestId,
-        idempotencyKey: input.idempotencyKey,
-        responseText: error instanceof Error ? error.message : String(error)
-      };
-    }
-  }
-
-  private async syncKeeperMessageToGroupCurrentScene(
-    group: KindroidGroup,
-    sourceDocumentId: string,
-    message: string
-  ): Promise<void> {
-    if (!this.options.config.hermes.currentSceneUpdates.enabled) {
-      return;
-    }
-
-    const currentScene = keeperMessageCurrentScene(message, this.options.config.hermes.currentSceneUpdates.maxLength);
-    if (!currentScene) {
-      return;
-    }
-
-    const result = await this.kindroidClient.updateGroupCurrentScene({
-      groupId: group.groupId,
-      currentScene
-    });
-    logKeeperCurrentSceneSync(this.options.logger, group, sourceDocumentId, result);
   }
 }
 
@@ -1309,39 +1127,6 @@ function trimOuterAsterisks(value: string): string {
   return value.replace(/^\*+/, "").replace(/\*+$/, "").trim();
 }
 
-function keeperMessageCurrentScene(message: string, maxLength: number): string {
-  return message
-    .replace(/\r\n/g, "\n")
-    .split(/\n+/)
-    .map((line) => trimOuterAsterisks(line.trim()))
-    .filter(Boolean)
-    .join(" ")
-    .replace(/\s+/g, " ")
-    .slice(0, Math.max(1, maxLength))
-    .trim();
-}
-
-function logKeeperCurrentSceneSync(
-  logger: Logger,
-  group: KindroidGroup,
-  sourceDocumentId: string,
-  result: UpdateKindroidGroupCurrentSceneResult
-): void {
-  const meta = {
-    groupId: group.groupId,
-    groupName: group.name,
-    sourceDocumentId,
-    ok: result.ok,
-    status: result.status,
-    responseText: result.responseText
-  };
-  if (result.ok) {
-    logger.info("Group Gaming Keeper current scene sync completed.", meta);
-  } else {
-    logger.warn("Group Gaming Keeper current scene sync failed.", meta);
-  }
-}
-
 function timestampMs(value: string | null | undefined): number {
   if (!value) {
     return NaN;
@@ -1349,33 +1134,6 @@ function timestampMs(value: string | null | undefined): number {
 
   const timestamp = new Date(value).getTime();
   return Number.isFinite(timestamp) ? timestamp : NaN;
-}
-
-function turnBufferMessage(notification: KindroidGroupChatChangeNotification): GameTurnBufferMessage {
-  return {
-    documentId: notification.documentId,
-    timestamp: notification.timestamp,
-    aiId: notification.aiId,
-    sender: notification.sender,
-    role: notification.role,
-    text: notification.text ?? ""
-  };
-}
-
-function boundTurnBufferMessages(
-  messages: GameTurnBufferMessage[],
-  timestamp: string | null | undefined
-): GameTurnBufferMessage[] {
-  const currentMs = timestampMs(timestamp);
-  const recent = messages.filter((message) => {
-    const messageMs = timestampMs(message.timestamp);
-    return !Number.isFinite(currentMs) || !Number.isFinite(messageMs) || currentMs - messageMs <= turnBufferMaxAgeMs;
-  });
-  return recent.slice(-turnBufferMaxMessages);
-}
-
-function boundSeenDocumentIds(documentIds: string[]): string[] {
-  return [...new Set(documentIds)].slice(-turnBufferSeenDocumentIdLimit);
 }
 
 function normalizeBaseUrl(value: string): string {
