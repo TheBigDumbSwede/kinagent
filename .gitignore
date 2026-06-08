@@ -1,6 +1,8 @@
 node_modules/
 dist/
 release/
+native-host/**/bin/
+native-host/**/obj/
 data/
 .local/
 .claude/

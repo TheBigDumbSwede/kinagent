@@ -39,6 +39,8 @@
     "format:write": "prettier --write .",
     "secret-scan": "node scripts/secret-scan.mjs",
     "generate:icons": "node scripts/generate-icons.mjs",
+    "native-host:build": "node scripts/build-native-host.mjs",
+    "native-host:smoke": "node scripts/smoke-native-host.mjs",
     "smoke:desktop": "npm run build && node scripts/desktop-smoke.mjs",
     "dist:win": "node scripts/dist-win.mjs",
     "release:check-version": "node scripts/check-release-version.mjs",
@@ -58,6 +60,12 @@
       "dist/**/*",
       "package.json",
       "node_modules/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "dist/native-host/win-x64/kinagent-native-host.exe",
+        "to": "native-host/kinagent-native-host.exe"
+      }
     ],
     "extraMetadata": {
       "main": "dist/desktop/main.js"
