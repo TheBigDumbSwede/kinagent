@@ -1,0 +1,26 @@
+{
+  "defaultPalette": ["open field wind", "distant cattle", "small town night", "soft electrical hum"],
+  "locationHints": {
+    "miller-field": ["open field wind", "corn rustle", "distant cattle", "low alien hum"],
+    "dottie-diner": ["diner ambience", "soft kitchen clatter", "neon buzz"],
+    "county-road-nine": ["rural road night", "distant tires", "ditch insects", "soft radio static"],
+    "bramley-grain-elevator": ["grain elevator creaks", "industrial hum", "metallic pulse"],
+    "cedar-creek-chapel": ["quiet chapel", "rural wind", "single distant bell"],
+    "pell-civic-hall": ["town hall room tone", "folding chairs", "bad microphone feedback"],
+    "orchard-sink": ["orchard wind", "low sub-bass hum", "static texture"],
+    "hayward-quarry": ["empty quarry", "distant water", "wide night air"]
+  },
+  "threatHints": {
+    "field-survey-lattice": ["low alien hum", "dry corn rustle", "distant cattle"],
+    "chronology-accountant": ["clock ticks", "receipt printer", "soft fluorescent buzz"],
+    "sleeping-courier-craft": ["metallic pulse", "airlock tone", "grain dust movement"],
+    "roadside-translation-array": ["roadside wind", "sign creak", "distant bell"],
+    "misplaced-envoy": ["room tone", "microphone feedback", "subtle glass resonance"],
+    "orchard-star-gate": ["wide night air", "low sub-bass hum", "water reflection"]
+  },
+  "avoid": [
+    "Do not use musical sci-fi stingers.",
+    "Avoid loud jump scares; keep most sound restrained under dialogue.",
+    "Do not use intelligible background speech."
+  ]
+}

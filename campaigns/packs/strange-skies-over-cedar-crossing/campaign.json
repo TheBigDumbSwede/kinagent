@@ -1,0 +1,24 @@
+{
+  "id": "strange-skies-over-cedar-crossing",
+  "title": "Strange Skies Over Cedar Crossing",
+  "genre": "rural extraterrestrial mystery",
+  "tone": [
+    "odd lights over ordinary fields",
+    "dry small-town wit",
+    "extraterrestrial wonder",
+    "bureaucratic weirdness",
+    "gentle unease"
+  ],
+  "rulesetStyle": "pbta-mystery-hunt",
+  "recommendedGroupSize": "2-5 investigators",
+  "contentWarnings": [
+    "missing time",
+    "animal distress",
+    "memory alteration",
+    "body displacement",
+    "rural isolation",
+    "bright lights"
+  ],
+  "license": "MIT",
+  "attribution": "Original Kinagent campaign pack."
+}

@@ -1,0 +1,93 @@
+{
+  "id": "the-night-the-stars-asked-for-directions",
+  "title": "The Night the Stars Asked for Directions",
+  "hook": "Every north-facing window lights up at once, the quarry reflects a sky no one can see, and a voice from above asks for directions to Cedar Crossing.",
+  "truth": "The previous anomalies are pieces of a damaged contact-and-return protocol; the Orchard Star Gate is opening at the wrong rural landmark and may pull the town into the visitors' homesick signal.",
+  "monster": {
+    "name": "The Orchard Star Gate",
+    "type": "alien contact infrastructure",
+    "instinct": "To open a return corridor by anchoring itself to local memory, maps, and witnessed contact events.",
+    "weaknesses": [
+      "six corrected contact records",
+      "the visitor's true destination",
+      "a quarry reflection broken at the right moment"
+    ]
+  },
+  "countdown": [
+    {
+      "id": "windows-light",
+      "label": "Windows Light",
+      "text": "Every north-facing window glows with the same patient blue-white light."
+    },
+    {
+      "id": "map-erasure",
+      "label": "Map Erasure",
+      "text": "Road maps lose the mile between town and the quarry."
+    },
+    {
+      "id": "homesick-voices",
+      "label": "Homesick Voices",
+      "text": "The signal speaks in voices of places people miss, not people they know."
+    },
+    {
+      "id": "orchard-sky",
+      "label": "Orchard Sky",
+      "text": "The Orchard Sink fills with reflected stars and rises like water."
+    },
+    {
+      "id": "county-panic",
+      "label": "County Panic",
+      "text": "Witnesses converge on the quarry with cameras, rifles, blankets, and several casseroles."
+    },
+    {
+      "id": "wrong-return",
+      "label": "Wrong Return",
+      "text": "The gate opens through Cedar Crossing instead of above it, offering to take the whole town home."
+    }
+  ],
+  "clues": [
+    {
+      "id": "six-records",
+      "text": "Each previous mystery produced one contact record that needs correction: survey, calendar, courier, language, envoy, and destination.",
+      "tags": ["season", "solution"]
+    },
+    {
+      "id": "quarry-reflection",
+      "text": "The quarry water reflects the gate more accurately than the sky does.",
+      "tags": ["location", "weakness"]
+    },
+    {
+      "id": "homesick-not-hostile",
+      "text": "The signal calls with longing rather than command, pulling hardest on people thinking of home.",
+      "tags": ["emotion", "signal"]
+    },
+    {
+      "id": "visitor-destination",
+      "text": "The Polite Visitor's true destination is not Earth but a relay station that used Cedar Crossing as a mistaken label.",
+      "tags": ["alien", "truth"]
+    },
+    {
+      "id": "town-anchor",
+      "text": "Names of places people choose to stay weaken the pull of the gate.",
+      "tags": ["community", "weakness"]
+    },
+    {
+      "id": "broken-reflection",
+      "text": "Rippling the quarry reflection at the moment of plain-spoken correction can redirect the gate.",
+      "tags": ["solution", "timing"]
+    }
+  ],
+  "threatIds": ["orchard-star-gate", "homesick-signal", "countywide-witness-panic"],
+  "locationIds": ["hayward-quarry", "orchard-sink", "cedar-crossing-main-street"],
+  "npcIds": ["the-polite-visitor", "mara-keene", "reverend-amos-vale"],
+  "keeperHints": [
+    "Bring back clues, NPC pressures, and odd details from earlier mysteries.",
+    "Keep the finale about contact, correction, and choosing place, not defeating evil invaders.",
+    "Let the comedy come from human logistics around wonder: traffic, blankets, forms, and food."
+  ],
+  "revealPolicy": "Reveal the gate as a damaged return protocol assembled from the previous mysteries' evidence.",
+  "automationSafety": [
+    "Do not remove the whole town unless the table clearly wants a catastrophic ending.",
+    "Do not declare final contact successful without the group earning corrected records and a clear destination."
+  ]
+}

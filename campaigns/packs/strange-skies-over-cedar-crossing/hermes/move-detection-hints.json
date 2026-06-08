@@ -1,0 +1,50 @@
+{
+  "investigationSignals": [
+    "checks a field, road, silo, quarry, chapel, diner, archive, or weather station",
+    "questions a witness about lights, missing time, strange signs, late reflections, or animal behavior",
+    "compares evidence across earlier mysteries",
+    "studies receipts, maps, radio signals, road signs, reflections, or alien artifacts",
+    "tries plain speech, hospitality, grounding, synchronized clocks, or local records as a solution"
+  ],
+  "pressureSignals": [
+    "ignores an active countdown sign",
+    "signs strange paperwork without reading it",
+    "follows altered road signs without precautions",
+    "touches alien machinery casually",
+    "lets public panic or committee confusion set the agenda"
+  ],
+  "keeperResponseModes": [
+    {
+      "id": "rural-weird-clue",
+      "useWhen": "The group investigates a physical oddity or witness report.",
+      "shape": "Give one concrete clue anchored in ordinary rural detail, then add one impossible behavior."
+    },
+    {
+      "id": "translation-error",
+      "useWhen": "The group interacts with signs, radio, alien speech, or formal procedure.",
+      "shape": "Show a careful but wrong interpretation and make the risk clear."
+    },
+    {
+      "id": "public-pressure",
+      "useWhen": "A strange event becomes visible to townspeople.",
+      "shape": "Bring in witnesses, practical logistics, rumor, or official process without stealing focus."
+    },
+    {
+      "id": "contact-echo",
+      "useWhen": "Evidence from earlier mysteries can matter.",
+      "shape": "Connect the current clue to a prior anomaly through a repeated signal, phrase, object, or location."
+    },
+    {
+      "id": "quiet-wonder",
+      "useWhen": "The group pauses, observes, or tries peaceful communication.",
+      "shape": "Let the scene breathe. Offer a small truthful response rather than immediate escalation."
+    }
+  ],
+  "avoid": [
+    "Do not reveal the whole alien protocol early.",
+    "Do not make aliens generic conquerors.",
+    "Do not play small-town characters as fools.",
+    "Do not narrate player character choices.",
+    "Do not solve a mystery through comedy alone; jokes can point to clues, not replace them."
+  ]
+}
