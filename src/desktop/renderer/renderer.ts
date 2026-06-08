@@ -142,8 +142,6 @@ interface RendererState {
   groupGamingLoading: boolean;
   groupGamingSaving: boolean;
   groupGamingApproving: boolean;
-  groupGamingRolling: boolean;
-  groupGamingDismissingRoll: boolean;
   groupGamingImporting: boolean;
   groupGamingError: string | null;
   voiceError: string | null;
@@ -235,8 +233,6 @@ interface RendererElements {
   groupGamingStateList: HTMLElement;
   groupGamingSaveButton: HTMLButtonElement;
   groupGamingApproveButton: HTMLButtonElement;
-  groupGamingRollButton: HTMLButtonElement;
-  groupGamingDismissRollButton: HTMLButtonElement;
   groupGamingImportButton: HTMLButtonElement;
   kinHermesForm: HTMLFormElement;
   ambientContextEnabledInput: HTMLInputElement;
@@ -360,8 +356,6 @@ interface RendererApi {
     preference: GroupGamingPreference;
   }): Promise<GroupGamingPreferenceResult>;
   approveGroupGamingKeeperSuggestion(input: { groupId: string }): Promise<GroupGamingPreferenceResult>;
-  resolveGroupGamingRoll(input: { groupId: string }): Promise<GroupGamingPreferenceResult>;
-  dismissGroupGamingRoll(input: { groupId: string }): Promise<GroupGamingPreferenceResult>;
   importCampaignPack(): Promise<CampaignPackImportResult>;
   getKinAmbientPreference(input: { kinId: string }): Promise<KinAmbientPreferenceResult>;
   setKinAmbientPreference(input: {
@@ -452,8 +446,6 @@ const state: RendererState = {
   groupGamingLoading: false,
   groupGamingSaving: false,
   groupGamingApproving: false,
-  groupGamingRolling: false,
-  groupGamingDismissingRoll: false,
   groupGamingImporting: false,
   groupGamingError: null,
   voiceError: null,
@@ -555,8 +547,6 @@ const elements: RendererElements = {
   groupGamingStateList: query<HTMLElement>("#groupGamingStateList"),
   groupGamingSaveButton: query<HTMLButtonElement>("#groupGamingSaveButton"),
   groupGamingApproveButton: query<HTMLButtonElement>("#groupGamingApproveButton"),
-  groupGamingRollButton: query<HTMLButtonElement>("#groupGamingRollButton"),
-  groupGamingDismissRollButton: query<HTMLButtonElement>("#groupGamingDismissRollButton"),
   groupGamingImportButton: query<HTMLButtonElement>("#groupGamingImportButton"),
   kinHermesForm: query<HTMLFormElement>("#kinHermesForm"),
   ambientContextEnabledInput: query<HTMLInputElement>("#ambientContextEnabledInput"),
@@ -865,12 +855,6 @@ elements.groupGamingSaveButton.addEventListener("click", () => {
 });
 elements.groupGamingApproveButton.addEventListener("click", () => {
   void approveGroupGamingKeeperSuggestion();
-});
-elements.groupGamingRollButton.addEventListener("click", () => {
-  void resolveGroupGamingRoll();
-});
-elements.groupGamingDismissRollButton.addEventListener("click", () => {
-  void dismissGroupGamingRoll();
 });
 elements.groupGamingImportButton.addEventListener("click", () => {
   void importGroupCampaignPack();
@@ -1596,10 +1580,6 @@ function renderGroupGamingTab(selectedGroup: GroupSummary): void {
   elements.groupGamingSaveButton.disabled = state.groupGamingSaving || campaigns.length === 0;
   elements.groupGamingApproveButton.disabled =
     state.groupGamingApproving || !state.selectedGroupGaming?.activeState?.pendingDecision?.keeperMessage;
-  const canResolveRoll =
-    preference.automationMode !== "observe" && Boolean(state.selectedGroupGaming?.activeState?.pendingRollRequest);
-  elements.groupGamingRollButton.disabled = state.groupGamingRolling || !canResolveRoll;
-  elements.groupGamingDismissRollButton.disabled = state.groupGamingDismissingRoll || !canResolveRoll;
   elements.groupGamingImportButton.disabled = state.groupGamingImporting;
   elements.groupGamingStatusLine.textContent = preference.enabled
     ? "Gaming is enabled for this Group. State changes stay local; Suggest waits for approval before sending Keeper messages."
@@ -1685,7 +1665,7 @@ function renderGroupGamingState(): void {
   }
   const lastRoll = campaignState.rollHistory?.at(-1);
   if (lastRoll) {
-    elements.groupGamingStateList.append(gamingStatePill(`Last roll: ${rollOutcomeLabel(lastRoll.result)}`));
+    elements.groupGamingStateList.append(gamingStatePill(`Last outcome: ${rollOutcomeLabel(lastRoll.result)}`));
   }
   if (campaignState.lastKeeperMessage?.sentAt) {
     elements.groupGamingStateList.append(
@@ -1983,48 +1963,6 @@ async function approveGroupGamingKeeperSuggestion(): Promise<void> {
     state.groupGamingError = errorMessage(error);
   } finally {
     state.groupGamingApproving = false;
-    renderActivity();
-  }
-}
-
-async function resolveGroupGamingRoll(): Promise<void> {
-  if (!state.selectedGroupId || state.groupGamingRolling) {
-    return;
-  }
-
-  state.groupGamingRolling = true;
-  state.groupGamingError = null;
-  renderActivity();
-  try {
-    state.selectedGroupGaming = await window.kinagent.resolveGroupGamingRoll({
-      groupId: state.selectedGroupId
-    });
-    elements.monitorLine.textContent = "Roll resolved.";
-  } catch (error) {
-    state.groupGamingError = errorMessage(error);
-  } finally {
-    state.groupGamingRolling = false;
-    renderActivity();
-  }
-}
-
-async function dismissGroupGamingRoll(): Promise<void> {
-  if (!state.selectedGroupId || state.groupGamingDismissingRoll) {
-    return;
-  }
-
-  state.groupGamingDismissingRoll = true;
-  state.groupGamingError = null;
-  renderActivity();
-  try {
-    state.selectedGroupGaming = await window.kinagent.dismissGroupGamingRoll({
-      groupId: state.selectedGroupId
-    });
-    elements.monitorLine.textContent = "Roll dismissed.";
-  } catch (error) {
-    state.groupGamingError = errorMessage(error);
-  } finally {
-    state.groupGamingDismissingRoll = false;
     renderActivity();
   }
 }

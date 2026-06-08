@@ -336,21 +336,6 @@ export class CampaignStateStore {
     return updated;
   }
 
-  dismissPendingRollRequest(input: { groupId: string }): GroupCampaignState | null {
-    const current = this.getForGroup(input.groupId);
-    if (!current?.pendingRollRequest) {
-      return current;
-    }
-
-    const updated: GroupCampaignState = {
-      ...current,
-      pendingRollRequest: undefined,
-      updatedAt: new Date().toISOString()
-    };
-    this.saveGroupState(input.groupId, updated);
-    return updated;
-  }
-
   storePendingKeeperDecision(input: {
     groupId: string;
     sourceDocumentId: string;

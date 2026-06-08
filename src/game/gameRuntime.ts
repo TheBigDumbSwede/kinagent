@@ -78,6 +78,12 @@ interface KeeperSpeechPacing {
   lastKeeperMessageAt?: string;
 }
 
+interface RollResolutionResult {
+  state: GroupCampaignState;
+  keeperMessageAttempted: boolean;
+  keeperMessageSent: boolean;
+}
+
 interface GameTurnBufferMessage {
   documentId: string;
   timestamp: string | null;
@@ -236,7 +242,7 @@ export class GameRuntime {
       })
     );
     const pacedDecision = applyKeeperSpeechPacing(policyDecision, preference.automationMode, keeperSpeechPacing);
-    const updated = this.options.campaignStates.applyDecision({
+    const applied = this.options.campaignStates.applyDecision({
       groupId: group.groupId,
       campaign,
       mysteryId: currentState.mysteryId,
@@ -244,6 +250,12 @@ export class GameRuntime {
       automationMode: preference.automationMode,
       decision: pacedDecision
     });
+    const rollResolution = await this.resolveRollFromStateIfPending({
+      group,
+      state: applied,
+      automationMode: preference.automationMode
+    });
+    const updated = rollResolution?.state ?? applied;
     const keeperMessageSuppressed = Boolean(policyDecision.keeperMessage && !pacedDecision.keeperMessage);
     this.options.logger.info("Group Gaming decision applied.", {
       groupId: group.groupId,
@@ -255,6 +267,7 @@ export class GameRuntime {
       keeperMessagePresent: Boolean(pacedDecision.keeperMessage),
       keeperMessageSuppressed,
       keeperSpeechPacingReason: keeperMessageSuppressed ? keeperSpeechPacing.reason : undefined,
+      rollResolved: Boolean(rollResolution),
       pendingDecision: Boolean(updated.pendingDecision)
     });
     this.checkpointTurnBuffer(group.groupId, turnParcel);
@@ -275,6 +288,15 @@ export class GameRuntime {
       this.options.onPendingDecision?.(updated);
     }
 
+    if (rollResolution) {
+      return {
+        gameHandled: true,
+        keeperMessageAttempted: rollResolution.keeperMessageAttempted,
+        keeperMessageSent: rollResolution.keeperMessageSent,
+        keeperMessageSuppressed
+      };
+    }
+
     if (preference.automationMode === "autonomous" && pacedDecision.keeperMessage) {
       const keeperMessageAttempted = true;
       const keeperMessageSent = await this.sendKeeperMessage(
@@ -285,25 +307,12 @@ export class GameRuntime {
           source: "autonomous"
         }
       );
-      const rollResolved = await this.resolveAutonomousRollIfPending(group);
       return {
         gameHandled: true,
         keeperMessageAttempted,
-        keeperMessageSent: keeperMessageSent || rollResolved,
+        keeperMessageSent,
         keeperMessageSuppressed
       };
-    }
-
-    if (preference.automationMode === "autonomous") {
-      const rollResolved = await this.resolveAutonomousRollIfPending(group);
-      if (rollResolved) {
-        return {
-          gameHandled: true,
-          keeperMessageAttempted: true,
-          keeperMessageSent: true,
-          keeperMessageSuppressed
-        };
-      }
     }
 
     return {
@@ -323,7 +332,7 @@ export class GameRuntime {
       throw new Error("The pending game decision has no Keeper message to send.");
     }
 
-    const sent = await this.sendKeeperMessage(
+    const sendResult = await this.sendKeeperMessageWithResult(
       group,
       state.pendingDecision.sourceDocumentId,
       state.pendingDecision.keeperMessage,
@@ -331,9 +340,21 @@ export class GameRuntime {
         source: "approved-suggestion"
       }
     );
-    if (!sent) {
+    if (!sendResult.ok) {
       throw new Error("Keeper suggestion could not be sent to the Group.");
     }
+    this.options.campaignStates.markRollResultSent({
+      groupId: group.groupId,
+      sourceDocumentId: state.pendingDecision.sourceDocumentId,
+      message: state.pendingDecision.keeperMessage,
+      sent: {
+        ok: sendResult.ok,
+        status: sendResult.status,
+        requestId: sendResult.requestId,
+        idempotencyKey: sendResult.idempotencyKey,
+        ...(sendResult.responseText ? { responseText: sendResult.responseText } : {})
+      }
+    });
 
     const updated = this.options.campaignStates.getForGroup(group.groupId);
     if (!updated) {
@@ -342,16 +363,19 @@ export class GameRuntime {
     return updated;
   }
 
-  async resolvePendingGroupRoll(group: KindroidGroup): Promise<GroupCampaignState> {
-    const state = this.options.campaignStates.getForGroup(group.groupId);
-    if (!state?.pendingRollRequest) {
-      throw new Error("No pending roll is available for this Group.");
+  private async resolveRollFromStateIfPending(input: {
+    group: KindroidGroup;
+    state: GroupCampaignState;
+    automationMode: GamingAutomationMode;
+  }): Promise<RollResolutionResult | null> {
+    const pending = input.state.pendingRollRequest;
+    if (!pending) {
+      return null;
     }
 
-    const pending = state.pendingRollRequest;
     const result = resolvePbtARoll(pending.request, { roller: this.diceRoller });
     const recorded = this.options.campaignStates.recordRollResult({
-      groupId: group.groupId,
+      groupId: input.group.groupId,
       sourceDocumentId: pending.sourceDocumentId,
       automationMode: pending.automationMode,
       request: pending.request,
@@ -363,21 +387,48 @@ export class GameRuntime {
     }
     this.options.onStateUpdated?.(recorded);
 
+    if (input.automationMode === "observe") {
+      return {
+        state: recorded,
+        keeperMessageAttempted: false,
+        keeperMessageSent: false
+      };
+    }
+
     const narration =
       (await this.requestPostRollKeeperNarration({
-        group,
+        group: input.group,
         state: recorded,
         pending,
         result
       })) ?? fallbackPostRollNarration(result);
     const message = formatKeeperMessageForGroupChat(`${rollResultPrefix(result)} ${narration.keeperMessage}`);
-    const sendResult = await this.sendKeeperMessageWithResult(group, pending.sourceDocumentId, message, {
+
+    if (input.automationMode === "suggest") {
+      const pendingDecision =
+        this.options.campaignStates.storePendingKeeperDecision({
+          groupId: input.group.groupId,
+          sourceDocumentId: pending.sourceDocumentId,
+          automationMode: input.automationMode,
+          keeperMessage: message,
+          confidence: pending.confidence,
+          reason: narration.reason ?? pending.reason
+        }) ?? recorded;
+      this.options.onStateUpdated?.(pendingDecision);
+      return {
+        state: pendingDecision,
+        keeperMessageAttempted: false,
+        keeperMessageSent: false
+      };
+    }
+
+    const sendResult = await this.sendKeeperMessageWithResult(input.group, pending.sourceDocumentId, message, {
       source: "roll-result",
       triggerAiResponse: false
     });
     if (!sendResult.ok) {
       this.options.logger.warn("Group Gaming post-roll Keeper message send failed.", {
-        groupId: group.groupId,
+        groupId: input.group.groupId,
         sourceDocumentId: pending.sourceDocumentId,
         status: sendResult.status,
         responseText: sendResult.responseText
@@ -386,7 +437,7 @@ export class GameRuntime {
 
     const updated =
       this.options.campaignStates.markRollResultSent({
-        groupId: group.groupId,
+        groupId: input.group.groupId,
         sourceDocumentId: pending.sourceDocumentId,
         message,
         sent: {
@@ -398,16 +449,11 @@ export class GameRuntime {
         }
       }) ?? recorded;
     this.options.onStateUpdated?.(updated);
-    return updated;
-  }
-
-  dismissPendingGroupRoll(group: KindroidGroup): GroupCampaignState {
-    const updated = this.options.campaignStates.dismissPendingRollRequest({ groupId: group.groupId });
-    if (!updated) {
-      throw new Error("Group campaign state was not available for this Group.");
-    }
-    this.options.onStateUpdated?.(updated);
-    return updated;
+    return {
+      state: updated,
+      keeperMessageAttempted: true,
+      keeperMessageSent: sendResult.ok
+    };
   }
 
   private async handleGameCommand(input: {
@@ -766,24 +812,6 @@ export class GameRuntime {
     this.turnBuffers.delete(groupId);
   }
 
-  private async resolveAutonomousRollIfPending(group: KindroidGroup): Promise<boolean> {
-    const state = this.options.campaignStates.getForGroup(group.groupId);
-    if (!state?.pendingRollRequest) {
-      return false;
-    }
-
-    try {
-      const updated = await this.resolvePendingGroupRoll(group);
-      return updated.rollHistory.at(-1)?.sent?.ok === true;
-    } catch (error) {
-      this.options.logger.warn("Group Gaming autonomous roll resolution failed.", {
-        groupId: group.groupId,
-        error: error instanceof Error ? error.message : String(error)
-      });
-      return false;
-    }
-  }
-
   private prunedTurnBuffer(groupId: string, timestamp: string | null | undefined): GameTurnBuffer {
     const current = this.turnBuffers.get(groupId) ?? { messages: [], seenDocumentIds: [] };
     const pruned = {
@@ -1124,7 +1152,7 @@ function normalizePostRollKeeperNarration(input: unknown): PostRollKeeperNarrati
 }
 
 function stripRollSummaryPrefix(value: string | undefined): string | undefined {
-  const normalized = value?.replace(/^\(?\s*roll\s*:\s*[^.)]+[.)]\s*/i, "").trim();
+  const normalized = value?.replace(/^\(?\s*(?:roll|outcome|result)\s*:\s*[^.)]+[.)]\s*/i, "").trim();
   return normalized || undefined;
 }
 
