@@ -1581,11 +1581,14 @@ function renderGroupGamingTab(selectedGroup: GroupSummary): void {
   elements.groupGamingApproveButton.disabled =
     state.groupGamingApproving || !state.selectedGroupGaming?.activeState?.pendingDecision?.keeperMessage;
   elements.groupGamingImportButton.disabled = state.groupGamingImporting;
-  elements.groupGamingStatusLine.textContent = preference.enabled
-    ? "Gaming is enabled for this Group. State changes stay local; Suggest waits for approval before sending Keeper messages."
-    : "Gaming is disabled for this Group.";
+  const activeState = state.selectedGroupGaming?.activeState;
+  elements.groupGamingStatusLine.textContent = !preference.enabled
+    ? "Gaming is disabled for this Group."
+    : activeState?.status === "completed"
+      ? "Mystery is complete. Use /reset-mystery to restart local progress or select a different mystery."
+      : "Gaming is enabled for this Group. State changes stay local; Suggest waits for approval before sending Keeper messages.";
   renderCampaignSummary(selectedCampaign, selectedMystery);
-  renderGroupGamingState();
+  renderGroupGamingState(selectedMystery);
   renderDetailStats([
     { label: "Group", value: selectedGroup.name || state.selectedGroupId || "Unknown" },
     { label: "Gaming", value: preference.enabled ? "Enabled" : "Off" },
@@ -1642,7 +1645,7 @@ function renderCampaignSummary(
   }
 }
 
-function renderGroupGamingState(): void {
+function renderGroupGamingState(mystery: CampaignPackSummary["mysteries"][number] | undefined): void {
   elements.groupGamingStateList.replaceChildren();
   const campaignState = state.selectedGroupGaming?.activeState;
   if (!campaignState) {
@@ -1650,16 +1653,23 @@ function renderGroupGamingState(): void {
     return;
   }
 
+  const latestNote = campaignState.notes.at(-1);
   elements.groupGamingStateList.append(
-    gamingStatePill(`State: ${campaignState.status}`),
-    gamingStatePill(`Countdown: ${campaignState.currentCountdownIndex}`),
-    gamingStatePill(`Clues: ${campaignState.discoveredClueIds.length}`),
-    gamingStatePill(`Threats: ${campaignState.revealedThreatIds?.length ?? 0}`),
+    gamingStatePill(`State: ${statusLabel(campaignState.status)}`),
+    gamingStatePill(`Countdown: ${countWithTotal(campaignState.currentCountdownIndex, mystery?.countdownStages)}`),
+    gamingStatePill(`Clues: ${countWithTotal(campaignState.discoveredClueIds.length, mystery?.clueCount)}`),
+    gamingStatePill(`Threats: ${countWithTotal(campaignState.revealedThreatIds?.length ?? 0, mystery?.threatCount)}`),
     gamingStatePill(`NPCs: ${campaignState.revealedNpcIds.length}`),
     gamingStatePill(`Locations: ${campaignState.visitedLocationIds.length}`),
     gamingStatePill(campaignState.pendingDecision ? "Keeper: Pending" : "Keeper: Clear"),
     gamingStatePill(campaignState.pendingRollRequest ? "Roll: Pending" : "Roll: Clear")
   );
+  if (campaignState.status === "completed") {
+    elements.groupGamingStateList.append(gamingStatePill("Ending: Complete"));
+  }
+  if (latestNote) {
+    elements.groupGamingStateList.append(gamingStatePill(`Latest note: ${compactStatusText(latestNote)}`));
+  }
   if (campaignState.pendingRollRequest) {
     elements.groupGamingStateList.append(gamingStatePill(pendingRollLabel(campaignState.pendingRollRequest)));
   }
@@ -1677,6 +1687,31 @@ function renderGroupGamingState(): void {
       gamingStatePill(`Keeper suggestion: ${campaignState.pendingDecision.keeperMessage}`)
     );
   }
+}
+
+function statusLabel(status: GroupCampaignStateSummary["status"]): string {
+  if (status === "initialized") {
+    return "Initialized";
+  }
+  if (status === "active") {
+    return "Active";
+  }
+  if (status === "paused") {
+    return "Paused";
+  }
+  return "Completed";
+}
+
+function countWithTotal(value: number, total: number | undefined): string {
+  if (typeof total !== "number" || total <= 0) {
+    return String(value);
+  }
+  return `${value}/${total}`;
+}
+
+function compactStatusText(value: string): string {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  return normalized.length > 120 ? `${normalized.slice(0, 117)}...` : normalized;
 }
 
 function pendingRollLabel(roll: NonNullable<GroupCampaignStateSummary["pendingRollRequest"]>): string {

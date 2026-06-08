@@ -202,6 +202,36 @@ export class CampaignStateStore {
     return next;
   }
 
+  complete(input: {
+    groupId: string;
+    campaign: CampaignPack;
+    mysteryId?: string;
+    sourceDocumentId?: string;
+  }): GroupCampaignState {
+    const current = this.ensureInitialized({
+      groupId: input.groupId,
+      campaign: input.campaign,
+      mysteryId: input.mysteryId
+    });
+    if (input.sourceDocumentId && isProcessedSourceDocument(current, input.sourceDocumentId)) {
+      return current;
+    }
+
+    const now = new Date().toISOString();
+    const updated: GroupCampaignState = {
+      ...current,
+      status: "completed",
+      pendingDecision: undefined,
+      pendingRollRequest: undefined,
+      updatedAt: now,
+      processedSourceDocumentIds: input.sourceDocumentId
+        ? appendProcessedSourceDocumentId(current.processedSourceDocumentIds, input.sourceDocumentId)
+        : current.processedSourceDocumentIds
+    };
+    this.saveGroupState(input.groupId, updated);
+    return updated;
+  }
+
   applyDecision(input: {
     groupId: string;
     campaign: CampaignPack;

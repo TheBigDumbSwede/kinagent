@@ -112,6 +112,8 @@ Group Gaming also recognizes explicit user-originated group commands:
 
 - `/start-mystery` starts the selected campaign/mystery.
 - `/reset-mystery` clears local progress and restarts the selected mystery.
+- `/end-mystery` marks the selected mystery complete and queues or sends a closing Keeper note according to the
+  automation mode.
 
 Only user messages execute these commands. Mystery intros are generated from spoiler-free public briefing data and do not
 include hidden truth, threat data, countdowns, or hidden clues.

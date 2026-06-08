@@ -135,6 +135,26 @@ export class GameRuntime {
       });
     }
 
+    const currentState = this.options.campaignStates.ensureInitialized({
+      groupId: group.groupId,
+      campaign,
+      mysteryId: preference.mysteryId
+    });
+    if (currentState.status === "completed") {
+      this.options.logger.info("Skipping Group Gaming event because the mystery is completed.", {
+        groupId: group.groupId,
+        documentId: notification.documentId,
+        campaignId: campaign.id,
+        mysteryId: currentState.mysteryId
+      });
+      return {
+        gameHandled: true,
+        keeperMessageAttempted: false,
+        keeperMessageSent: false,
+        keeperMessageSuppressed: true
+      };
+    }
+
     if (!this.options.config.hermes.enabled || !this.options.config.hermes.apiKey) {
       this.options.logger.warn("Group Gaming event skipped because Hermes is not configured.", {
         groupId: group.groupId,
@@ -143,11 +163,6 @@ export class GameRuntime {
       return emptyGameGroupChatResult();
     }
 
-    const currentState = this.options.campaignStates.ensureInitialized({
-      groupId: group.groupId,
-      campaign,
-      mysteryId: preference.mysteryId
-    });
     const eventPolicy = gameEventPolicy(notification, preference.automationMode);
     if (currentState.processedSourceDocumentIds.includes(notification.documentId)) {
       this.options.logger.info("Skipping duplicate Group Gaming source document.", {
@@ -455,21 +470,8 @@ export class GameRuntime {
       });
       return handledGameGroupChatResult();
     }
-    const updated =
-      input.command.type === "reset_mystery"
-        ? this.options.campaignStates.resetInitialized({
-            groupId: input.group.groupId,
-            campaign: input.campaign,
-            mysteryId: input.mysteryId,
-            sourceDocumentId: input.notification.documentId
-          })
-        : this.options.campaignStates.activate({
-            groupId: input.group.groupId,
-            campaign: input.campaign,
-            mysteryId: input.mysteryId,
-            sourceDocumentId: input.notification.documentId
-          });
-    if (input.command.type === "reset_mystery") {
+    const updated = this.applyGameCommandState(input);
+    if (input.command.type === "reset_mystery" || input.command.type === "end_mystery") {
       this.turnBuffer.clear(input.group.groupId);
     }
     this.options.onStateUpdated?.(updated);
@@ -490,6 +492,10 @@ export class GameRuntime {
         keeperMessageSent: false,
         keeperMessageSuppressed: true
       };
+    }
+
+    if (input.command.type === "end_mystery") {
+      return this.handleEndMysteryKeeperMessage(input, updated);
     }
 
     if (!this.options.config.hermes.enabled || !this.options.config.hermes.apiKey) {
@@ -560,6 +566,90 @@ export class GameRuntime {
         triggerAiResponse: false
       }
     );
+    return {
+      gameHandled: true,
+      keeperMessageAttempted: true,
+      keeperMessageSent,
+      keeperMessageSuppressed: !keeperMessageSent
+    };
+  }
+
+  private applyGameCommandState(input: {
+    group: KindroidGroup;
+    notification: KindroidGroupChatChangeNotification;
+    command: GameCommand;
+    campaign: LoadedCampaignPack;
+    mysteryId?: string;
+  }): GroupCampaignState {
+    if (input.command.type === "reset_mystery") {
+      return this.options.campaignStates.resetInitialized({
+        groupId: input.group.groupId,
+        campaign: input.campaign,
+        mysteryId: input.mysteryId,
+        sourceDocumentId: input.notification.documentId
+      });
+    }
+    if (input.command.type === "end_mystery") {
+      return this.options.campaignStates.complete({
+        groupId: input.group.groupId,
+        campaign: input.campaign,
+        mysteryId: input.mysteryId,
+        sourceDocumentId: input.notification.documentId
+      });
+    }
+    return this.options.campaignStates.activate({
+      groupId: input.group.groupId,
+      campaign: input.campaign,
+      mysteryId: input.mysteryId,
+      sourceDocumentId: input.notification.documentId
+    });
+  }
+
+  private async handleEndMysteryKeeperMessage(
+    input: {
+      group: KindroidGroup;
+      notification: KindroidGroupChatChangeNotification;
+      automationMode: GamingAutomationMode;
+    },
+    state: GroupCampaignState
+  ): Promise<GameGroupChatResult> {
+    const keeperMessage = completionKeeperMessage(state);
+    if (input.automationMode === "suggest") {
+      const pending = this.options.campaignStates.storePendingKeeperDecision({
+        groupId: input.group.groupId,
+        sourceDocumentId: input.notification.documentId,
+        automationMode: input.automationMode,
+        keeperMessage,
+        confidence: "high",
+        reason: "User completed the selected mystery."
+      });
+      if (pending) {
+        this.options.onStateUpdated?.(pending);
+        this.options.onPendingDecision?.(pending);
+      }
+      return {
+        gameHandled: true,
+        keeperMessageAttempted: true,
+        keeperMessageSent: false,
+        keeperMessageSuppressed: true
+      };
+    }
+
+    const pending = this.options.campaignStates.storePendingKeeperDecision({
+      groupId: input.group.groupId,
+      sourceDocumentId: input.notification.documentId,
+      automationMode: input.automationMode,
+      keeperMessage,
+      confidence: "high",
+      reason: "User completed the selected mystery."
+    });
+    if (pending) {
+      this.options.onStateUpdated?.(pending);
+    }
+    const keeperMessageSent = await this.sendKeeperMessage(input.group, input.notification.documentId, keeperMessage, {
+      source: "autonomous",
+      triggerAiResponse: false
+    });
     return {
       gameHandled: true,
       keeperMessageAttempted: true,
@@ -1100,6 +1190,14 @@ function fallbackPostRollNarration(result: ReturnType<typeof resolvePbtARoll>): 
         ? "The action lands cleanly, and the scene opens a little wider."
         : "The consequence lands immediately, and the situation turns worse."
   };
+}
+
+function completionKeeperMessage(state: GroupCampaignState): string {
+  const clueCount = state.discoveredClueIds.length;
+  const noteCount = state.notes.length;
+  const detail =
+    clueCount > 0 || noteCount > 0 ? ` ${clueCount} clue(s) and ${noteCount} note(s) remain in the case log.` : "";
+  return formatKeeperMessageForGroupChat(`The mystery is marked complete.${detail}`);
 }
 
 export function formatKeeperMessageForGroupChat(value: string): string {

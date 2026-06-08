@@ -306,6 +306,7 @@ describe("game campaign foundations", () => {
   it("parses only explicit Group Gaming commands", () => {
     expect(parseGameCommand("/start-mystery")).toEqual({ type: "start_mystery" });
     expect(parseGameCommand("  /RESET-MYSTERY  ")).toEqual({ type: "reset_mystery" });
+    expect(parseGameCommand("/end-mystery")).toEqual({ type: "end_mystery" });
     expect(parseGameCommand("/start-mystery now")).toBeNull();
     expect(parseGameCommand("please /start-mystery")).toBeNull();
     expect(parseGameCommand("/unknown-command")).toBeNull();
@@ -704,7 +705,7 @@ describe("game campaign foundations", () => {
     });
   });
 
-  it("does not execute start or reset commands from Kin group messages", async () => {
+  it("does not execute game commands from Kin group messages", async () => {
     const config = testConfig({ hermesEnabled: true });
     const preferences = GroupGamingPreferenceStore.fromConfig(config);
     preferences.set("group-a", {
@@ -723,12 +724,118 @@ describe("game campaign foundations", () => {
 
     await runtime.handleGroupChatChanged(group(), groupNotification("doc-ai-start", "/start-mystery", "ai"));
     await runtime.handleGroupChatChanged(group(), groupNotification("doc-ai-reset", "/reset-mystery", "ai"));
+    await runtime.handleGroupChatChanged(group(), groupNotification("doc-ai-end", "/end-mystery", "ai"));
 
     expect(payloads).toHaveLength(0);
     expect(store.getForGroup("group-a")).toMatchObject({
       status: "initialized",
       currentCountdownIndex: 0,
       processedSourceDocumentIds: []
+    });
+  });
+
+  it("ends a mystery from a user command and stores a suggest-mode ending", async () => {
+    const config = testConfig({ hermesEnabled: true });
+    const preferences = GroupGamingPreferenceStore.fromConfig(config);
+    preferences.set("group-a", {
+      enabled: true,
+      campaignId: "prairie-saints-and-municipal-ghosts",
+      mysteryId: "the-thing-in-the-floodway",
+      automationMode: "suggest"
+    });
+    const store = CampaignStateStore.fromConfig(config);
+    store.applyDecision({
+      groupId: "group-a",
+      campaign: loadCampaignPacks(config)[0],
+      mysteryId: "the-thing-in-the-floodway",
+      sourceDocumentId: "doc-progress",
+      automationMode: "suggest",
+      decision: {
+        keeperMessage: "Pending old Keeper note.",
+        rollRequest: {
+          moveId: "interpret_evidence",
+          modifier: 1
+        },
+        stateChanges: [
+          { type: "advance_countdown", by: 2 },
+          { type: "add_discovered_clue", clueId: "static-phone" },
+          { type: "append_note", text: "The group named the thing in the water." }
+        ]
+      }
+    });
+    const payloads: Array<Record<string, unknown>> = [];
+    const runtime = testGameRuntime(config, preferences, store, hermesIntroResponse(), undefined, {
+      onFetch: (_input, init) => {
+        payloads.push(gamePromptPayloadFromFetchInit(init));
+      }
+    });
+
+    const result = await runtime.handleGroupChatChanged(group(), groupNotification("doc-end", "/end-mystery"));
+
+    expect(result).toMatchObject({
+      gameHandled: true,
+      keeperMessageAttempted: true,
+      keeperMessageSent: false,
+      keeperMessageSuppressed: true
+    });
+    expect(payloads).toHaveLength(0);
+    expect(store.getForGroup("group-a")).toMatchObject({
+      status: "completed",
+      currentCountdownIndex: 2,
+      discoveredClueIds: ["static-phone"],
+      notes: ["The group named the thing in the water."],
+      processedSourceDocumentIds: ["doc-progress", "doc-end"],
+      pendingDecision: {
+        sourceDocumentId: "doc-end",
+        keeperMessage: "*The mystery is marked complete. 1 clue(s) and 1 note(s) remain in the case log.*",
+        automationMode: "suggest",
+        confidence: "high",
+        reason: "User completed the selected mystery."
+      }
+    });
+    expect(store.getForGroup("group-a")?.pendingRollRequest).toBeUndefined();
+  });
+
+  it("skips ordinary group turns after completion but still allows reset", async () => {
+    const config = testConfig({ hermesEnabled: true });
+    const preferences = GroupGamingPreferenceStore.fromConfig(config);
+    preferences.set("group-a", {
+      enabled: true,
+      campaignId: "prairie-saints-and-municipal-ghosts",
+      mysteryId: "the-thing-in-the-floodway",
+      automationMode: "observe"
+    });
+    const store = CampaignStateStore.fromConfig(config);
+    store.complete({
+      groupId: "group-a",
+      campaign: loadCampaignPacks(config)[0],
+      mysteryId: "the-thing-in-the-floodway",
+      sourceDocumentId: "doc-end"
+    });
+    const payloads: Array<Record<string, unknown>> = [];
+    const runtime = testGameRuntime(config, preferences, store, hermesDecisionResponse(), undefined, {
+      onFetch: (_input, init) => {
+        payloads.push(gamePromptPayloadFromFetchInit(init));
+      }
+    });
+
+    const skipped = await runtime.handleGroupChatChanged(
+      group(),
+      groupNotification("doc-after", "I check the tunnel.")
+    );
+    await runtime.handleGroupChatChanged(group(), groupNotification("doc-reset", "/reset-mystery"));
+
+    expect(skipped).toMatchObject({
+      gameHandled: true,
+      keeperMessageAttempted: false,
+      keeperMessageSent: false,
+      keeperMessageSuppressed: true
+    });
+    expect(payloads).toHaveLength(0);
+    expect(store.getForGroup("group-a")).toMatchObject({
+      status: "active",
+      currentCountdownIndex: 0,
+      processedSourceDocumentIds: ["doc-reset"]
     });
   });
 

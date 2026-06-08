@@ -157,6 +157,76 @@ describe("CampaignStateStore", () => {
     });
   });
 
+  it("completes a mystery while preserving progress and clearing pending work", () => {
+    vi.setSystemTime(new Date("2026-06-06T00:00:00.000Z"));
+    const store = CampaignStateStore.fromConfig(testConfig());
+    const campaign = campaignPack();
+    store.applyDecision({
+      groupId: "group-a",
+      campaign,
+      mysteryId: "fixture-mystery",
+      sourceDocumentId: "doc-progress",
+      automationMode: "suggest",
+      decision: {
+        keeperMessage: "A pending Keeper note.",
+        rollRequest: {
+          moveId: "interpret_evidence",
+          modifier: 1
+        },
+        stateChanges: [
+          { type: "advance_countdown", by: 2 },
+          { type: "add_discovered_clue", clueId: "known-clue" },
+          { type: "append_note", text: "The group has the ending." }
+        ]
+      }
+    });
+    store.recordRollResult({
+      groupId: "group-a",
+      sourceDocumentId: "doc-roll",
+      automationMode: "suggest",
+      request: {
+        moveId: "interpret_evidence",
+        modifier: 1
+      },
+      result: resolvePbtARoll(
+        {
+          moveId: "interpret_evidence",
+          modifier: 1
+        },
+        { roller: createSequenceDiceRoller([4, 5]) }
+      ),
+      message: "The roll resolves the scene."
+    });
+
+    vi.setSystemTime(new Date("2026-06-06T00:05:00.000Z"));
+    const state = store.complete({
+      groupId: "group-a",
+      campaign,
+      mysteryId: "fixture-mystery",
+      sourceDocumentId: "doc-end"
+    });
+
+    expect(state).toMatchObject({
+      status: "completed",
+      updatedAt: "2026-06-06T00:05:00.000Z",
+      currentCountdownIndex: 2,
+      discoveredClueIds: ["known-clue"],
+      notes: ["The group has the ending."],
+      processedSourceDocumentIds: ["doc-progress", "doc-end"]
+    });
+    expect(state.pendingDecision).toBeUndefined();
+    expect(state.pendingRollRequest).toBeUndefined();
+    expect(state.rollHistory).toHaveLength(1);
+
+    const duplicate = store.complete({
+      groupId: "group-a",
+      campaign,
+      mysteryId: "fixture-mystery",
+      sourceDocumentId: "doc-end"
+    });
+    expect(duplicate).toEqual(state);
+  });
+
   it("marks Keeper messages sent and clears pending Keeper decisions", () => {
     const store = CampaignStateStore.fromConfig(testConfig());
     const campaign = campaignPack();
