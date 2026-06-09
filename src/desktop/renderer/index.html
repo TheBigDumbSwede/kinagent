@@ -94,6 +94,9 @@
           <button class="detail-tab" type="button" data-mode="app-settings" role="tab" aria-selected="false">
             Settings
           </button>
+          <button class="detail-tab" type="button" data-mode="browser-integration" role="tab" aria-selected="false">
+            Browser
+          </button>
         </div>
         <div id="kinDetailTabs" class="detail-tabs kin-detail-tabs" role="tablist" aria-label="Kin detail tabs" hidden>
           <button class="detail-tab active" type="button" data-mode="settings" role="tab" aria-selected="true">
@@ -338,6 +341,51 @@
                   <div class="button-row narrow">
                     <button id="appSettingsSaveButton" type="submit">Save Settings</button>
                   </div>
+                </form>
+                <form id="browserIntegrationPanel" class="app-settings-form" hidden>
+                  <section class="settings-section">
+                    <h2>Browser Integration</h2>
+                    <p class="panel-note">
+                      Native messaging lets the browser extension talk to this installed Kinagent app. The extension
+                      must still be installed separately in the browser.
+                    </p>
+                    <div class="settings-grid three">
+                      <label class="checkbox-label">
+                        <input id="browserIntegrationChromeInput" type="checkbox" />
+                        <span>Chrome</span>
+                      </label>
+                      <label class="checkbox-label">
+                        <input id="browserIntegrationEdgeInput" type="checkbox" />
+                        <span>Edge</span>
+                      </label>
+                      <label class="checkbox-label">
+                        <input id="browserIntegrationFirefoxInput" type="checkbox" />
+                        <span>Firefox</span>
+                      </label>
+                    </div>
+                    <div class="settings-grid two">
+                      <label>
+                        Chrome / Edge extension IDs
+                        <input id="browserIntegrationChromiumIdsInput" type="text" autocomplete="off" />
+                      </label>
+                      <label>
+                        Firefox extension IDs
+                        <input id="browserIntegrationFirefoxIdsInput" type="text" autocomplete="off" />
+                      </label>
+                    </div>
+                    <p id="browserIntegrationStatusLine" class="panel-note"></p>
+                  </section>
+                  <section class="settings-section">
+                    <h2>Registration</h2>
+                    <dl id="browserIntegrationStatusList" class="status-list browser-status-list"></dl>
+                    <div class="button-row form-action-row">
+                      <button id="browserIntegrationSaveButton" type="submit">Save</button>
+                      <button id="browserIntegrationRegisterButton" class="secondary" type="button">Register</button>
+                      <button id="browserIntegrationUnregisterButton" class="secondary" type="button">
+                        Unregister
+                      </button>
+                    </div>
+                  </section>
                 </form>
                 <form id="voiceForm" class="voice-form" hidden>
                   <section class="settings-section">

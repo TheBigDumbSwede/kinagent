@@ -19,6 +19,8 @@ export interface TabNavigationState {
   selectedHistoryHash: string | null;
   appSettings: unknown | null;
   appSettingsLoading: boolean;
+  browserIntegration: unknown | null;
+  browserIntegrationLoading: boolean;
   selectedKinVoice: unknown | null;
   voiceLoading: boolean;
   selectedKinAmbient: unknown | null;
@@ -43,6 +45,7 @@ export interface TabNavigationContext {
   loadKinVoice: (kinId: string) => void;
   loadKinAmbient: (kinId: string) => void;
   renderActivity: () => void;
+  loadBrowserIntegration: () => void;
 }
 
 export function handleDetailTabsClick(context: TabNavigationContext, event: Event): void {
@@ -205,6 +208,10 @@ export function tabForMode(state: TabNavigationState, mode: string | undefined):
     return "app-settings";
   }
 
+  if (mode === "browser-integration") {
+    return "browser-integration";
+  }
+
   if (mode === "settings") {
     return state.selectedGroupId ? currentGroupSettingTab(state) : currentSettingTab(state);
   }
@@ -219,6 +226,10 @@ export function tabForMode(state: TabNavigationState, mode: string | undefined):
 export function modeForTab(tab: string | undefined): string {
   if (tab === "app-settings") {
     return "app-settings";
+  }
+
+  if (tab === "browser-integration") {
+    return "browser-integration";
   }
 
   if (tab && settingTabKeys.has(tab)) {
@@ -247,6 +258,10 @@ export function currentGroupSettingTab(state: Pick<TabNavigationState, "activeTa
 export function subtitleForDetailMode(mode: string): string {
   if (mode === "app-settings") {
     return "Application configuration";
+  }
+
+  if (mode === "browser-integration") {
+    return "Browser extension integration";
   }
 
   if (mode === "voice") {
@@ -304,6 +319,14 @@ function loadActiveTabDependencies(context: TabNavigationContext, options: { all
     !state.appSettingsLoading
   ) {
     context.loadAppSettings();
+  }
+  if (
+    options.allowAppSettings &&
+    state.activeTab === "browser-integration" &&
+    !state.browserIntegration &&
+    !state.browserIntegrationLoading
+  ) {
+    context.loadBrowserIntegration();
   }
   if (state.activeTab === "voice" && state.selectedKinId && !state.selectedKinVoice && !state.voiceLoading) {
     context.loadKinVoice(state.selectedKinId);

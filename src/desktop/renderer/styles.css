@@ -222,6 +222,14 @@ h2 {
   grid-template-columns: 72px minmax(0, 1fr);
 }
 
+.browser-status-list div {
+  grid-template-columns: 84px minmax(0, 1fr);
+}
+
+.browser-status-list dd {
+  overflow-wrap: anywhere;
+}
+
 .kin-list {
   display: grid;
   gap: 8px;

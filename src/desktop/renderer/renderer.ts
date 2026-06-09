@@ -3,6 +3,12 @@ import { renderGroupExportTab, renderKinAnalyzeTab, renderKinExportTab } from ".
 import { renderAppSettingsTab, saveAppSettings } from "./appSettingsForm.js";
 import { createVoiceAudioPlayer, type VoiceAudioPayload } from "./audioPlayback.js";
 import {
+  registerBrowserIntegration,
+  renderBrowserIntegrationTab,
+  saveBrowserIntegration,
+  unregisterBrowserIntegration
+} from "./browserIntegrationPanel.js";
+import {
   capturedDetailStats,
   renderDetailContent as renderCapturedDetailContent,
   renderDetailEmpty as renderCapturedDetailEmpty
@@ -52,6 +58,8 @@ import { silentSoundscapeState, type SoundscapeState } from "../../soundscape/So
 import type {
   AppSettingsResult,
   AppSettingsFormValue,
+  BrowserIntegrationSettings,
+  BrowserIntegrationStatus,
   CapturedFieldSummary,
   CapturedGroupSummary,
   CapturedKinSummary,
@@ -157,6 +165,10 @@ interface RendererState {
   appSettingsLoading: boolean;
   appSettingsSaving: boolean;
   appSettingsError: string | null;
+  browserIntegration: BrowserIntegrationStatus | null;
+  browserIntegrationLoading: boolean;
+  browserIntegrationSaving: boolean;
+  browserIntegrationError: string | null;
   soundscapeUpdates: Record<string, ScopedSoundscapeUpdate>;
   activeSoundscapeKey: string | null;
   lastSoundscapeCue: { key: string; label: string; expiresAt: number } | null;
@@ -192,6 +204,7 @@ interface RendererElements {
   fieldContent: HTMLElement;
   localSceneActions: HTMLElement;
   appSettingsForm: HTMLFormElement;
+  browserIntegrationPanel: HTMLFormElement;
   appSettingsStatusLine: HTMLElement;
   appSettingsSaveButton: HTMLButtonElement;
   settingsPathLine: HTMLElement;
@@ -216,6 +229,16 @@ interface RendererElements {
   settingsElevenLabsApiKeyInput: HTMLInputElement;
   settingsElevenLabsModelInput: HTMLInputElement;
   settingsElevenLabsOutputFormatInput: HTMLInputElement;
+  browserIntegrationChromeInput: HTMLInputElement;
+  browserIntegrationEdgeInput: HTMLInputElement;
+  browserIntegrationFirefoxInput: HTMLInputElement;
+  browserIntegrationChromiumIdsInput: HTMLInputElement;
+  browserIntegrationFirefoxIdsInput: HTMLInputElement;
+  browserIntegrationStatusLine: HTMLElement;
+  browserIntegrationStatusList: HTMLElement;
+  browserIntegrationSaveButton: HTMLButtonElement;
+  browserIntegrationRegisterButton: HTMLButtonElement;
+  browserIntegrationUnregisterButton: HTMLButtonElement;
   voiceForm: HTMLFormElement;
   groupAudioPanel: HTMLElement;
   groupSoundscapeEnabledInput: HTMLInputElement;
@@ -330,6 +353,10 @@ interface RendererApi {
   getStatus(): Promise<DesktopStatus>;
   getSettings(): Promise<AppSettingsResult>;
   saveSettings(input: AppSettingsFormValue): Promise<AppSettingsResult>;
+  getBrowserIntegrationStatus(): Promise<BrowserIntegrationStatus>;
+  saveBrowserIntegrationSettings(input: BrowserIntegrationSettings): Promise<BrowserIntegrationStatus>;
+  registerBrowserIntegration(input: BrowserIntegrationSettings): Promise<BrowserIntegrationStatus>;
+  unregisterBrowserIntegration(): Promise<BrowserIntegrationStatus>;
   openKindroid(): Promise<unknown>;
   startLogin(): Promise<unknown>;
   saveLogin(): Promise<unknown>;
@@ -461,6 +488,10 @@ const state: RendererState = {
   appSettingsLoading: false,
   appSettingsSaving: false,
   appSettingsError: null,
+  browserIntegration: null,
+  browserIntegrationLoading: false,
+  browserIntegrationSaving: false,
+  browserIntegrationError: null,
   soundscapeUpdates: {},
   activeSoundscapeKey: null,
   lastSoundscapeCue: null,
@@ -506,6 +537,7 @@ const elements: RendererElements = {
   fieldContent: query<HTMLElement>("#fieldContent"),
   localSceneActions: query<HTMLElement>("#localSceneActions"),
   appSettingsForm: query<HTMLFormElement>("#appSettingsForm"),
+  browserIntegrationPanel: query<HTMLFormElement>("#browserIntegrationPanel"),
   appSettingsStatusLine: query<HTMLElement>("#appSettingsStatusLine"),
   appSettingsSaveButton: query<HTMLButtonElement>("#appSettingsSaveButton"),
   settingsPathLine: query<HTMLElement>("#settingsPathLine"),
@@ -530,6 +562,16 @@ const elements: RendererElements = {
   settingsElevenLabsApiKeyInput: query<HTMLInputElement>("#settingsElevenLabsApiKeyInput"),
   settingsElevenLabsModelInput: query<HTMLInputElement>("#settingsElevenLabsModelInput"),
   settingsElevenLabsOutputFormatInput: query<HTMLInputElement>("#settingsElevenLabsOutputFormatInput"),
+  browserIntegrationChromeInput: query<HTMLInputElement>("#browserIntegrationChromeInput"),
+  browserIntegrationEdgeInput: query<HTMLInputElement>("#browserIntegrationEdgeInput"),
+  browserIntegrationFirefoxInput: query<HTMLInputElement>("#browserIntegrationFirefoxInput"),
+  browserIntegrationChromiumIdsInput: query<HTMLInputElement>("#browserIntegrationChromiumIdsInput"),
+  browserIntegrationFirefoxIdsInput: query<HTMLInputElement>("#browserIntegrationFirefoxIdsInput"),
+  browserIntegrationStatusLine: query<HTMLElement>("#browserIntegrationStatusLine"),
+  browserIntegrationStatusList: query<HTMLElement>("#browserIntegrationStatusList"),
+  browserIntegrationSaveButton: query<HTMLButtonElement>("#browserIntegrationSaveButton"),
+  browserIntegrationRegisterButton: query<HTMLButtonElement>("#browserIntegrationRegisterButton"),
+  browserIntegrationUnregisterButton: query<HTMLButtonElement>("#browserIntegrationUnregisterButton"),
   voiceForm: query<HTMLFormElement>("#voiceForm"),
   groupAudioPanel: query<HTMLElement>("#groupAudioPanel"),
   groupSoundscapeEnabledInput: query<HTMLInputElement>("#groupSoundscapeEnabledInput"),
@@ -656,6 +698,17 @@ function appSettingsContext() {
   };
 }
 
+function browserIntegrationContext() {
+  return {
+    state,
+    elements,
+    api: window.kinagent,
+    renderActivity,
+    renderDetailEmpty,
+    loadBrowserIntegration
+  };
+}
+
 function renderDetailEmpty(message: string): void {
   renderCapturedDetailEmpty(capturedDetailContext(), message);
 }
@@ -731,6 +784,9 @@ function tabNavigationContext() {
     elements,
     loadAppSettings: () => {
       void loadAppSettings();
+    },
+    loadBrowserIntegration: () => {
+      void loadBrowserIntegration();
     },
     loadKinVoice: (kinId: string) => {
       void loadKinVoice(kinId);
@@ -821,6 +877,16 @@ elements.voiceProviderInput.addEventListener("change", () => {
 elements.appSettingsForm.addEventListener("submit", (event) => {
   event.preventDefault();
   void saveAppSettings(appSettingsContext());
+});
+elements.browserIntegrationPanel.addEventListener("submit", (event) => {
+  event.preventDefault();
+  void saveBrowserIntegration(browserIntegrationContext());
+});
+elements.browserIntegrationRegisterButton.addEventListener("click", () => {
+  void registerBrowserIntegration(browserIntegrationContext());
+});
+elements.browserIntegrationUnregisterButton.addEventListener("click", () => {
+  void unregisterBrowserIntegration(browserIntegrationContext());
 });
 elements.voiceForm.addEventListener("submit", (event) => {
   event.preventDefault();
@@ -1285,11 +1351,27 @@ async function loadAppSettings(): Promise<void> {
   }
 }
 
+async function loadBrowserIntegration(): Promise<void> {
+  state.browserIntegrationLoading = true;
+  state.browserIntegrationError = null;
+  renderActivity();
+
+  try {
+    state.browserIntegration = await window.kinagent.getBrowserIntegrationStatus();
+  } catch (error) {
+    state.browserIntegrationError = errorMessage(error);
+  } finally {
+    state.browserIntegrationLoading = false;
+    renderActivity();
+  }
+}
+
 function renderActivity(): void {
   elements.previouslyOnPanel.hidden = true;
   elements.previouslyOnPanel.replaceChildren();
   elements.localSceneActions.hidden = true;
   elements.localSceneActions.replaceChildren();
+  elements.browserIntegrationPanel.hidden = true;
   const activeTab = state.activeTab || "monitor";
   const activeMode = modeForTab(activeTab);
   const isMonitor = activeMode === "monitor";
@@ -1302,6 +1384,7 @@ function renderActivity(): void {
   const isAnalyze = activeMode === "analyze";
   const isExport = activeMode === "export";
   const isAppSettings = activeMode === "app-settings";
+  const isBrowserIntegration = activeMode === "browser-integration";
 
   renderJournalTabBadge(journalSuggestionsContext());
   renderTabNavigation(tabNavigationContext(), activeMode);
@@ -1323,6 +1406,13 @@ function renderActivity(): void {
     elements.activityTitle.textContent = "Settings";
     elements.monitorLine.textContent = "Application configuration";
     renderAppSettingsTab(appSettingsContext());
+    return;
+  }
+
+  if (isBrowserIntegration) {
+    elements.activityTitle.textContent = "Browser";
+    elements.monitorLine.textContent = "Browser extension integration";
+    renderBrowserIntegrationTab(browserIntegrationContext());
     return;
   }
 
