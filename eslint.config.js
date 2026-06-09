@@ -46,6 +46,20 @@ export default tseslint.config(
     }
   },
   {
+    files: ["browser-extension/**/*.js"],
+    languageOptions: {
+      ecmaVersion: "latest",
+      sourceType: "script",
+      globals: {
+        chrome: "readonly",
+        clearTimeout: "readonly",
+        document: "readonly",
+        setTimeout: "readonly",
+        window: "readonly"
+      }
+    }
+  },
+  {
     files: ["src/desktop/preload.cjs"],
     languageOptions: {
       ecmaVersion: "latest",

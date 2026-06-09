@@ -236,6 +236,8 @@ interface RendererElements {
   browserIntegrationFirefoxIdsInput: HTMLInputElement;
   browserIntegrationStatusLine: HTMLElement;
   browserIntegrationStatusList: HTMLElement;
+  browserIntegrationNoticeButton: HTMLButtonElement;
+  browserIntegrationReloadButton: HTMLButtonElement;
   browserIntegrationSaveButton: HTMLButtonElement;
   browserIntegrationRegisterButton: HTMLButtonElement;
   browserIntegrationUnregisterButton: HTMLButtonElement;
@@ -357,6 +359,8 @@ interface RendererApi {
   saveBrowserIntegrationSettings(input: BrowserIntegrationSettings): Promise<BrowserIntegrationStatus>;
   registerBrowserIntegration(input: BrowserIntegrationSettings): Promise<BrowserIntegrationStatus>;
   unregisterBrowserIntegration(): Promise<BrowserIntegrationStatus>;
+  testBrowserIntegrationNotice(): Promise<BrowserIntegrationStatus>;
+  testBrowserIntegrationReload(): Promise<BrowserIntegrationStatus>;
   openKindroid(): Promise<unknown>;
   startLogin(): Promise<unknown>;
   saveLogin(): Promise<unknown>;
@@ -569,6 +573,8 @@ const elements: RendererElements = {
   browserIntegrationFirefoxIdsInput: query<HTMLInputElement>("#browserIntegrationFirefoxIdsInput"),
   browserIntegrationStatusLine: query<HTMLElement>("#browserIntegrationStatusLine"),
   browserIntegrationStatusList: query<HTMLElement>("#browserIntegrationStatusList"),
+  browserIntegrationNoticeButton: query<HTMLButtonElement>("#browserIntegrationNoticeButton"),
+  browserIntegrationReloadButton: query<HTMLButtonElement>("#browserIntegrationReloadButton"),
   browserIntegrationSaveButton: query<HTMLButtonElement>("#browserIntegrationSaveButton"),
   browserIntegrationRegisterButton: query<HTMLButtonElement>("#browserIntegrationRegisterButton"),
   browserIntegrationUnregisterButton: query<HTMLButtonElement>("#browserIntegrationUnregisterButton"),
@@ -887,6 +893,12 @@ elements.browserIntegrationRegisterButton.addEventListener("click", () => {
 });
 elements.browserIntegrationUnregisterButton.addEventListener("click", () => {
   void unregisterBrowserIntegration(browserIntegrationContext());
+});
+elements.browserIntegrationNoticeButton.addEventListener("click", () => {
+  void runBrowserIntegrationTest("Sending browser notice", () => window.kinagent.testBrowserIntegrationNotice());
+});
+elements.browserIntegrationReloadButton.addEventListener("click", () => {
+  void runBrowserIntegrationTest("Queuing Kindroid reload", () => window.kinagent.testBrowserIntegrationReload());
 });
 elements.voiceForm.addEventListener("submit", (event) => {
   event.preventDefault();
@@ -1362,6 +1374,25 @@ async function loadBrowserIntegration(): Promise<void> {
     state.browserIntegrationError = errorMessage(error);
   } finally {
     state.browserIntegrationLoading = false;
+    renderActivity();
+  }
+}
+
+async function runBrowserIntegrationTest(
+  statusText: string,
+  action: () => Promise<BrowserIntegrationStatus>
+): Promise<void> {
+  state.browserIntegrationSaving = true;
+  state.browserIntegrationError = null;
+  elements.browserIntegrationStatusLine.textContent = statusText;
+
+  try {
+    state.browserIntegration = await action();
+    elements.monitorLine.textContent = statusText;
+  } catch (error) {
+    state.browserIntegrationError = errorMessage(error);
+  } finally {
+    state.browserIntegrationSaving = false;
     renderActivity();
   }
 }

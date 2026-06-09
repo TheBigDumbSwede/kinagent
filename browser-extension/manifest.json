@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "Kinagent Browser Bridge",
+  "version": "0.1.0",
+  "description": "Connects Kindroid browser tabs to the local Kinagent desktop app.",
+  "permissions": ["nativeMessaging", "tabs"],
+  "host_permissions": ["https://kindroid.ai/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://kindroid.ai/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "Kinagent"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "kinagent-browser-bridge@kinagent.local",
+      "strict_min_version": "109.0"
+    }
+  }
+}

@@ -52,6 +52,13 @@ export interface BrowserIntegrationTargetStatus {
   error?: string;
 }
 
+export interface BrowserBridgeStatus {
+  connected: boolean;
+  queuedCommandCount: number;
+  lastReadyAt: string | null;
+  lastPollAt: string | null;
+}
+
 export interface BrowserIntegrationStatus {
   ok?: boolean;
   platform: string;
@@ -62,6 +69,7 @@ export interface BrowserIntegrationStatus {
   settings: BrowserIntegrationSettings;
   validationErrors: string[];
   targets: BrowserIntegrationTargetStatus[];
+  bridge?: BrowserBridgeStatus;
 }
 
 export interface KinagentApi {
@@ -69,6 +77,8 @@ export interface KinagentApi {
   saveBrowserIntegrationSettings(input: BrowserIntegrationSettings): Promise<BrowserIntegrationStatus>;
   registerBrowserIntegration(input: BrowserIntegrationSettings): Promise<BrowserIntegrationStatus>;
   unregisterBrowserIntegration(): Promise<BrowserIntegrationStatus>;
+  testBrowserIntegrationNotice(): Promise<BrowserIntegrationStatus>;
+  testBrowserIntegrationReload(): Promise<BrowserIntegrationStatus>;
   analyzeKin(input: { kinId: string }): Promise<KinAnalysisResult>;
   exportKinChat(input: ChatExportRequest & { kinId: string }): Promise<ChatExportResult>;
   exportGroupChat(input: ChatExportRequest & { groupId: string }): Promise<ChatExportResult>;

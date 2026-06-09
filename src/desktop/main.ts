@@ -25,6 +25,7 @@ import {
   registerBrowserIntegration,
   saveBrowserIntegrationSettings,
   unregisterBrowserIntegration,
+  type BrowserIntegrationStatus,
   type BrowserIntegrationRegistrationPaths
 } from "../browserIntegration/browserIntegrationRegistration.js";
 import { nativeHostExecutablePath } from "../browserIntegration/nativeMessaging.js";
@@ -209,15 +210,27 @@ function registerIpcHandlers(): void {
   ipcMain.handle("app:get-status", async () => getDesktopStatus());
   ipcMain.handle("settings:get", async () => getDesktopSettings());
   ipcMain.handle("settings:save", async (_event, input: unknown) => saveDesktopSettings(input));
-  ipcMain.handle("browser-integration:get-status", async () => readBrowserIntegrationStatus(browserIntegrationPaths()));
+  ipcMain.handle("browser-integration:get-status", async () => getBrowserIntegrationStatus());
   ipcMain.handle("browser-integration:save-settings", async (_event, input: unknown) => {
     await saveBrowserIntegrationSettings(browserIntegrationPaths().settingsPath, input);
-    return readBrowserIntegrationStatus(browserIntegrationPaths());
+    return getBrowserIntegrationStatus();
   });
-  ipcMain.handle("browser-integration:register", async (_event, input: unknown) =>
-    registerBrowserIntegration(browserIntegrationPaths(), input)
-  );
-  ipcMain.handle("browser-integration:unregister", async () => unregisterBrowserIntegration(browserIntegrationPaths()));
+  ipcMain.handle("browser-integration:register", async (_event, input: unknown) => {
+    await registerBrowserIntegration(browserIntegrationPaths(), input);
+    return getBrowserIntegrationStatus();
+  });
+  ipcMain.handle("browser-integration:unregister", async () => {
+    await unregisterBrowserIntegration(browserIntegrationPaths());
+    return getBrowserIntegrationStatus();
+  });
+  ipcMain.handle("browser-integration:test-notice", async () => {
+    browserBridgeServer?.queueCommand("show-notice", { text: "Kinagent browser integration is connected." });
+    return getBrowserIntegrationStatus();
+  });
+  ipcMain.handle("browser-integration:test-reload", async () => {
+    browserBridgeServer?.queueCommand("reload-kindroid");
+    return getBrowserIntegrationStatus();
+  });
   ipcMain.handle("app:open-kindroid", async () => {
     await shell.openExternal("https://kindroid.ai/");
     return { ok: true };
@@ -401,6 +414,21 @@ function browserIntegrationPaths(): BrowserIntegrationRegistrationPaths {
     hostPath: app.isPackaged
       ? nativeHostExecutablePath(process.resourcesPath)
       : path.join(launchCwd, "dist", "native-host", "win-x64", "kinagent-native-host.exe")
+  };
+}
+
+async function getBrowserIntegrationStatus(): Promise<
+  BrowserIntegrationStatus & { bridge: ReturnType<BrowserBridgeServer["status"]> }
+> {
+  const status = await readBrowserIntegrationStatus(browserIntegrationPaths());
+  return {
+    ...status,
+    bridge: browserBridgeServer?.status() ?? {
+      connected: false,
+      queuedCommandCount: 0,
+      lastReadyAt: null,
+      lastPollAt: null
+    }
   };
 }
 

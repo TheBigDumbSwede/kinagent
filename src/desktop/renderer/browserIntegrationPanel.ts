@@ -34,6 +34,8 @@ export interface BrowserIntegrationElements {
   browserIntegrationFirefoxIdsInput: HTMLInputElement;
   browserIntegrationStatusLine: HTMLElement;
   browserIntegrationStatusList: HTMLElement;
+  browserIntegrationNoticeButton: HTMLButtonElement;
+  browserIntegrationReloadButton: HTMLButtonElement;
   browserIntegrationSaveButton: HTMLButtonElement;
   browserIntegrationRegisterButton: HTMLButtonElement;
   browserIntegrationUnregisterButton: HTMLButtonElement;
@@ -49,6 +51,8 @@ export interface BrowserIntegrationContext {
     | "saveBrowserIntegrationSettings"
     | "registerBrowserIntegration"
     | "unregisterBrowserIntegration"
+    | "testBrowserIntegrationNotice"
+    | "testBrowserIntegrationReload"
   >;
   renderActivity: () => void;
   renderDetailEmpty: (message: string) => void;
@@ -159,10 +163,14 @@ function populateBrowserIntegrationPanel(context: BrowserIntegrationContext, sta
     { label: "Host", value: status.hostExists ? "Ready" : "Missing" },
     { label: "Platform", value: status.platform === "win32" ? "Windows" : status.platform },
     { label: "Registered", value: `${targetCount}/${status.targets.length}` },
-    { label: "Host name", value: status.hostName }
+    { label: "Host name", value: status.hostName },
+    { label: "Extension", value: status.bridge?.connected ? "Connected" : "Not connected" },
+    { label: "Queued", value: String(status.bridge?.queuedCommandCount ?? 0) }
   ]);
   renderTargetStatusList(elements.browserIntegrationStatusList, status.targets);
 
+  elements.browserIntegrationNoticeButton.disabled = state.browserIntegrationSaving;
+  elements.browserIntegrationReloadButton.disabled = state.browserIntegrationSaving;
   elements.browserIntegrationSaveButton.disabled = state.browserIntegrationSaving;
   elements.browserIntegrationRegisterButton.disabled =
     state.browserIntegrationSaving ||

@@ -31,6 +31,54 @@ describe("browser bridge server", () => {
     });
   });
 
+  it("returns queued browser commands only when the extension polls", () => {
+    const commands = [
+      {
+        id: "command-1",
+        type: "show-notice" as const,
+        createdAt: "2026-06-08T00:00:00.000Z",
+        text: "Kinagent is connected."
+      }
+    ];
+
+    expect(handleBrowserBridgeMessage({ id: "poll-1", type: "poll" }, { commands })).toEqual({
+      id: "poll-1",
+      type: "commands",
+      ok: true,
+      commands
+    });
+  });
+
+  it("tracks extension activity and drains queued commands", async () => {
+    if (process.platform !== "win32") {
+      return;
+    }
+
+    const pipeName = `kinagent-browser-bridge-test-${process.pid}-${Date.now()}`;
+    const server = new BrowserBridgeServer({ logger: silentLogger, pipeName });
+    await server.start();
+
+    try {
+      expect(server.status(new Date()).connected).toBe(false);
+      const command = server.queueCommand("reload-kindroid");
+      await expect(sendPipeRequest(pipeName, { id: "ready-1", type: "browser-ready" })).resolves.toEqual({
+        id: "ready-1",
+        type: "ack",
+        ok: true
+      });
+      expect(server.status(new Date()).connected).toBe(true);
+      await expect(sendPipeRequest(pipeName, { id: "poll-1", type: "poll" })).resolves.toEqual({
+        id: "poll-1",
+        type: "commands",
+        ok: true,
+        commands: [command]
+      });
+      expect(server.status(new Date()).queuedCommandCount).toBe(0);
+    } finally {
+      await server.stop();
+    }
+  });
+
   it("rejects unsupported or malformed bridge messages", () => {
     expect(handleBrowserBridgeMessage({ id: "unknown-1", type: "refresh-dom" })).toEqual({
       id: "unknown-1",
