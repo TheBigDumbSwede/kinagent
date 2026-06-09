@@ -1,3 +1,5 @@
+import fs from "node:fs/promises";
+import path from "node:path";
 import { extractFirebaseAppCheckState, loadBrowserSession, summarizeSessionAuth } from "../auth/firebaseSession.js";
 import { captureDocument } from "../capture/capturedValue.js";
 import { captureKindroidState, type CaptureKindroidStateResult } from "../capture/kinStateCapture.js";
@@ -11,7 +13,13 @@ import { KindroidLiveMonitor } from "../firestore/liveMonitor.js";
 import { isRecentOutboundEcho } from "../firestore/messageDedupe.js";
 import { mapKindroidMessage } from "../firestore/messageMapper.js";
 import type { KindroidChatNotification } from "../firestore/types.js";
+import {
+  GroupBackgroundSuggestionStore,
+  type GroupBackgroundSuggestion
+} from "../groupBackground/groupBackgroundSuggestionStore.js";
+import { OpenAiGroupBackgroundImageProvider } from "../groupBackground/openAiImageProvider.js";
 import { createHermesAdapter } from "../hermes/hermesAdapter.js";
+import type { GroupBackgroundContext } from "../hermes/groupBackgroundActionHandler.js";
 import type { ScopedSoundscapeUpdate } from "../hermes/soundscapeActionHandler.js";
 import type { HermesAdapter } from "../hermes/types.js";
 import {
@@ -39,6 +47,7 @@ import { PreviouslyOnStore, type PreviouslyOnBrief } from "../previouslyOn/previ
 import { SoundscapeStateStore, type StoredSoundscapeUpdate } from "../soundscape/soundscapeStateStore.js";
 import type { Logger } from "../util/logger.js";
 import { GroupSubscriptionSupervisor, type GroupSubscriptionStatus } from "./groupSubscriptionSupervisor.js";
+import { GroupBackgroundPrewarmCoordinator } from "./groupBackgroundPrewarmCoordinator.js";
 import { KindroidSessionKeepAlive, type KindroidSessionKeepAliveEvent } from "./kindroidSessionKeepAlive.js";
 import {
   KinSubscriptionSupervisor,
@@ -78,6 +87,12 @@ export type BridgeRuntimeEvent =
   | { channel: "journal-suggestion-created"; payload: JournalSuggestion }
   | { channel: "journal-suggestions-updated"; payload: JournalSuggestion[] }
   | { channel: "chat-dynamism-suggestion-created"; payload: ChatDynamismSuggestion }
+  | { channel: "group-background-suggestion-created"; payload: GroupBackgroundSuggestion }
+  | { channel: "group-background-suggestions-updated"; payload: GroupBackgroundSuggestion[] }
+  | {
+      channel: "group-background-applied";
+      payload: { groupId: string; suggestionId: string; storagePath: string; autonomous: boolean };
+    }
   | { channel: "local-scene-updated"; payload: LocalSceneState }
   | { channel: "previously-on-updated"; payload: PreviouslyOnBrief }
   | { channel: "soundscape-updated"; payload: ScopedSoundscapeUpdate }
@@ -98,6 +113,7 @@ export class BridgeRuntime {
   readonly hermes: HermesAdapter;
   readonly voice: VoiceRuntime;
   readonly journalSuggestions: JournalSuggestionStore;
+  readonly groupBackgroundSuggestions: GroupBackgroundSuggestionStore;
   readonly localScenes: LocalSceneStateStore;
   readonly previouslyOn: PreviouslyOnStore;
   readonly soundscapes: SoundscapeStateStore;
@@ -112,6 +128,7 @@ export class BridgeRuntime {
   private readonly localScenePrewarm: LocalScenePrewarmCoordinator;
   private readonly previouslyOnPrewarm: PreviouslyOnPrewarmCoordinator;
   private readonly soundscapePrewarm: SoundscapePrewarmCoordinator;
+  private readonly groupBackgroundPrewarm: GroupBackgroundPrewarmCoordinator;
   private readonly prewarmCoordinators: PrewarmCoordinatorRegistry;
   private started = false;
   private startupCaptureStarted = false;
@@ -121,6 +138,7 @@ export class BridgeRuntime {
     private readonly dedupeStore: DedupeStore
   ) {
     this.journalSuggestions = JournalSuggestionStore.fromConfig(options.config);
+    this.groupBackgroundSuggestions = GroupBackgroundSuggestionStore.fromConfig(options.config);
     this.localScenes = LocalSceneStateStore.fromConfig(options.config);
     this.previouslyOn = PreviouslyOnStore.fromConfig(options.config);
     this.soundscapes = SoundscapeStateStore.fromConfig(options.config);
@@ -219,6 +237,14 @@ export class BridgeRuntime {
       localScenes: this.localScenes,
       onLocalSceneUpdated: (state) => {
         this.localScenePrewarm.markReady(state);
+        if (state.scope === "group" && state.groupId) {
+          const group = this.resolveGroup(state.groupId);
+          if (group) {
+            void this.groupBackgroundPrewarm.prewarmGroup(group, null, "local-scene-ready", {
+              trigger: { documentId: state.sourceDocumentId, timestamp: state.sourceTimestamp }
+            });
+          }
+        }
         this.emit({ channel: "local-scene-updated", payload: state });
       },
       previouslyOn: this.previouslyOn,
@@ -232,6 +258,19 @@ export class BridgeRuntime {
       onChatDynamismSuggestionCreated: (suggestion) => {
         this.emit({ channel: "chat-dynamism-suggestion-created", payload: suggestion });
       },
+      groupBackgroundSuggestions: this.groupBackgroundSuggestions,
+      onGroupBackgroundSuggestionCreated: (suggestion) => {
+        this.groupBackgroundPrewarm.markReady(suggestion);
+        if (this.options.config.hermes.groupBackgrounds.suggestions.autonomous) {
+          void this.autonomouslyApplyGroupBackgroundSuggestion(suggestion);
+          return;
+        }
+        this.emit({ channel: "group-background-suggestion-created", payload: suggestion });
+        this.emit({
+          channel: "group-background-suggestions-updated",
+          payload: this.pendingGroupBackgroundSuggestions()
+        });
+      },
       onSoundscapeUpdated: (update) => {
         const stored = this.soundscapes.update(update) ?? update;
         this.soundscapePrewarm.markReady(stored);
@@ -244,6 +283,7 @@ export class BridgeRuntime {
         return { min: preference.min, max: preference.max };
       },
       chatDynamismContextProvider: async (notification) => this.chatDynamismContext(notification),
+      groupBackgroundContextProvider: async (notification) => this.groupBackgroundContext(notification),
       soundscapeContextProvider: async (notification) => this.soundscapePrewarm.context(notification)
     });
     this.localScenePrewarm = new LocalScenePrewarmCoordinator({
@@ -272,9 +312,20 @@ export class BridgeRuntime {
       isKnownKin: (kinId) =>
         this.kinSubscriptionSupervisor.statuses().some((subscription) => subscription.kin.aiId === kinId)
     });
+    this.groupBackgroundPrewarm = new GroupBackgroundPrewarmCoordinator({
+      config: options.config,
+      logger: options.logger,
+      hermes: this.hermes,
+      prewarmState: this.prewarmState,
+      onPrewarmStateChanged: (state) => this.emit({ channel: "prewarm-state-updated", payload: state }),
+      isEnabled: () => this.options.config.hermes.groupBackgrounds.suggestions.enabled,
+      groupBackgroundContext: (group, latestSpeakerKinId) =>
+        this.groupBackgroundContextForGroup(group, latestSpeakerKinId)
+    });
     this.prewarmCoordinators.register("localScene", this.localScenePrewarm);
     this.prewarmCoordinators.register("previouslyOn", this.previouslyOnPrewarm);
     this.prewarmCoordinators.register("soundscape", this.soundscapePrewarm);
+    this.prewarmCoordinators.register("groupBackground", this.groupBackgroundPrewarm);
     this.hydratePrewarmReadiness();
     this.voice = new VoiceRuntime({
       config: options.config,
@@ -520,6 +571,15 @@ export class BridgeRuntime {
     return this.journalSuggestions.listReviewable();
   }
 
+  pendingGroupBackgroundSuggestions(): GroupBackgroundSuggestion[] {
+    return this.groupBackgroundSuggestions.listReviewable();
+  }
+
+  updateGroupBackgroundSettings(settings: { enabled: boolean; autonomous: boolean }): void {
+    this.options.config.hermes.groupBackgrounds.suggestions.enabled = settings.enabled;
+    this.options.config.hermes.groupBackgrounds.suggestions.autonomous = settings.enabled && settings.autonomous;
+  }
+
   async forceLocalScenePrewarm(input: { scope: "kin" | "group"; id: string }): Promise<{ ok: true }> {
     return this.forcePrewarm("localScene", input);
   }
@@ -540,6 +600,133 @@ export class BridgeRuntime {
       throw new Error("Enable soundscape for this Group before forcing prewarm.");
     }
     return this.forcePrewarm("soundscape", input);
+  }
+
+  async forceGroupBackgroundPrewarm(input: { groupId: string }): Promise<{ ok: true }> {
+    if (!this.options.config.hermes.groupBackgrounds.suggestions.enabled) {
+      throw new Error("Enable group background suggestions before forcing prewarm.");
+    }
+
+    await this.prewarmCoordinators.forceGroup("groupBackground", this.resolveGroup(input.groupId));
+    return { ok: true };
+  }
+
+  async generateGroupBackgroundImage(input: {
+    suggestionId: string;
+    silent?: boolean;
+  }): Promise<GroupBackgroundSuggestion> {
+    const suggestion = this.groupBackgroundSuggestions.get(input.suggestionId);
+    if (!suggestion) {
+      throw new Error("Group background suggestion not found.");
+    }
+    if (suggestion.status === "stale") {
+      throw new Error("Cannot generate an image for a stale background suggestion.");
+    }
+    if (!this.options.config.hermes.groupBackgrounds.images.enabled) {
+      throw new Error("Enable group background image generation before generating an image.");
+    }
+
+    const provider = new OpenAiGroupBackgroundImageProvider(this.options.config.hermes.groupBackgrounds.images.openai);
+    try {
+      const generated = await provider.generate(suggestion);
+      const imagePath = groupBackgroundImagePath(this.options.config, suggestion.id, Date.now());
+      await fs.mkdir(path.dirname(imagePath), { recursive: true });
+      await fs.writeFile(imagePath, generated.image);
+      const updated = this.groupBackgroundSuggestions.markImageGenerated(suggestion.id, {
+        path: imagePath,
+        mimeType: generated.mimeType,
+        model: generated.model,
+        size: generated.size
+      });
+      if (!input.silent) {
+        this.emit({
+          channel: "group-background-suggestions-updated",
+          payload: this.pendingGroupBackgroundSuggestions()
+        });
+      }
+      this.options.logger.info("Group background image generated.", {
+        groupId: suggestion.groupId,
+        suggestionId: suggestion.id,
+        imagePath,
+        model: generated.model,
+        size: generated.size
+      });
+      return updated;
+    } catch (error) {
+      this.groupBackgroundSuggestions.markImageGenerationFailed(suggestion.id, errorMessage(error));
+      if (!input.silent) {
+        this.emit({
+          channel: "group-background-suggestions-updated",
+          payload: this.pendingGroupBackgroundSuggestions()
+        });
+      }
+      throw error;
+    }
+  }
+
+  async applyGeneratedGroupBackground(input: {
+    suggestionId: string;
+    autonomous?: boolean;
+    silent?: boolean;
+  }): Promise<GroupBackgroundSuggestion> {
+    const suggestion = this.groupBackgroundSuggestions.get(input.suggestionId);
+    if (!suggestion) {
+      throw new Error("Group background suggestion not found.");
+    }
+    if (suggestion.status === "stale") {
+      throw new Error("Cannot apply a stale background suggestion.");
+    }
+    if (!suggestion.generatedImage?.path) {
+      throw new Error("Generate an image before applying the group background.");
+    }
+
+    try {
+      const image = await fs.readFile(suggestion.generatedImage.path);
+      const client = new KindroidClient(this.options.config, this.options.logger);
+      const result = await client.applyGroupBackground({
+        groupId: suggestion.groupId,
+        image,
+        fileName: `${suggestion.id}.png`,
+        contentType: "image/png"
+      });
+      if (!result.ok || !result.storagePath) {
+        throw new Error(
+          `Kindroid group background apply failed with HTTP ${result.status}: ${result.responseText ?? ""}`.trim()
+        );
+      }
+
+      const updated = this.groupBackgroundSuggestions.markApplied(suggestion.id, result.storagePath);
+      if (!input.silent) {
+        this.emit({
+          channel: "group-background-suggestions-updated",
+          payload: this.pendingGroupBackgroundSuggestions()
+        });
+      }
+      this.options.logger.info("Generated group background applied to Kindroid.", {
+        groupId: suggestion.groupId,
+        suggestionId: suggestion.id,
+        storagePath: result.storagePath
+      });
+      this.emit({
+        channel: "group-background-applied",
+        payload: {
+          groupId: suggestion.groupId,
+          suggestionId: suggestion.id,
+          storagePath: result.storagePath,
+          autonomous: Boolean(input.autonomous)
+        }
+      });
+      return updated;
+    } catch (error) {
+      this.groupBackgroundSuggestions.markApplyFailed(suggestion.id, errorMessage(error));
+      if (!input.silent) {
+        this.emit({
+          channel: "group-background-suggestions-updated",
+          payload: this.pendingGroupBackgroundSuggestions()
+        });
+      }
+      throw error;
+    }
   }
 
   private async forcePrewarm(kind: PrewarmKind, input: { scope: "kin" | "group"; id: string }): Promise<{ ok: true }> {
@@ -575,6 +762,15 @@ export class BridgeRuntime {
   dismissJournalSuggestion(id: string): JournalSuggestion {
     const suggestion = this.journalSuggestions.markDismissed(id);
     this.emit({ channel: "journal-suggestions-updated", payload: this.pendingJournalSuggestions() });
+    return suggestion;
+  }
+
+  dismissGroupBackgroundSuggestion(id: string): GroupBackgroundSuggestion {
+    const suggestion = this.groupBackgroundSuggestions.markDismissed(id);
+    this.emit({
+      channel: "group-background-suggestions-updated",
+      payload: this.pendingGroupBackgroundSuggestions()
+    });
     return suggestion;
   }
 
@@ -701,6 +897,7 @@ export class BridgeRuntime {
         desktopPlayback: Boolean(this.options.onVoicePlayback)
       },
       journalSuggestions: this.pendingJournalSuggestions(),
+      groupBackgroundSuggestions: this.pendingGroupBackgroundSuggestions(),
       localScenes: this.localScenes.list(),
       previouslyOn: this.previouslyOn.list(),
       soundscapes: this.soundscapes.list(),
@@ -717,6 +914,9 @@ export class BridgeRuntime {
     }
     for (const soundscape of this.soundscapes.list()) {
       this.soundscapePrewarm.markReady(soundscape);
+    }
+    for (const suggestion of this.groupBackgroundSuggestions.listReviewable()) {
+      this.groupBackgroundPrewarm.markReady(suggestion);
     }
   }
 
@@ -937,6 +1137,10 @@ export class BridgeRuntime {
       documentId,
       groupId: group.groupId
     });
+    const staleGroupBackgroundSuggestions = this.groupBackgroundSuggestions.markSourceDeleted({
+      documentId,
+      groupId: group.groupId
+    });
     if (changedJournalSuggestions.length > 0) {
       this.emit({ channel: "journal-suggestions-updated", payload: this.pendingJournalSuggestions() });
       this.options.logger.info("Marked source-backed journal suggestions after source message deletion.", {
@@ -947,6 +1151,18 @@ export class BridgeRuntime {
         invalidatedJournalSuggestions: changedJournalSuggestions.filter(
           (suggestion) => suggestion.status === "source_invalidated"
         ).length
+      });
+    }
+    if (staleGroupBackgroundSuggestions.length > 0) {
+      this.emit({
+        channel: "group-background-suggestions-updated",
+        payload: this.pendingGroupBackgroundSuggestions()
+      });
+      this.options.logger.info("Marked source-backed group background suggestions after source message deletion.", {
+        scope: "group",
+        groupId: group.groupId,
+        documentId,
+        staleGroupBackgroundSuggestions: staleGroupBackgroundSuggestions.length
       });
     }
   }
@@ -1109,6 +1325,77 @@ export class BridgeRuntime {
     };
   }
 
+  private async groupBackgroundContext(notification: KindroidChatNotification): Promise<GroupBackgroundContext> {
+    const minSignificance = this.options.config.hermes.groupBackgrounds.suggestions.minSignificance;
+    if (
+      notification.type !== "kindroid.group_chat.changed" ||
+      !this.options.config.hermes.groupBackgrounds.suggestions.enabled
+    ) {
+      return {
+        enabledForSource: false,
+        minSignificance
+      };
+    }
+
+    const group = this.groupSubscriptionSupervisor
+      .statuses()
+      .find((subscription) => subscription.group.groupId === notification.groupId)?.group;
+    return this.groupBackgroundContextForGroup(group, notification.aiId);
+  }
+
+  private groupBackgroundContextForGroup(
+    group: KindroidGroup | undefined | null,
+    latestSpeakerKinId: string | null | undefined
+  ): GroupBackgroundContext {
+    const minSignificance = this.options.config.hermes.groupBackgrounds.suggestions.minSignificance;
+    const participantIds = group?.aiIds ?? [];
+    return {
+      enabledForSource: Boolean(group && this.options.config.hermes.groupBackgrounds.suggestions.enabled),
+      minSignificance,
+      groupName: group?.name,
+      latestSpeakerKinId,
+      participants: participantIds.map((aiId) => ({
+        aiId,
+        name: this.resolveKinName(aiId)
+      })),
+      localScene: group?.groupId ? this.localScenes.getForGroup(group.groupId) : undefined,
+      mutation: this.options.config.hermes.groupBackgrounds.suggestions.autonomous
+        ? "autonomous-generate-apply"
+        : "reviewed-prompt-only"
+    };
+  }
+
+  private async autonomouslyApplyGroupBackgroundSuggestion(suggestion: GroupBackgroundSuggestion): Promise<void> {
+    this.options.logger.info("Starting autonomous group background update.", {
+      groupId: suggestion.groupId,
+      suggestionId: suggestion.id,
+      significance: suggestion.significance
+    });
+
+    try {
+      await this.generateGroupBackgroundImage({ suggestionId: suggestion.id, silent: true });
+      const applied = await this.applyGeneratedGroupBackground({
+        suggestionId: suggestion.id,
+        autonomous: true,
+        silent: true
+      });
+      this.groupBackgroundSuggestions.markDismissed(applied.id);
+      this.emit({ channel: "group-background-suggestions-updated", payload: this.pendingGroupBackgroundSuggestions() });
+      this.options.logger.info("Autonomous group background update completed.", {
+        groupId: applied.groupId,
+        suggestionId: applied.id,
+        storagePath: applied.appliedBackgroundPath
+      });
+    } catch (error) {
+      this.options.logger.warn("Autonomous group background update failed.", {
+        groupId: suggestion.groupId,
+        suggestionId: suggestion.id,
+        error: errorMessage(error)
+      });
+      this.emit({ channel: "group-background-suggestions-updated", payload: this.pendingGroupBackgroundSuggestions() });
+    }
+  }
+
   private resolveDecryptionKey(): string {
     if (this.options.config.kindroid.uid) {
       return this.options.config.kindroid.uid;
@@ -1207,6 +1494,7 @@ export interface BridgeRuntimeStatus {
   groupRefresh: ReturnType<GroupSubscriptionSupervisor["refreshState"]>;
   voice: ReturnType<typeof voiceProviderConfigured> & { desktopPlayback: boolean };
   journalSuggestions: JournalSuggestion[];
+  groupBackgroundSuggestions: GroupBackgroundSuggestion[];
   localScenes: LocalSceneState[];
   previouslyOn: PreviouslyOnBrief[];
   soundscapes: StoredSoundscapeUpdate[];
@@ -1261,6 +1549,18 @@ function fieldStringArray(value: unknown): string[] {
 
 function normalizedText(value: string): string {
   return value.replace(/\s+/g, " ").trim();
+}
+
+function groupBackgroundImagePath(config: AppConfig, suggestionId: string, nonce = 0): string {
+  return path.join(
+    path.dirname(path.resolve(config.bridge.sqlitePath)),
+    "group-background-images",
+    `${suggestionId.replace(/[^\w.-]+/g, "-")}-${nonce}.png`
+  );
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function sameStringSet(left: string[], right: string[]): boolean {

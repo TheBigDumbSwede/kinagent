@@ -413,6 +413,19 @@ to that source's cached soundscape, or silence until Hermes generates one.
 TODO for a later sound pass: sample-based or generated event cues could be added for discrete scene moments, but this
 prototype deliberately avoids door creaks, voice murmurs, footsteps, and Foley.
 
+Group background prompt proposals are an experimental reviewed path for group chats. When Hermes sees a substantial
+visual scene change, it may emit `propose_group_background_image` with a target scene, evidence, significance score, and
+image-generation prompt. Kinagent stores that as a pending desktop review item under the Group > Background tab. This
+panel can force a background prewarm and can generate a local PNG from a reviewed proposal with OpenAI image generation.
+Generated images are saved under the app data directory and shown for review in the Background tab. From there, the user
+can explicitly apply a generated image to Kindroid; Kinagent uploads the PNG, registers it as a background image, and
+updates the selected group's background settings from the latest group state. It does not mutate Kindroid background
+settings automatically unless autonomous group background updates are enabled. In autonomous mode, Kinagent accepts a
+qualifying proposal, generates the image, applies it to Kindroid, reloads the Kindroid browser UI through the browser
+extension bridge when available, and dismisses the review item after a successful apply. Background proposals also have a
+group prewarm path based on the current group local-scene snapshot, so Group Gaming can handle a live turn without
+forcing background generation to hunt through older chat history.
+
 Use a non-default config file:
 
 ```powershell
@@ -544,6 +557,20 @@ hermes:
     enabled: true
     throttleMessages: 20
     strongEventBypass: true
+  groupBackgrounds:
+    suggestions:
+      enabled: true
+      autonomous: false
+      minMessagesBetweenProposals: 12
+      minSignificance: 0.7
+    images:
+      enabled: true
+      provider: "openai"
+      openai:
+        apiKey: ""
+        model: "gpt-image-1"
+        size: "1536x1024"
+        quality: "medium"
   chatDynamism:
     suggestions:
       enabled: true

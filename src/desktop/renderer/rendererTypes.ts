@@ -82,6 +82,10 @@ export interface KinagentApi {
   analyzeKin(input: { kinId: string }): Promise<KinAnalysisResult>;
   exportKinChat(input: ChatExportRequest & { kinId: string }): Promise<ChatExportResult>;
   exportGroupChat(input: ChatExportRequest & { groupId: string }): Promise<ChatExportResult>;
+  listGroupBackgroundSuggestions(): Promise<GroupBackgroundSuggestionSummary[]>;
+  dismissGroupBackgroundSuggestion(input: { id: string }): Promise<unknown>;
+  generateGroupBackgroundImage(input: { id: string }): Promise<unknown>;
+  applyGroupBackgroundImage(input: { id: string }): Promise<unknown>;
   getCapturedGroup(input: { groupId: string }): Promise<CapturedGroupSummary & { fields?: CapturedFieldSummary[] }>;
   saveSettings(input: AppSettingsFormValue): Promise<AppSettingsResult>;
   setKinVoicePreference(input: { kinId: string; preference: KinVoicePreference }): Promise<KinVoicePreferenceResult>;
@@ -99,6 +103,8 @@ export interface KinagentApi {
   forceLocalScenePrewarm(input: { scope: "kin" | "group"; id: string }): Promise<{ ok: boolean }>;
   forceSoundscapePrewarm(input: { scope: "kin" | "group"; id: string }): Promise<{ ok: boolean }>;
   forcePreviouslyOnPrewarm(input: { scope: "kin" | "group"; id: string }): Promise<{ ok: boolean }>;
+  forceGroupBackgroundPrewarm(input: { groupId: string }): Promise<{ ok: boolean }>;
+  setGroupBackgroundSettings(input: GroupBackgroundSettings): Promise<GroupBackgroundSettingsResult>;
   setKinAmbientPreference(input: {
     kinId: string;
     enabled: boolean;
@@ -144,6 +150,49 @@ export interface KinSummary {
 export interface GroupSummary {
   groupId?: string | null;
   name?: string | null;
+}
+
+export interface GroupBackgroundSuggestionSummary {
+  id: string;
+  groupId: string;
+  aiId?: string | null;
+  title: string;
+  prompt: string;
+  negativePrompt?: string;
+  targetCurrentScene?: string;
+  sceneSummary?: string;
+  visualStyle?: string;
+  reason: string;
+  evidence?: string[];
+  significance: number;
+  sourceDocumentId: string;
+  sourceTimestamp?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  status: "pending" | "dismissed" | "stale";
+  generatedImage?: {
+    path: string;
+    mimeType: string;
+    model: string;
+    size: string;
+    generatedAt: string;
+  };
+  generationError?: string;
+  generationErrorAt?: string;
+  appliedBackgroundPath?: string;
+  appliedAt?: string;
+  applyError?: string;
+  applyErrorAt?: string;
+}
+
+export interface GroupBackgroundSettings {
+  enabled: boolean;
+  autonomous: boolean;
+}
+
+export interface GroupBackgroundSettingsResult {
+  ok?: boolean;
+  settings?: GroupBackgroundSettings;
 }
 
 export interface KinSubscriptionSummary {
@@ -468,6 +517,8 @@ export interface AppSettingsFormValue {
   hermesJournalSuggestionsEnabled: boolean;
   hermesJournalStrongEventBypass: boolean;
   hermesJournalThrottleMessages: number;
+  hermesGroupBackgroundsEnabled: boolean;
+  hermesGroupBackgroundsAutonomous: boolean;
   voiceEnabled: boolean;
   voiceProvider: string;
   openAiApiKey: string;
@@ -500,6 +551,14 @@ export interface AppConfigView {
       enabled?: boolean;
       throttleMessages?: number;
       strongEventBypass?: boolean;
+    };
+    groupBackgrounds?: {
+      suggestions?: {
+        enabled?: boolean;
+        autonomous?: boolean;
+        minMessagesBetweenProposals?: number;
+        minSignificance?: number;
+      };
     };
   };
   voice?: {

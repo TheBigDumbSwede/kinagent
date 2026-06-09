@@ -2437,6 +2437,24 @@ function testConfig(options: { hermesEnabled?: boolean } = {}): AppConfig {
         throttleMessages: 20,
         strongEventBypass: true
       },
+      groupBackgrounds: {
+        suggestions: {
+          enabled: true,
+          autonomous: false,
+          minMessagesBetweenProposals: 12,
+          minSignificance: 0.7
+        },
+        images: {
+          enabled: true,
+          provider: "openai",
+          openai: {
+            apiKey: "",
+            model: "gpt-image-1",
+            size: "1536x1024",
+            quality: "medium"
+          }
+        }
+      },
       chatDynamism: {
         suggestions: {
           enabled: false

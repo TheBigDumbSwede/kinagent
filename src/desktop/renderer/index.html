@@ -124,6 +124,9 @@
           <button class="detail-tab" type="button" data-mode="group-local-scene" role="tab" aria-selected="false">
             Scene
           </button>
+          <button class="detail-tab" type="button" data-mode="group-background" role="tab" aria-selected="false">
+            Background
+          </button>
           <button class="detail-tab" type="button" data-mode="group-audio" role="tab" aria-selected="false">
             Audio
           </button>
@@ -285,6 +288,20 @@
                       <label>
                         Throttle messages
                         <input id="settingsHermesJournalThrottleInput" type="number" min="1" step="1" />
+                      </label>
+                    </div>
+                  </section>
+
+                  <section class="settings-section">
+                    <h2>Group Backgrounds</h2>
+                    <div class="settings-grid two">
+                      <label class="checkbox-label">
+                        <input id="settingsGroupBackgroundEnabledInput" type="checkbox" />
+                        <span>Enable background proposals</span>
+                      </label>
+                      <label class="checkbox-label">
+                        <input id="settingsGroupBackgroundAutonomousInput" type="checkbox" />
+                        <span>Autonomous apply</span>
                       </label>
                     </div>
                   </section>
@@ -472,6 +489,22 @@
                         Force Prewarm
                       </button>
                     </div>
+                  </section>
+                </div>
+                <div id="groupBackgroundPanel" class="kin-action-panel" hidden>
+                  <section class="settings-section">
+                    <h2>Background</h2>
+                    <label class="checkbox-label">
+                      <input id="groupBackgroundEnabledInput" type="checkbox" />
+                      <span>Enable background proposals</span>
+                    </label>
+                    <label class="checkbox-label">
+                      <input id="groupBackgroundAutonomousInput" type="checkbox" />
+                      <span>Autonomous generate and apply</span>
+                    </label>
+                    <p id="groupBackgroundStatusLine" class="panel-note"></p>
+                    <div id="groupBackgroundActions" class="button-row form-action-row"></div>
+                    <div id="groupBackgroundSuggestionList" class="background-suggestion-list"></div>
                   </section>
                 </div>
                 <div id="groupGamingPanel" class="kin-action-panel" hidden>

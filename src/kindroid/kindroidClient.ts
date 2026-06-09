@@ -1,7 +1,11 @@
+import crypto from "node:crypto";
 import type { AppConfig } from "../config/types.js";
 import { loadFreshFirebaseAuth } from "../auth/firebaseSession.js";
+import { FirestoreRestClient } from "../firestore/firestoreRestClient.js";
 import type { Logger } from "../util/logger.js";
 import type {
+  ApplyKindroidGroupBackgroundInput,
+  ApplyKindroidGroupBackgroundResult,
   BreakKindroidChatInput,
   BreakKindroidChatResult,
   BreakKindroidGroupChatInput,
@@ -37,14 +41,17 @@ import {
   buildCreateGroupAiResponsePayload,
   buildDeleteJournalEntryPayload,
   buildGetGroupTurnPayload,
+  buildApplyGroupBackgroundPayload,
   buildRewindMessagesPayload,
   buildSendGroupMessagePayload,
   buildSendMessagePayload,
   buildUpdateCurrentScenePayload,
   buildUpdateChatDynamismPayload,
   buildUpdateGroupCurrentScenePayload,
-  buildUpdateIdentityPayload
+  buildUpdateIdentityPayload,
+  validateApplyGroupBackgroundInput
 } from "./payloads.js";
+import { decryptKindroidValue } from "./kindroidCrypto.js";
 
 const sendMessageUrl = "https://api.kindroid.ai/v1/send-message";
 const groupUserMessageUrl = "https://api.kindroid.ai/v1/groupchats-user-message";
@@ -58,6 +65,7 @@ const updateGroupChatUrl = "https://api.kindroid.ai/v1/groupchats-update";
 const journalCreateUrl = "https://api.kindroid.ai/v1/journal-create";
 const journalDeleteUrl = "https://api.kindroid.ai/v1/journal-delete";
 const getChatMessagesUrl = "https://api.kindroid.ai/v1/get-chat-messages";
+const storagePresignUrl = "https://api.kindroid.ai/v1/storage-presign";
 
 export class KindroidClient {
   private fallbackAuthWarningLogged = false;
@@ -337,6 +345,79 @@ export class KindroidClient {
     };
   }
 
+  async applyGroupBackground(input: ApplyKindroidGroupBackgroundInput): Promise<ApplyKindroidGroupBackgroundResult> {
+    validateApplyGroupBackgroundInput(input);
+
+    const uid = await new FirestoreRestClient(this.config, this.logger).resolveUid();
+    const safeFileName = sanitizeFileName(input.fileName);
+    const storagePath = `users/${uid}/referenceimages/${Date.now()}-${crypto.randomUUID()}-${safeFileName}`;
+    const presign = await this.presignStorageUpload({
+      path: storagePath,
+      contentType: input.contentType,
+      contentLength: input.image.length
+    });
+
+    const uploadResponse = await fetch(presign.url, {
+      method: "PUT",
+      headers: {
+        "Content-Type": input.contentType,
+        "Content-Length": String(input.image.length)
+      },
+      body: new Uint8Array(input.image)
+    });
+    if (!uploadResponse.ok) {
+      const responseText = await uploadResponse.text();
+      return {
+        status: uploadResponse.status,
+        ok: false,
+        storagePath,
+        uploadStatus: uploadResponse.status,
+        responseText: responseText.slice(0, 1000)
+      };
+    }
+
+    const registerResponse = await fetch(updateInfoUrl, {
+      method: "POST",
+      headers: await this.authHeaders(),
+      body: JSON.stringify({ uploaded_background_images: [storagePath] })
+    });
+    const registerText = await registerResponse.text();
+    if (!registerResponse.ok) {
+      return {
+        status: registerResponse.status,
+        ok: false,
+        storagePath,
+        uploadStatus: uploadResponse.status,
+        registerStatus: registerResponse.status,
+        responseText: registerText.slice(0, 1000)
+      };
+    }
+
+    const group = await this.loadGroupUpdateState(input.groupId);
+    const applyResponse = await fetch(updateGroupChatUrl, {
+      method: "POST",
+      headers: await this.authHeaders(),
+      body: JSON.stringify(buildApplyGroupBackgroundPayload({ group, storagePath }))
+    });
+    const applyText = await applyResponse.text();
+    this.logger.info("Kindroid group background apply request completed.", {
+      status: applyResponse.status,
+      ok: applyResponse.ok,
+      groupId: input.groupId,
+      storagePath
+    });
+
+    return {
+      status: applyResponse.status,
+      ok: applyResponse.ok,
+      storagePath,
+      uploadStatus: uploadResponse.status,
+      registerStatus: registerResponse.status,
+      applyStatus: applyResponse.status,
+      responseText: applyResponse.ok ? undefined : applyText.slice(0, 1000)
+    };
+  }
+
   async createJournalEntry(input: CreateKindroidJournalEntryInput): Promise<CreateKindroidJournalEntryResult> {
     const payload = buildCreateJournalEntryPayload(input);
     const response = await fetch(journalCreateUrl, {
@@ -467,6 +548,45 @@ export class KindroidClient {
     };
   }
 
+  private async presignStorageUpload(input: {
+    path: string;
+    contentType: string;
+    contentLength: number;
+  }): Promise<{ url: string; path: string }> {
+    const response = await fetch(storagePresignUrl, {
+      method: "POST",
+      headers: await this.authHeaders(),
+      body: JSON.stringify({
+        path: input.path,
+        method: "PUT",
+        content_type: input.contentType,
+        content_length: input.contentLength
+      })
+    });
+    const responseText = await response.text();
+    if (!response.ok) {
+      throw new Error(`Kindroid storage-presign failed with HTTP ${response.status}: ${responseText.slice(0, 500)}`);
+    }
+
+    const parsed = JSON.parse(responseText) as { url?: string; path?: string };
+    if (!parsed.url || !parsed.path) {
+      throw new Error("Kindroid storage-presign returned an incomplete response.");
+    }
+    return { url: parsed.url, path: parsed.path };
+  }
+
+  private async loadGroupUpdateState(groupId: string): Promise<Record<string, unknown>> {
+    const rest = new FirestoreRestClient(this.config, this.logger);
+    const uid = await rest.resolveUid();
+    const document = await rest.getDocument(`Users/${uid}/Groups/${groupId}`);
+    if (!document) {
+      throw new Error("Kindroid group document was not found.");
+    }
+
+    const raw = document.data() as Record<string, unknown>;
+    return decryptGroupUpdateState(raw, uid);
+  }
+
   async updateChatDynamism(input: UpdateKindroidChatDynamismInput): Promise<UpdateKindroidChatDynamismResult> {
     const payload = buildUpdateChatDynamismPayload(input);
     const response = await fetch(updateInfoUrl, {
@@ -515,4 +635,20 @@ export class KindroidClient {
       authorization: `Bearer ${bearerToken}`
     };
   }
+}
+
+function decryptGroupUpdateState(raw: Record<string, unknown>, uid: string): Record<string, unknown> {
+  const decrypt = (value: unknown) =>
+    typeof value === "string" && uid ? decryptKindroidValue(value, uid).value : value;
+  return {
+    ...raw,
+    group_name: decrypt(raw.group_name),
+    group_context: decrypt(raw.group_context),
+    group_directive: decrypt(raw.group_directive)
+  };
+}
+
+function sanitizeFileName(value: string): string {
+  const normalized = value.replace(/[^\w.-]+/g, "-").replace(/^-+|-+$/g, "");
+  return normalized || "kinagent-group-background.png";
 }

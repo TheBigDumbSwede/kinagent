@@ -10,6 +10,10 @@ describe("loadConfig", () => {
   });
 
   it("loads defaults when the config file is missing", () => {
+    vi.stubEnv("KINAGENT_OPENAI_IMAGE_API_KEY", "");
+    vi.stubEnv("OPENAI_IMAGE_API_KEY", "");
+    vi.stubEnv("KINAGENT_OPENAI_API_KEY", "");
+    vi.stubEnv("OPENAI_API_KEY", "");
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "kinagent-config-"));
     const missingConfig = path.join(tempDir, "missing.yaml");
 
@@ -23,6 +27,22 @@ describe("loadConfig", () => {
       enabled: true,
       throttleMessages: 20,
       strongEventBypass: true
+    });
+    expect(config.hermes.groupBackgrounds.images).toEqual({
+      enabled: true,
+      provider: "openai",
+      openai: {
+        apiKey: "",
+        model: "gpt-image-1",
+        size: "1536x1024",
+        quality: "medium"
+      }
+    });
+    expect(config.hermes.groupBackgrounds.suggestions).toEqual({
+      enabled: true,
+      autonomous: false,
+      minMessagesBetweenProposals: 12,
+      minSignificance: 0.7
     });
     expect(config.hermes.chatDynamism).toEqual({
       suggestions: {
@@ -137,12 +157,18 @@ describe("loadConfig", () => {
     vi.stubEnv("HERMES_JOURNAL_SUGGESTIONS_ENABLED", "true");
     vi.stubEnv("HERMES_JOURNAL_SUGGESTION_THROTTLE_MESSAGES", "15");
     vi.stubEnv("HERMES_JOURNAL_STRONG_EVENT_BYPASS", "true");
+    vi.stubEnv("HERMES_GROUP_BACKGROUNDS_ENABLED", "true");
+    vi.stubEnv("HERMES_GROUP_BACKGROUNDS_AUTONOMOUS", "true");
     vi.stubEnv("HERMES_CHAT_DYNAMISM_SUGGESTIONS_ENABLED", "false");
     vi.stubEnv("HERMES_CHAT_DYNAMISM_AUTO_ADJUST_ENABLED", "false");
     vi.stubEnv("HERMES_CHAT_DYNAMISM_MIN_TURNS_BETWEEN_ADJUSTMENTS", "14");
     vi.stubEnv("HERMES_CHAT_DYNAMISM_MIN", "0.85");
     vi.stubEnv("HERMES_CHAT_DYNAMISM_MAX", "1.35");
     vi.stubEnv("HERMES_CHAT_DYNAMISM_MAX_DELTA", "0.03");
+    vi.stubEnv("KINAGENT_OPENAI_IMAGE_API_KEY", "env-image-key");
+    vi.stubEnv("KINAGENT_OPENAI_IMAGE_MODEL", "gpt-image-test");
+    vi.stubEnv("KINAGENT_OPENAI_IMAGE_SIZE", "1024x1024");
+    vi.stubEnv("KINAGENT_OPENAI_IMAGE_QUALITY", "low");
     vi.stubEnv("KINAGENT_VOICE_PROVIDER", "elevenlabs");
     vi.stubEnv("KINAGENT_OPENAI_API_KEY", "env-openai");
     vi.stubEnv("KINAGENT_OPENAI_TTS_VOICE", "alloy");
@@ -166,6 +192,16 @@ describe("loadConfig", () => {
       enabled: true,
       throttleMessages: 15,
       strongEventBypass: true
+    });
+    expect(config.hermes.groupBackgrounds.images.openai).toEqual({
+      apiKey: "env-image-key",
+      model: "gpt-image-test",
+      size: "1024x1024",
+      quality: "low"
+    });
+    expect(config.hermes.groupBackgrounds.suggestions).toMatchObject({
+      enabled: true,
+      autonomous: true
     });
     expect(config.hermes.chatDynamism).toEqual({
       suggestions: {

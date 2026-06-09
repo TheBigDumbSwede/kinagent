@@ -38,6 +38,24 @@ const defaultConfig: AppConfig = {
       throttleMessages: 20,
       strongEventBypass: true
     },
+    groupBackgrounds: {
+      suggestions: {
+        enabled: true,
+        autonomous: false,
+        minMessagesBetweenProposals: 12,
+        minSignificance: 0.7
+      },
+      images: {
+        enabled: true,
+        provider: "openai",
+        openai: {
+          apiKey: "",
+          model: "gpt-image-1",
+          size: "1536x1024",
+          quality: "medium"
+        }
+      }
+    },
     chatDynamism: {
       suggestions: {
         enabled: true
@@ -114,6 +132,32 @@ const appConfigSchema = z.object({
         .int("hermes.journalSuggestions.throttleMessages must be an integer.")
         .positive("hermes.journalSuggestions.throttleMessages must be a positive number."),
       strongEventBypass: z.boolean()
+    }),
+    groupBackgrounds: z.object({
+      suggestions: z.object({
+        enabled: z.boolean(),
+        autonomous: z.boolean(),
+        minMessagesBetweenProposals: z
+          .number()
+          .finite()
+          .int("hermes.groupBackgrounds.suggestions.minMessagesBetweenProposals must be an integer.")
+          .positive("hermes.groupBackgrounds.suggestions.minMessagesBetweenProposals must be a positive number."),
+        minSignificance: z
+          .number()
+          .finite()
+          .min(0, "hermes.groupBackgrounds.suggestions.minSignificance cannot be below 0.")
+          .max(1, "hermes.groupBackgrounds.suggestions.minSignificance cannot exceed 1.")
+      }),
+      images: z.object({
+        enabled: z.boolean(),
+        provider: z.literal("openai"),
+        openai: z.object({
+          apiKey: z.string(),
+          model: z.string().min(1, "hermes.groupBackgrounds.images.openai.model is required."),
+          size: z.string().min(1, "hermes.groupBackgrounds.images.openai.size is required."),
+          quality: z.string().min(1, "hermes.groupBackgrounds.images.openai.quality is required.")
+        })
+      })
     }),
     chatDynamism: z.object({
       suggestions: z.object({
@@ -214,6 +258,22 @@ function mergeConfig(base: AppConfig, override: Partial<AppConfig>): AppConfig {
         ...base.hermes.journalSuggestions,
         ...override.hermes?.journalSuggestions
       },
+      groupBackgrounds: {
+        ...base.hermes.groupBackgrounds,
+        ...override.hermes?.groupBackgrounds,
+        suggestions: {
+          ...base.hermes.groupBackgrounds.suggestions,
+          ...override.hermes?.groupBackgrounds?.suggestions
+        },
+        images: {
+          ...base.hermes.groupBackgrounds.images,
+          ...override.hermes?.groupBackgrounds?.images,
+          openai: {
+            ...base.hermes.groupBackgrounds.images.openai,
+            ...override.hermes?.groupBackgrounds?.images?.openai
+          }
+        }
+      },
       chatDynamism: {
         ...base.hermes.chatDynamism,
         ...override.hermes?.chatDynamism,
@@ -278,6 +338,44 @@ function applyEnvOverrides(config: AppConfig): void {
     "HERMES_JOURNAL_STRONG_EVENT_BYPASS",
     config.hermes.journalSuggestions.strongEventBypass
   );
+  config.hermes.groupBackgrounds.suggestions.enabled = booleanFromEnv(
+    "HERMES_GROUP_BACKGROUNDS_ENABLED",
+    config.hermes.groupBackgrounds.suggestions.enabled
+  );
+  config.hermes.groupBackgrounds.suggestions.autonomous = booleanFromEnv(
+    "HERMES_GROUP_BACKGROUNDS_AUTONOMOUS",
+    config.hermes.groupBackgrounds.suggestions.autonomous
+  );
+  config.hermes.groupBackgrounds.suggestions.minMessagesBetweenProposals = numberFromEnv(
+    "HERMES_GROUP_BACKGROUNDS_MIN_MESSAGES",
+    config.hermes.groupBackgrounds.suggestions.minMessagesBetweenProposals
+  );
+  config.hermes.groupBackgrounds.suggestions.minSignificance = numberFromEnv(
+    "HERMES_GROUP_BACKGROUNDS_MIN_SIGNIFICANCE",
+    config.hermes.groupBackgrounds.suggestions.minSignificance
+  );
+  config.hermes.groupBackgrounds.images.enabled = booleanFromEnv(
+    "HERMES_GROUP_BACKGROUNDS_IMAGES_ENABLED",
+    config.hermes.groupBackgrounds.images.enabled
+  );
+  config.hermes.groupBackgrounds.images.openai.apiKey =
+    process.env.KINAGENT_OPENAI_IMAGE_API_KEY ??
+    process.env.OPENAI_IMAGE_API_KEY ??
+    process.env.KINAGENT_OPENAI_API_KEY ??
+    process.env.OPENAI_API_KEY ??
+    config.hermes.groupBackgrounds.images.openai.apiKey;
+  config.hermes.groupBackgrounds.images.openai.model =
+    process.env.KINAGENT_OPENAI_IMAGE_MODEL ??
+    process.env.OPENAI_IMAGE_MODEL ??
+    config.hermes.groupBackgrounds.images.openai.model;
+  config.hermes.groupBackgrounds.images.openai.size =
+    process.env.KINAGENT_OPENAI_IMAGE_SIZE ??
+    process.env.OPENAI_IMAGE_SIZE ??
+    config.hermes.groupBackgrounds.images.openai.size;
+  config.hermes.groupBackgrounds.images.openai.quality =
+    process.env.KINAGENT_OPENAI_IMAGE_QUALITY ??
+    process.env.OPENAI_IMAGE_QUALITY ??
+    config.hermes.groupBackgrounds.images.openai.quality;
   config.hermes.chatDynamism.suggestions.enabled = booleanFromEnv(
     "HERMES_CHAT_DYNAMISM_SUGGESTIONS_ENABLED",
     config.hermes.chatDynamism.suggestions.enabled

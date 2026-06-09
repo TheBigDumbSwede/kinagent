@@ -310,6 +310,17 @@ function registerIpcHandlers(): void {
   ipcMain.handle("journal:dismiss-suggestion", async (_event, input: { id?: string } = {}) =>
     dismissJournalSuggestion(input.id ?? "")
   );
+  ipcMain.handle("background:list-group-suggestions", async () => requireRuntime().pendingGroupBackgroundSuggestions());
+  ipcMain.handle("background:dismiss-group-suggestion", async (_event, input: { id?: string } = {}) =>
+    dismissGroupBackgroundSuggestion(input.id ?? "")
+  );
+  ipcMain.handle("background:generate-group-image", async (_event, input: { id?: string } = {}) =>
+    generateGroupBackgroundImage(input.id ?? "")
+  );
+  ipcMain.handle("background:apply-group-image", async (_event, input: { id?: string } = {}) =>
+    applyGroupBackgroundImage(input.id ?? "")
+  );
+  ipcMain.handle("background:set-settings", async (_event, input: unknown) => setGroupBackgroundSettings(input));
   ipcMain.handle("voice:get-kin-preference", async (_event, input: { kinId?: string } = {}) =>
     getKinVoicePreference(input.kinId ?? "")
   );
@@ -346,6 +357,9 @@ function registerIpcHandlers(): void {
   );
   ipcMain.handle("prewarm:previously-on", async (_event, input: { scope?: "kin" | "group"; id?: string } = {}) =>
     forcePreviouslyOnPrewarm(input.scope, input.id ?? "")
+  );
+  ipcMain.handle("prewarm:group-background", async (_event, input: { groupId?: string } = {}) =>
+    forceGroupBackgroundPrewarm(input.groupId ?? "")
   );
   ipcMain.handle("ambient:get-kin-preference", async (_event, input: { kinId?: string } = {}) =>
     getKinAmbientPreference(input.kinId ?? "")
@@ -392,6 +406,7 @@ function registerIpcHandlers(): void {
 async function getDesktopStatus() {
   return {
     ...requireRuntime().status(),
+    groupBackgroundSettings: groupBackgroundSettingsResult().settings,
     loginOpen: Boolean(loginSession)
   };
 }
@@ -471,6 +486,13 @@ function saveDesktopSettings(input: unknown) {
     fields.hermesJournalStrongEventBypass,
     next.hermes.journalSuggestions.strongEventBypass
   );
+  next.hermes.groupBackgrounds.suggestions.enabled = booleanSetting(
+    fields.hermesGroupBackgroundsEnabled,
+    next.hermes.groupBackgrounds.suggestions.enabled
+  );
+  next.hermes.groupBackgrounds.suggestions.autonomous =
+    next.hermes.groupBackgrounds.suggestions.enabled &&
+    booleanSetting(fields.hermesGroupBackgroundsAutonomous, next.hermes.groupBackgrounds.suggestions.autonomous);
 
   next.voice.enabled = booleanSetting(fields.voiceEnabled, next.voice.enabled);
   next.voice.provider = voiceProviderSetting(fields.voiceProvider, next.voice.provider);
@@ -484,6 +506,7 @@ function saveDesktopSettings(input: unknown) {
 
   saveConfig(next, desktopConfigPath);
   config = loadConfig({ configPath: desktopConfigPath, createDefaultConfig: true });
+  runtime?.updateGroupBackgroundSettings(config.hermes.groupBackgrounds.suggestions);
   logger = createLogger(config.bridge.logLevel, { logPath: config.bridge.logPath });
   logger.info("Saved desktop settings.", { configPath: desktopConfigPath });
 
@@ -755,6 +778,13 @@ async function forcePreviouslyOnPrewarm(scope: "kin" | "group" | undefined, id: 
   return requireRuntime().forcePreviouslyOnPrewarm({ scope, id });
 }
 
+async function forceGroupBackgroundPrewarm(groupId: string) {
+  if (!groupId) {
+    throw new Error("Select a Group before forcing background prewarm.");
+  }
+  return requireRuntime().forceGroupBackgroundPrewarm({ groupId });
+}
+
 function getKinAmbientPreference(kinId: string) {
   const ambient = requireRuntime().getKinAmbientContextPreference(kinId);
   const status = requireRuntime()
@@ -956,6 +986,77 @@ function dismissJournalSuggestion(id: string) {
   return { ok: true, suggestion };
 }
 
+function dismissGroupBackgroundSuggestion(id: string) {
+  if (!id) {
+    throw new Error("Group background suggestion id is required.");
+  }
+
+  const suggestion = requireRuntime().dismissGroupBackgroundSuggestion(id);
+  sendRendererEvent("group-background-suggestions-updated", requireRuntime().pendingGroupBackgroundSuggestions());
+  return { ok: true, suggestion };
+}
+
+async function generateGroupBackgroundImage(id: string) {
+  if (!id) {
+    throw new Error("Group background suggestion id is required.");
+  }
+
+  const suggestion = await requireRuntime().generateGroupBackgroundImage({ suggestionId: id });
+  sendRendererEvent("group-background-suggestions-updated", requireRuntime().pendingGroupBackgroundSuggestions());
+  return { ok: true, suggestion };
+}
+
+async function applyGroupBackgroundImage(id: string) {
+  if (!id) {
+    throw new Error("Group background suggestion id is required.");
+  }
+
+  const suggestion = await requireRuntime().applyGeneratedGroupBackground({ suggestionId: id });
+  sendRendererEvent("group-background-suggestions-updated", requireRuntime().pendingGroupBackgroundSuggestions());
+  return { ok: true, suggestion };
+}
+
+async function setGroupBackgroundSettings(input: unknown) {
+  const fields = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
+  const enabled = booleanSetting(fields.enabled, config.hermes.groupBackgrounds.suggestions.enabled);
+  const autonomous =
+    enabled && booleanSetting(fields.autonomous, config.hermes.groupBackgrounds.suggestions.autonomous);
+
+  config.hermes.groupBackgrounds.suggestions.enabled = enabled;
+  config.hermes.groupBackgrounds.suggestions.autonomous = autonomous;
+  saveConfig(config, desktopConfigPath);
+  config = loadConfig({ configPath: desktopConfigPath, createDefaultConfig: true });
+  runtime?.updateGroupBackgroundSettings(config.hermes.groupBackgrounds.suggestions);
+  logger.info("Saved group background settings.", groupBackgroundSettingsResult().settings);
+  sendRendererEvent("session-updated", await getDesktopStatus());
+  return groupBackgroundSettingsResult();
+}
+
+function groupBackgroundSettingsResult() {
+  return {
+    ok: true,
+    settings: {
+      enabled: config.hermes.groupBackgrounds.suggestions.enabled,
+      autonomous:
+        config.hermes.groupBackgrounds.suggestions.enabled && config.hermes.groupBackgrounds.suggestions.autonomous
+    }
+  };
+}
+
+function queueKindroidUiReload(reason: string, meta: Record<string, unknown> = {}): void {
+  const command = browserBridgeServer?.queueCommand("reload-kindroid");
+  if (!command) {
+    logger.info("Kindroid UI reload skipped because the browser bridge is not available.", { reason, ...meta });
+    return;
+  }
+
+  logger.info("Kindroid UI reload queued through browser bridge.", {
+    reason,
+    commandId: command.id,
+    ...meta
+  });
+}
+
 function showMainWindow(): void {
   if (!mainWindow) {
     createMainWindow();
@@ -972,6 +1073,9 @@ function sendRendererEvent(channel: string, payload: unknown): void {
 function sendRuntimeEvent(event: BridgeRuntimeEvent): void {
   if (event.channel === "journal-suggestion-created") {
     showJournalSuggestionNotification(event.payload);
+  }
+  if (event.channel === "group-background-applied") {
+    queueKindroidUiReload("group background image applied", event.payload);
   }
   sendRendererEvent(event.channel, event.payload);
 }

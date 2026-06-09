@@ -19,8 +19,14 @@ import {
 import { createHermesActionRegistry } from "./actionRegistry.js";
 import type { AmbientContextPreference, AmbientContextSentEvent } from "./ambientContextActionHandler.js";
 import type { ScopedSoundscapeUpdate, SoundscapePreference } from "./soundscapeActionHandler.js";
+import type { GroupBackgroundContext } from "./groupBackgroundActionHandler.js";
+import type {
+  GroupBackgroundSuggestion,
+  GroupBackgroundSuggestionStore
+} from "../groupBackground/groupBackgroundSuggestionStore.js";
 import type {
   HermesAdapter,
+  HermesGroupBackgroundPrewarmRequest,
   HermesLocalScenePrewarmRequest,
   HermesPreviouslyOnPrewarmRequest,
   HermesSoundscapePrewarmRequest
@@ -45,9 +51,12 @@ export interface HermesChatAdapterOptions {
   onPreviouslyOnUpdated?: (brief: PreviouslyOnBrief) => void;
   chatDynamismSuggestions?: ChatDynamismSuggestionStore;
   onChatDynamismSuggestionCreated?: (suggestion: ChatDynamismSuggestion) => void;
+  groupBackgroundSuggestions?: GroupBackgroundSuggestionStore;
+  onGroupBackgroundSuggestionCreated?: (suggestion: GroupBackgroundSuggestion) => void;
   isChatDynamismEnabled?: (aiId: string) => boolean;
   chatDynamismRange?: (aiId: string) => { min: number; max: number };
   chatDynamismContextProvider?: (notification: KindroidChatNotification) => Promise<unknown>;
+  groupBackgroundContextProvider?: (notification: KindroidChatNotification) => Promise<GroupBackgroundContext>;
   soundscapeContextProvider?: (notification: KindroidChatNotification) => Promise<unknown>;
   journalContextProvider?: (notification: KindroidChatNotification) => Promise<JournalSuggestionContext>;
   dedupeStore?: DedupeStore;
@@ -90,6 +99,14 @@ export class LoggingHermesAdapter implements HermesAdapter {
       documentId: request.documentId
     });
   }
+
+  async prewarmGroupBackground(request: HermesGroupBackgroundPrewarmRequest): Promise<void> {
+    this.logger.info("Hermes group background prewarm skipped because Hermes chat adapter is not active.", {
+      scope: request.scope,
+      groupId: request.groupId,
+      documentId: request.documentId
+    });
+  }
 }
 
 export class HermesChatAdapter implements HermesAdapter {
@@ -124,6 +141,7 @@ export class HermesChatAdapter implements HermesAdapter {
 
     try {
       this.options.journalSuggestions?.recordReadableMessage(notification);
+      this.options.groupBackgroundSuggestions?.recordReadableMessage(notification);
       const decision = await this.requestDecision(notification);
       const actions = this.normalizeActions(decision);
       this.logger.info("Hermes action decision received.", {
@@ -224,6 +242,31 @@ export class HermesChatAdapter implements HermesAdapter {
     }
   }
 
+  async prewarmGroupBackground(request: HermesGroupBackgroundPrewarmRequest): Promise<void> {
+    const notification = toGroupBackgroundPrewarmNotification(request);
+    this.logger.info("Forwarding group background prewarm request to Hermes.", safeNotificationMeta(notification));
+
+    try {
+      const decision = await this.requestDecision(notification, {
+        groupBackgroundContext: request.groupBackgroundContext as GroupBackgroundContext
+      });
+      const actions = this.normalizeActions(decision).filter(({ action }) => isGroupBackgroundAction(action));
+      this.logger.info("Hermes group background prewarm decision received.", {
+        ...safeNotificationMeta(notification),
+        actionCount: actions.length,
+        actionTypes: [...new Set(actions.map(({ action }) => actionType(action)))]
+      });
+      for (const { handler, action } of actions) {
+        await handler.handle(notification, action);
+      }
+    } catch (error) {
+      this.logger.warn("Hermes group background prewarm failed.", {
+        ...safeNotificationMeta(notification),
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
+
   private async requestDecision(
     notification: KindroidChatNotification,
     overrides: {
@@ -232,6 +275,7 @@ export class HermesChatAdapter implements HermesAdapter {
       soundscapeContext?: unknown;
       localSceneContext?: unknown;
       previouslyOnContext?: unknown;
+      groupBackgroundContext?: GroupBackgroundContext;
     } = {}
   ): Promise<HermesActionDecision> {
     const journalContext = overrides.journalContext ?? (await this.journalContextProvider?.(notification));
@@ -239,6 +283,8 @@ export class HermesChatAdapter implements HermesAdapter {
       overrides.chatDynamismContext ?? (await this.options.chatDynamismContextProvider?.(notification));
     const soundscapeContext =
       overrides.soundscapeContext ?? (await this.options.soundscapeContextProvider?.(notification));
+    const groupBackgroundContext =
+      overrides.groupBackgroundContext ?? (await this.options.groupBackgroundContextProvider?.(notification));
     const localSceneContext = overrides.localSceneContext ? { localSceneContext: overrides.localSceneContext } : {};
     const previouslyOnContext = overrides.previouslyOnContext
       ? { previouslyOnContext: overrides.previouslyOnContext }
@@ -259,7 +305,13 @@ export class HermesChatAdapter implements HermesAdapter {
           {
             role: "user",
             content: JSON.stringify({
-              ...toHermesEvent(notification, journalContext, chatDynamismContext, soundscapeContext),
+              ...toHermesEvent(
+                notification,
+                journalContext,
+                chatDynamismContext,
+                soundscapeContext,
+                groupBackgroundContext
+              ),
               ...localSceneContext,
               ...previouslyOnContext
             })
@@ -418,6 +470,23 @@ function toPreviouslyOnPrewarmNotification(request: HermesPreviouslyOnPrewarmReq
   };
 }
 
+function toGroupBackgroundPrewarmNotification(request: HermesGroupBackgroundPrewarmRequest): KindroidChatNotification {
+  return {
+    type: "kindroid.group_chat.changed",
+    groupId: request.groupId,
+    aiId: request.aiId ?? null,
+    documentId: request.documentId,
+    timestamp: request.timestamp,
+    text: request.text,
+    textEncrypted: false,
+    textDecrypted: true,
+    sender: "system",
+    role: "group-background-prewarm",
+    source: "group-background-prewarm",
+    forceBackgroundProposal: request.forceProposal
+  };
+}
+
 function normalizeBaseUrl(value: string): string {
   return value.replace(/\/+$/, "");
 }
@@ -451,7 +520,8 @@ function toHermesEvent(
   notification: KindroidChatNotification,
   journalContext?: JournalSuggestionContext,
   chatDynamismContext?: unknown,
-  soundscapeContext?: unknown
+  soundscapeContext?: unknown,
+  groupBackgroundContext?: GroupBackgroundContext
 ) {
   const context =
     journalContext && (journalContext.existingEntries.length > 0 || journalContext.fieldExcerpts.length > 0)
@@ -464,6 +534,7 @@ function toHermesEvent(
       : {};
   const chatDynamism = chatDynamismContext ? { chatDynamismContext } : {};
   const soundscape = soundscapeContext ? { soundscapeContext } : {};
+  const groupBackground = groupBackgroundContext ? { groupBackgroundContext } : {};
 
   if (notification.type === "kindroid.chat.changed") {
     return {
@@ -495,7 +566,8 @@ function toHermesEvent(
     text: notification.text,
     ...context,
     ...chatDynamism,
-    ...soundscape
+    ...soundscape,
+    ...groupBackground
   };
 }
 
@@ -508,6 +580,9 @@ function hermesEventType(source: KindroidChatNotification["source"], fallback: s
   }
   if (source === "previously-on-prewarm") {
     return "kindroid.previously_on.prewarm";
+  }
+  if (source === "group-background-prewarm") {
+    return "kindroid.group_background.prewarm";
   }
   return fallback;
 }
@@ -531,6 +606,10 @@ function isLocalSceneAction(action: unknown): boolean {
 function isPreviouslyOnAction(action: unknown): boolean {
   const type = actionType(action);
   return type === "update_previously_on_brief" || type === "update_group_previously_on_brief";
+}
+
+function isGroupBackgroundAction(action: unknown): boolean {
+  return actionType(action) === "propose_group_background_image";
 }
 
 function safeNotificationMeta(notification: KindroidChatNotification) {

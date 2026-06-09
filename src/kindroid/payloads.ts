@@ -10,6 +10,7 @@ import type {
   SendKindroidMessageInput,
   UpdateKindroidCurrentSceneInput,
   UpdateKindroidChatDynamismInput,
+  ApplyKindroidGroupBackgroundInput,
   UpdateKindroidGroupCurrentSceneInput,
   UpdateKindroidIdentityInput
 } from "./types.js";
@@ -165,6 +166,46 @@ export function buildUpdateGroupCurrentScenePayload(
   };
 }
 
+export function buildApplyGroupBackgroundPayload(input: {
+  group: Record<string, unknown>;
+  storagePath: string;
+}): Record<string, unknown> {
+  const groupId = stringValue(input.group.group_id);
+  if (!groupId) {
+    throw new Error("Missing Kindroid group_id for background update.");
+  }
+
+  return {
+    group_id: groupId,
+    ai_list: normalizeGroupAiList(input.group.group_ais),
+    group_name: stringValue(input.group.group_name) ?? "",
+    group_context: stringValue(input.group.group_context) ?? "",
+    group_directive: stringValue(input.group.group_directive) ?? "",
+    use_manual_turntaking: booleanValue(input.group.use_manual_turntaking, false),
+    share_short_term_memory: booleanValue(input.group.share_short_term_memory, false),
+    disable_ltm_recall: booleanValue(input.group.disable_ltm_recall, false),
+    disable_ltm_consolidate: booleanValue(input.group.disable_ltm_consolidate, false),
+    user_persona_id: stringValue(input.group.user_persona_id) ?? "",
+    background_settings: {
+      ...defaultBackgroundSettings(input.group.background_settings),
+      background_url: input.storagePath,
+      use_latest_gallery: false
+    }
+  };
+}
+
+export function validateApplyGroupBackgroundInput(input: ApplyKindroidGroupBackgroundInput): void {
+  if (!input.groupId) {
+    throw new Error("Missing Kindroid group_id for background update.");
+  }
+  if (!input.image.length) {
+    throw new Error("Group background image is empty.");
+  }
+  if (!input.fileName.endsWith(".png")) {
+    throw new Error("Group background image file name must end in .png.");
+  }
+}
+
 export function buildCreateJournalEntryPayload(input: CreateKindroidJournalEntryInput): Record<string, unknown> {
   if (!input.aiId) {
     throw new Error("Missing Kindroid ai_id for journal entry creation.");
@@ -241,4 +282,51 @@ export function validateCurrentScene(value: string): string {
 
 function normalizeKeyphrases(value: string[] | undefined): string[] {
   return [...new Set((value ?? []).map((item) => item.trim()).filter(Boolean))];
+}
+
+function defaultBackgroundSettings(value: unknown): Record<string, unknown> {
+  const existing =
+    value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+  return {
+    background_url: "",
+    use_latest_gallery: false,
+    background_opacity: numberValue(existing.background_opacity, 50),
+    message_fading_strength: numberValue(existing.message_fading_strength, 0),
+    message_mask_drag: numberValue(existing.message_mask_drag, 0.2),
+    background_blur: numberValue(existing.background_blur, 0),
+    enable_background_blur_on_wide_screen_only: booleanValue(existing.enable_background_blur_on_wide_screen_only, true),
+    enable_message_fade: booleanValue(existing.enable_message_fade, false),
+    top_offset: numberValue(existing.top_offset, 0),
+    left_offset: numberValue(existing.left_offset, 50)
+  };
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+function normalizeGroupAiList(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((item) => {
+    if (typeof item === "string" && item.length > 0) {
+      return [item];
+    }
+    if (item && typeof item === "object" && !Array.isArray(item)) {
+      const record = item as Record<string, unknown>;
+      const aiId = stringValue(record.ai_id) ?? stringValue(record.aiId) ?? stringValue(record.id);
+      return aiId ? [aiId] : [];
+    }
+    return [];
+  });
+}
+
+function booleanValue(value: unknown, fallback: boolean): boolean {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function numberValue(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }

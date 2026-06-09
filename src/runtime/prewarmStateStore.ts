@@ -3,7 +3,7 @@ import path from "node:path";
 import type { AppConfig } from "../config/types.js";
 import type { KindroidChatNotification } from "../firestore/types.js";
 
-export type PrewarmKind = "localScene" | "soundscape" | "previouslyOn";
+export type PrewarmKind = "localScene" | "soundscape" | "previouslyOn" | "groupBackground";
 export type PrewarmScope = "kin" | "group";
 
 export interface PrewarmSourceKey {
@@ -27,15 +27,20 @@ export interface PrewarmSourceState {
   soundscapePrewarmTimestamp?: string | null;
   previouslyOnPrewarmMessageId?: string;
   previouslyOnPrewarmTimestamp?: string | null;
+  groupBackgroundPrewarmMessageId?: string;
+  groupBackgroundPrewarmTimestamp?: string | null;
   localSceneReady?: boolean;
   soundscapeReady?: boolean;
   previouslyOnReady?: boolean;
+  groupBackgroundReady?: boolean;
   lastLocalScenePrewarmAt?: string;
   lastSoundscapePrewarmAt?: string;
   lastPreviouslyOnPrewarmAt?: string;
+  lastGroupBackgroundPrewarmAt?: string;
   localSceneChatHistoryCursorTimestamp?: number;
   soundscapeChatHistoryCursorTimestamp?: number;
   previouslyOnChatHistoryCursorTimestamp?: number;
+  groupBackgroundChatHistoryCursorTimestamp?: number;
   /** Legacy shared cursor retained so interrupted v0.3.1 catch-ups can resume once. */
   chatHistoryCursorTimestamp?: number;
   failureCount?: number;
@@ -203,35 +208,53 @@ function readyForKind(state: PrewarmSourceState | null, kind: PrewarmKind): bool
   if (kind === "localScene") {
     return Boolean(state?.localSceneReady);
   }
-  return kind === "soundscape" ? Boolean(state?.soundscapeReady) : Boolean(state?.previouslyOnReady);
+  if (kind === "soundscape") {
+    return Boolean(state?.soundscapeReady);
+  }
+  if (kind === "previouslyOn") {
+    return Boolean(state?.previouslyOnReady);
+  }
+  return Boolean(state?.groupBackgroundReady);
 }
 
-function readyField(kind: PrewarmKind): "localSceneReady" | "soundscapeReady" | "previouslyOnReady" {
+function readyField(
+  kind: PrewarmKind
+): "localSceneReady" | "soundscapeReady" | "previouslyOnReady" | "groupBackgroundReady" {
   if (kind === "localScene") {
     return "localSceneReady";
   }
-  return kind === "soundscape" ? "soundscapeReady" : "previouslyOnReady";
+  if (kind === "soundscape") {
+    return "soundscapeReady";
+  }
+  return kind === "previouslyOn" ? "previouslyOnReady" : "groupBackgroundReady";
 }
 
 function lastPrewarmField(
   kind: PrewarmKind
-): "lastLocalScenePrewarmAt" | "lastSoundscapePrewarmAt" | "lastPreviouslyOnPrewarmAt" {
+):
+  | "lastLocalScenePrewarmAt"
+  | "lastSoundscapePrewarmAt"
+  | "lastPreviouslyOnPrewarmAt"
+  | "lastGroupBackgroundPrewarmAt" {
   if (kind === "localScene") {
     return "lastLocalScenePrewarmAt";
   }
-  return kind === "soundscape" ? "lastSoundscapePrewarmAt" : "lastPreviouslyOnPrewarmAt";
+  if (kind === "soundscape") {
+    return "lastSoundscapePrewarmAt";
+  }
+  return kind === "previouslyOn" ? "lastPreviouslyOnPrewarmAt" : "lastGroupBackgroundPrewarmAt";
 }
 
 export function prewarmKindsWithChatHistoryCursor(state: PrewarmSourceState): PrewarmKind[] {
   const kinds: PrewarmKind[] = [];
-  for (const kind of allPrewarmKinds) {
+  for (const kind of chatHistoryPrewarmKinds) {
     if (typeof chatHistoryCursorForKind(kind, state) === "number") {
       kinds.push(kind);
     }
   }
 
   if (typeof state.chatHistoryCursorTimestamp === "number") {
-    for (const kind of allPrewarmKinds) {
+    for (const kind of chatHistoryPrewarmKinds) {
       if (!kinds.includes(kind)) {
         kinds.push(kind);
       }
@@ -319,7 +342,7 @@ function publicApiTimestampFromIso(value: string | null | undefined): number | u
 }
 
 const defaultPrewarmRefreshIntervalMs = 15 * 60 * 1000;
-const allPrewarmKinds: PrewarmKind[] = ["localScene", "soundscape", "previouslyOn"];
+const chatHistoryPrewarmKinds: PrewarmKind[] = ["localScene", "soundscape", "previouslyOn"];
 
 function prewarmMessageIdForKind(kind: PrewarmKind, state: PrewarmSourceState): string | undefined {
   if (kind === "localScene") {
@@ -328,7 +351,10 @@ function prewarmMessageIdForKind(kind: PrewarmKind, state: PrewarmSourceState): 
   if (kind === "soundscape") {
     return state.soundscapePrewarmMessageId ?? (state.soundscapeReady ? state.lastPrewarmMessageId : undefined);
   }
-  return state.previouslyOnPrewarmMessageId ?? (state.previouslyOnReady ? state.lastPrewarmMessageId : undefined);
+  if (kind === "previouslyOn") {
+    return state.previouslyOnPrewarmMessageId ?? (state.previouslyOnReady ? state.lastPrewarmMessageId : undefined);
+  }
+  return state.groupBackgroundPrewarmMessageId ?? (state.groupBackgroundReady ? state.lastPrewarmMessageId : undefined);
 }
 
 function prewarmTimestampForKind(kind: PrewarmKind, state: PrewarmSourceState): string | null | undefined {
@@ -338,7 +364,10 @@ function prewarmTimestampForKind(kind: PrewarmKind, state: PrewarmSourceState): 
   if (kind === "soundscape") {
     return state.soundscapePrewarmTimestamp ?? (state.soundscapeReady ? state.lastPrewarmTimestamp : undefined);
   }
-  return state.previouslyOnPrewarmTimestamp ?? (state.previouslyOnReady ? state.lastPrewarmTimestamp : undefined);
+  if (kind === "previouslyOn") {
+    return state.previouslyOnPrewarmTimestamp ?? (state.previouslyOnReady ? state.lastPrewarmTimestamp : undefined);
+  }
+  return state.groupBackgroundPrewarmTimestamp ?? (state.groupBackgroundReady ? state.lastPrewarmTimestamp : undefined);
 }
 
 function lastPrewarmAtForKind(kind: PrewarmKind, state: PrewarmSourceState): string | undefined {
@@ -348,7 +377,7 @@ function lastPrewarmAtForKind(kind: PrewarmKind, state: PrewarmSourceState): str
   if (kind === "soundscape") {
     return state.lastSoundscapePrewarmAt;
   }
-  return state.lastPreviouslyOnPrewarmAt;
+  return kind === "previouslyOn" ? state.lastPreviouslyOnPrewarmAt : state.lastGroupBackgroundPrewarmAt;
 }
 
 function chatHistoryCursorForKind(kind: PrewarmKind, state: PrewarmSourceState): number | undefined {
@@ -358,7 +387,9 @@ function chatHistoryCursorForKind(kind: PrewarmKind, state: PrewarmSourceState):
   if (kind === "soundscape") {
     return state.soundscapeChatHistoryCursorTimestamp;
   }
-  return state.previouslyOnChatHistoryCursorTimestamp;
+  return kind === "previouslyOn"
+    ? state.previouslyOnChatHistoryCursorTimestamp
+    : state.groupBackgroundChatHistoryCursorTimestamp;
 }
 
 function legacyCursorForReadyKind(kind: PrewarmKind, state: PrewarmSourceState): number | undefined {
@@ -371,20 +402,34 @@ function legacyTimestampForReadyKind(kind: PrewarmKind, state: PrewarmSourceStat
 
 function messageIdField(
   kind: PrewarmKind
-): "localScenePrewarmMessageId" | "soundscapePrewarmMessageId" | "previouslyOnPrewarmMessageId" {
+):
+  | "localScenePrewarmMessageId"
+  | "soundscapePrewarmMessageId"
+  | "previouslyOnPrewarmMessageId"
+  | "groupBackgroundPrewarmMessageId" {
   if (kind === "localScene") {
     return "localScenePrewarmMessageId";
   }
-  return kind === "soundscape" ? "soundscapePrewarmMessageId" : "previouslyOnPrewarmMessageId";
+  if (kind === "soundscape") {
+    return "soundscapePrewarmMessageId";
+  }
+  return kind === "previouslyOn" ? "previouslyOnPrewarmMessageId" : "groupBackgroundPrewarmMessageId";
 }
 
 function timestampField(
   kind: PrewarmKind
-): "localScenePrewarmTimestamp" | "soundscapePrewarmTimestamp" | "previouslyOnPrewarmTimestamp" {
+):
+  | "localScenePrewarmTimestamp"
+  | "soundscapePrewarmTimestamp"
+  | "previouslyOnPrewarmTimestamp"
+  | "groupBackgroundPrewarmTimestamp" {
   if (kind === "localScene") {
     return "localScenePrewarmTimestamp";
   }
-  return kind === "soundscape" ? "soundscapePrewarmTimestamp" : "previouslyOnPrewarmTimestamp";
+  if (kind === "soundscape") {
+    return "soundscapePrewarmTimestamp";
+  }
+  return kind === "previouslyOn" ? "previouslyOnPrewarmTimestamp" : "groupBackgroundPrewarmTimestamp";
 }
 
 function chatHistoryCursorField(
@@ -392,9 +437,15 @@ function chatHistoryCursorField(
 ):
   | "localSceneChatHistoryCursorTimestamp"
   | "soundscapeChatHistoryCursorTimestamp"
-  | "previouslyOnChatHistoryCursorTimestamp" {
+  | "previouslyOnChatHistoryCursorTimestamp"
+  | "groupBackgroundChatHistoryCursorTimestamp" {
   if (kind === "localScene") {
     return "localSceneChatHistoryCursorTimestamp";
   }
-  return kind === "soundscape" ? "soundscapeChatHistoryCursorTimestamp" : "previouslyOnChatHistoryCursorTimestamp";
+  if (kind === "soundscape") {
+    return "soundscapeChatHistoryCursorTimestamp";
+  }
+  return kind === "previouslyOn"
+    ? "previouslyOnChatHistoryCursorTimestamp"
+    : "groupBackgroundChatHistoryCursorTimestamp";
 }

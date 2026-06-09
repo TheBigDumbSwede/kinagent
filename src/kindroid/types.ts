@@ -93,6 +93,21 @@ export interface UpdateKindroidGroupCurrentSceneInput {
 }
 
 export type UpdateKindroidGroupCurrentSceneResult = UpdateKindroidCurrentSceneResult;
+
+export interface ApplyKindroidGroupBackgroundInput {
+  groupId: string;
+  image: Buffer;
+  fileName: string;
+  contentType: "image/png";
+}
+
+export interface ApplyKindroidGroupBackgroundResult extends KindroidMutationResult {
+  storagePath?: string;
+  uploadStatus?: number;
+  registerStatus?: number;
+  applyStatus?: number;
+}
+
 export type BreakKindroidChatResult = KindroidMutationResult;
 export type BreakKindroidGroupChatResult = KindroidMutationResult;
 export type RewindKindroidMessagesResult = KindroidMutationResult;
