@@ -38,8 +38,6 @@ export interface AppSettingsElements {
   settingsHermesJournalEnabledInput: HTMLInputElement;
   settingsHermesJournalBypassInput: HTMLInputElement;
   settingsHermesJournalThrottleInput: HTMLInputElement;
-  settingsGroupBackgroundEnabledInput: HTMLInputElement;
-  settingsGroupBackgroundAutonomousInput: HTMLInputElement;
   settingsVoiceEnabledInput: HTMLInputElement;
   settingsVoiceProviderInput: HTMLInputElement | HTMLSelectElement;
   settingsOpenAiApiKeyInput: HTMLInputElement;
@@ -131,7 +129,6 @@ function populateAppSettingsForm(context: AppSettingsContext, config: AppConfigV
   const hermes = config.hermes || {};
   const currentScene = hermes.currentSceneUpdates || {};
   const journal = hermes.journalSuggestions || {};
-  const groupBackgrounds = hermes.groupBackgrounds?.suggestions || {};
   const voice = config.voice || {};
   const openai = voice.openai || {};
   const elevenlabs = voice.elevenlabs || {};
@@ -150,15 +147,6 @@ function populateAppSettingsForm(context: AppSettingsContext, config: AppConfigV
   elements.settingsHermesJournalEnabledInput.checked = Boolean(journal.enabled);
   elements.settingsHermesJournalBypassInput.checked = Boolean(journal.strongEventBypass);
   elements.settingsHermesJournalThrottleInput.value = String(journal.throttleMessages || 20);
-  elements.settingsGroupBackgroundEnabledInput.checked = Boolean(groupBackgrounds.enabled);
-  elements.settingsGroupBackgroundAutonomousInput.checked = Boolean(groupBackgrounds.autonomous);
-  elements.settingsGroupBackgroundAutonomousInput.disabled = !elements.settingsGroupBackgroundEnabledInput.checked;
-  elements.settingsGroupBackgroundEnabledInput.onchange = () => {
-    elements.settingsGroupBackgroundAutonomousInput.disabled = !elements.settingsGroupBackgroundEnabledInput.checked;
-    if (!elements.settingsGroupBackgroundEnabledInput.checked) {
-      elements.settingsGroupBackgroundAutonomousInput.checked = false;
-    }
-  };
 
   elements.settingsVoiceEnabledInput.checked = Boolean(voice.enabled);
   elements.settingsVoiceProviderInput.value = voice.provider || "none";
@@ -192,9 +180,6 @@ function readAppSettingsForm(elements: AppSettingsElements): AppSettingsFormValu
     hermesJournalSuggestionsEnabled: elements.settingsHermesJournalEnabledInput.checked,
     hermesJournalStrongEventBypass: elements.settingsHermesJournalBypassInput.checked,
     hermesJournalThrottleMessages: numberInputValue(elements.settingsHermesJournalThrottleInput),
-    hermesGroupBackgroundsEnabled: elements.settingsGroupBackgroundEnabledInput.checked,
-    hermesGroupBackgroundsAutonomous:
-      elements.settingsGroupBackgroundEnabledInput.checked && elements.settingsGroupBackgroundAutonomousInput.checked,
     voiceEnabled: elements.settingsVoiceEnabledInput.checked,
     voiceProvider: elements.settingsVoiceProviderInput.value,
     openAiApiKey: elements.settingsOpenAiApiKeyInput.value,

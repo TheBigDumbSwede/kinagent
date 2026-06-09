@@ -104,7 +104,11 @@ export interface KinagentApi {
   forceSoundscapePrewarm(input: { scope: "kin" | "group"; id: string }): Promise<{ ok: boolean }>;
   forcePreviouslyOnPrewarm(input: { scope: "kin" | "group"; id: string }): Promise<{ ok: boolean }>;
   forceGroupBackgroundPrewarm(input: { groupId: string }): Promise<{ ok: boolean }>;
-  setGroupBackgroundSettings(input: GroupBackgroundSettings): Promise<GroupBackgroundSettingsResult>;
+  getGroupBackgroundPreference(input: { groupId: string }): Promise<GroupBackgroundPreferenceResult>;
+  setGroupBackgroundPreference(input: {
+    groupId: string;
+    preference: GroupBackgroundPreference;
+  }): Promise<GroupBackgroundPreferenceResult>;
   setKinAmbientPreference(input: {
     kinId: string;
     enabled: boolean;
@@ -185,14 +189,14 @@ export interface GroupBackgroundSuggestionSummary {
   applyErrorAt?: string;
 }
 
-export interface GroupBackgroundSettings {
+export interface GroupBackgroundPreference {
   enabled: boolean;
   autonomous: boolean;
 }
 
-export interface GroupBackgroundSettingsResult {
+export interface GroupBackgroundPreferenceResult {
   ok?: boolean;
-  settings?: GroupBackgroundSettings;
+  preference?: GroupBackgroundPreference;
 }
 
 export interface KinSubscriptionSummary {
@@ -517,8 +521,6 @@ export interface AppSettingsFormValue {
   hermesJournalSuggestionsEnabled: boolean;
   hermesJournalStrongEventBypass: boolean;
   hermesJournalThrottleMessages: number;
-  hermesGroupBackgroundsEnabled: boolean;
-  hermesGroupBackgroundsAutonomous: boolean;
   voiceEnabled: boolean;
   voiceProvider: string;
   openAiApiKey: string;
@@ -551,14 +553,6 @@ export interface AppConfigView {
       enabled?: boolean;
       throttleMessages?: number;
       strongEventBypass?: boolean;
-    };
-    groupBackgrounds?: {
-      suggestions?: {
-        enabled?: boolean;
-        autonomous?: boolean;
-        minMessagesBetweenProposals?: number;
-        minSignificance?: number;
-      };
     };
   };
   voice?: {

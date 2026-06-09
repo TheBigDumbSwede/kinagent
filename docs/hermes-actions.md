@@ -263,9 +263,9 @@ Guardrails:
 
 - By default this is review-only. Kinagent stores the prompt proposal for the desktop app. The user may generate a local
   preview image from the proposal and explicitly apply it to Kindroid.
-- When autonomous group background updates are enabled, Kinagent accepts qualifying proposals, generates the image,
-  applies it to Kindroid, reloads the Kindroid browser UI through the browser bridge when available, and dismisses the
-  review item after a successful apply.
+- When autonomous group background updates are enabled for the source group, Kinagent accepts qualifying proposals,
+  generates the image, applies it to Kindroid, reloads the Kindroid browser UI through the browser bridge when available,
+  and dismisses the review item after a successful apply.
 - Only use this when `groupBackgroundContext.enabledForSource` is true and `significance` is at or above
   `groupBackgroundContext.minSignificance`.
 - Use it only for substantial visual scene changes: new location, new time/weather, a major setting transition, or a

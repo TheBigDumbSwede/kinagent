@@ -17,6 +17,10 @@ import {
   GroupBackgroundSuggestionStore,
   type GroupBackgroundSuggestion
 } from "../groupBackground/groupBackgroundSuggestionStore.js";
+import {
+  GroupBackgroundPreferenceStore,
+  type GroupBackgroundPreference
+} from "../groupBackground/groupBackgroundPreferences.js";
 import { OpenAiGroupBackgroundImageProvider } from "../groupBackground/openAiImageProvider.js";
 import { createHermesAdapter } from "../hermes/hermesAdapter.js";
 import type { GroupBackgroundContext } from "../hermes/groupBackgroundActionHandler.js";
@@ -114,6 +118,7 @@ export class BridgeRuntime {
   readonly voice: VoiceRuntime;
   readonly journalSuggestions: JournalSuggestionStore;
   readonly groupBackgroundSuggestions: GroupBackgroundSuggestionStore;
+  readonly groupBackgroundPreferences: GroupBackgroundPreferenceStore;
   readonly localScenes: LocalSceneStateStore;
   readonly previouslyOn: PreviouslyOnStore;
   readonly soundscapes: SoundscapeStateStore;
@@ -139,6 +144,7 @@ export class BridgeRuntime {
   ) {
     this.journalSuggestions = JournalSuggestionStore.fromConfig(options.config);
     this.groupBackgroundSuggestions = GroupBackgroundSuggestionStore.fromConfig(options.config);
+    this.groupBackgroundPreferences = GroupBackgroundPreferenceStore.fromConfig(options.config);
     this.localScenes = LocalSceneStateStore.fromConfig(options.config);
     this.previouslyOn = PreviouslyOnStore.fromConfig(options.config);
     this.soundscapes = SoundscapeStateStore.fromConfig(options.config);
@@ -261,7 +267,7 @@ export class BridgeRuntime {
       groupBackgroundSuggestions: this.groupBackgroundSuggestions,
       onGroupBackgroundSuggestionCreated: (suggestion) => {
         this.groupBackgroundPrewarm.markReady(suggestion);
-        if (this.options.config.hermes.groupBackgrounds.suggestions.autonomous) {
+        if (this.getGroupBackgroundPreference(suggestion.groupId).autonomous) {
           void this.autonomouslyApplyGroupBackgroundSuggestion(suggestion);
           return;
         }
@@ -318,7 +324,7 @@ export class BridgeRuntime {
       hermes: this.hermes,
       prewarmState: this.prewarmState,
       onPrewarmStateChanged: (state) => this.emit({ channel: "prewarm-state-updated", payload: state }),
-      isEnabled: () => this.options.config.hermes.groupBackgrounds.suggestions.enabled,
+      isEnabled: (group) => Boolean(group && this.getGroupBackgroundPreference(group.groupId).enabled),
       groupBackgroundContext: (group, latestSpeakerKinId) =>
         this.groupBackgroundContextForGroup(group, latestSpeakerKinId)
     });
@@ -575,9 +581,15 @@ export class BridgeRuntime {
     return this.groupBackgroundSuggestions.listReviewable();
   }
 
-  updateGroupBackgroundSettings(settings: { enabled: boolean; autonomous: boolean }): void {
-    this.options.config.hermes.groupBackgrounds.suggestions.enabled = settings.enabled;
-    this.options.config.hermes.groupBackgrounds.suggestions.autonomous = settings.enabled && settings.autonomous;
+  getGroupBackgroundPreference(groupId: string): GroupBackgroundPreference {
+    return this.groupBackgroundPreferences.get(groupId);
+  }
+
+  setGroupBackgroundPreference(
+    groupId: string,
+    preference: Partial<GroupBackgroundPreference>
+  ): GroupBackgroundPreference {
+    return this.groupBackgroundPreferences.set(groupId, preference);
   }
 
   async forceLocalScenePrewarm(input: { scope: "kin" | "group"; id: string }): Promise<{ ok: true }> {
@@ -603,7 +615,7 @@ export class BridgeRuntime {
   }
 
   async forceGroupBackgroundPrewarm(input: { groupId: string }): Promise<{ ok: true }> {
-    if (!this.options.config.hermes.groupBackgrounds.suggestions.enabled) {
+    if (!this.getGroupBackgroundPreference(input.groupId).enabled) {
       throw new Error("Enable group background suggestions before forcing prewarm.");
     }
 
@@ -1329,7 +1341,7 @@ export class BridgeRuntime {
     const minSignificance = this.options.config.hermes.groupBackgrounds.suggestions.minSignificance;
     if (
       notification.type !== "kindroid.group_chat.changed" ||
-      !this.options.config.hermes.groupBackgrounds.suggestions.enabled
+      !this.getGroupBackgroundPreference(notification.groupId).enabled
     ) {
       return {
         enabledForSource: false,
@@ -1349,8 +1361,11 @@ export class BridgeRuntime {
   ): GroupBackgroundContext {
     const minSignificance = this.options.config.hermes.groupBackgrounds.suggestions.minSignificance;
     const participantIds = group?.aiIds ?? [];
+    const preference = group?.groupId
+      ? this.getGroupBackgroundPreference(group.groupId)
+      : { enabled: false, autonomous: false };
     return {
-      enabledForSource: Boolean(group && this.options.config.hermes.groupBackgrounds.suggestions.enabled),
+      enabledForSource: Boolean(group && preference.enabled),
       minSignificance,
       groupName: group?.name,
       latestSpeakerKinId,
@@ -1359,9 +1374,7 @@ export class BridgeRuntime {
         name: this.resolveKinName(aiId)
       })),
       localScene: group?.groupId ? this.localScenes.getForGroup(group.groupId) : undefined,
-      mutation: this.options.config.hermes.groupBackgrounds.suggestions.autonomous
-        ? "autonomous-generate-apply"
-        : "reviewed-prompt-only"
+      mutation: preference.autonomous ? "autonomous-generate-apply" : "reviewed-prompt-only"
     };
   }
 

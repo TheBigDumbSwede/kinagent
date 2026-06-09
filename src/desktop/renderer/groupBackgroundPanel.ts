@@ -1,12 +1,17 @@
-import type { GroupBackgroundSettings, GroupBackgroundSuggestionSummary, GroupSummary } from "./rendererTypes.js";
+import type {
+  GroupBackgroundPreference,
+  GroupBackgroundPreferenceResult,
+  GroupBackgroundSuggestionSummary,
+  GroupSummary
+} from "./rendererTypes.js";
 
 export interface GroupBackgroundPanelState {
   selectedGroupId: string | null;
   groups: GroupSummary[];
   groupBackgroundSuggestions: GroupBackgroundSuggestionSummary[];
-  groupBackgroundSettings: GroupBackgroundSettings;
+  selectedGroupBackground: GroupBackgroundPreferenceResult | null;
   groupBackgroundForceSaving: boolean;
-  groupBackgroundSettingsSaving: boolean;
+  groupBackgroundSaving: boolean;
   groupBackgroundSavingId: string | null;
   groupBackgroundSavingAction: "generate" | "apply" | "dismiss" | null;
   groupBackgroundError: string | null;
@@ -15,6 +20,7 @@ export interface GroupBackgroundPanelState {
 export interface GroupBackgroundPanelElements {
   groupBackgroundEnabledInput: HTMLInputElement;
   groupBackgroundAutonomousInput: HTMLInputElement;
+  groupBackgroundSaveButton: HTMLButtonElement;
   groupBackgroundStatusLine: HTMLElement;
   groupBackgroundActions: HTMLElement;
   groupBackgroundSuggestionList: HTMLElement;
@@ -23,7 +29,7 @@ export interface GroupBackgroundPanelElements {
 export interface GroupBackgroundPanelContext {
   state: GroupBackgroundPanelState;
   elements: GroupBackgroundPanelElements;
-  onSettingsChanged: (settings: GroupBackgroundSettings) => void;
+  onSavePreference: (preference: GroupBackgroundPreference) => void;
   onForcePrewarm: () => void;
   onGenerateImage: (id: string) => void;
   onApplyImage: (id: string) => void;
@@ -33,29 +39,29 @@ export interface GroupBackgroundPanelContext {
 export function renderGroupBackgroundPanel(context: GroupBackgroundPanelContext, selectedGroup: GroupSummary): void {
   const { state, elements } = context;
   const suggestions = selectedGroupBackgroundSuggestions(state);
+  const preference = state.selectedGroupBackground?.preference ?? { enabled: false, autonomous: false };
   elements.groupBackgroundSuggestionList.replaceChildren();
-  elements.groupBackgroundEnabledInput.checked = state.groupBackgroundSettings.enabled;
-  elements.groupBackgroundEnabledInput.disabled = state.groupBackgroundSettingsSaving;
-  elements.groupBackgroundAutonomousInput.checked =
-    state.groupBackgroundSettings.enabled && state.groupBackgroundSettings.autonomous;
-  elements.groupBackgroundAutonomousInput.disabled =
-    state.groupBackgroundSettingsSaving || !state.groupBackgroundSettings.enabled;
+  elements.groupBackgroundEnabledInput.checked = preference.enabled;
+  elements.groupBackgroundEnabledInput.disabled = state.groupBackgroundSaving;
+  elements.groupBackgroundAutonomousInput.checked = preference.enabled && preference.autonomous;
+  elements.groupBackgroundAutonomousInput.disabled = state.groupBackgroundSaving || !preference.enabled;
+  elements.groupBackgroundSaveButton.disabled = state.groupBackgroundSaving || !state.selectedGroupId;
   elements.groupBackgroundEnabledInput.onchange = () => {
-    context.onSettingsChanged({
-      enabled: elements.groupBackgroundEnabledInput.checked,
-      autonomous: elements.groupBackgroundEnabledInput.checked && elements.groupBackgroundAutonomousInput.checked
-    });
+    elements.groupBackgroundAutonomousInput.disabled = !elements.groupBackgroundEnabledInput.checked;
+    if (!elements.groupBackgroundEnabledInput.checked) {
+      elements.groupBackgroundAutonomousInput.checked = false;
+    }
   };
-  elements.groupBackgroundAutonomousInput.onchange = () => {
-    context.onSettingsChanged({
+  elements.groupBackgroundSaveButton.onclick = () => {
+    context.onSavePreference({
       enabled: elements.groupBackgroundEnabledInput.checked,
       autonomous: elements.groupBackgroundEnabledInput.checked && elements.groupBackgroundAutonomousInput.checked
     });
   };
   elements.groupBackgroundActions.replaceChildren(createForcePrewarmButton(context));
-  elements.groupBackgroundStatusLine.textContent = !state.groupBackgroundSettings.enabled
+  elements.groupBackgroundStatusLine.textContent = !preference.enabled
     ? "Background proposals are disabled."
-    : state.groupBackgroundSettings.autonomous
+    : preference.autonomous
       ? "Autonomous background updates are enabled."
       : suggestions.length > 0
         ? `${suggestions.length} reviewed background prompt ${suggestions.length === 1 ? "proposal" : "proposals"} ready.`
@@ -205,8 +211,8 @@ function createForcePrewarmButton(context: GroupBackgroundPanelContext): HTMLEle
   button.textContent = context.state.groupBackgroundForceSaving ? "Prewarming" : "Force Prewarm";
   button.disabled =
     context.state.groupBackgroundForceSaving ||
-    context.state.groupBackgroundSettingsSaving ||
-    !context.state.groupBackgroundSettings.enabled ||
+    context.state.groupBackgroundSaving ||
+    !context.state.selectedGroupBackground?.preference?.enabled ||
     !context.state.selectedGroupId;
   button.addEventListener("click", () => context.onForcePrewarm());
   return button;

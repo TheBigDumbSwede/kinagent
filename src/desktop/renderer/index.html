@@ -293,20 +293,6 @@
                   </section>
 
                   <section class="settings-section">
-                    <h2>Group Backgrounds</h2>
-                    <div class="settings-grid two">
-                      <label class="checkbox-label">
-                        <input id="settingsGroupBackgroundEnabledInput" type="checkbox" />
-                        <span>Enable background proposals</span>
-                      </label>
-                      <label class="checkbox-label">
-                        <input id="settingsGroupBackgroundAutonomousInput" type="checkbox" />
-                        <span>Autonomous apply</span>
-                      </label>
-                    </div>
-                  </section>
-
-                  <section class="settings-section">
                     <h2>Voice</h2>
                     <div class="settings-grid three">
                       <label class="checkbox-label">
@@ -503,6 +489,9 @@
                       <span>Autonomous generate and apply</span>
                     </label>
                     <p id="groupBackgroundStatusLine" class="panel-note"></p>
+                    <div class="button-row form-action-row">
+                      <button id="groupBackgroundSaveButton" type="button">Save Background</button>
+                    </div>
                     <div id="groupBackgroundActions" class="button-row form-action-row"></div>
                     <div id="groupBackgroundSuggestionList" class="background-suggestion-list"></div>
                   </section>

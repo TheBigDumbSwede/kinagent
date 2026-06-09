@@ -11,7 +11,7 @@ import {
 
 interface GroupBackgroundPrewarmCoordinatorOptions extends PrewarmCoordinatorBaseOptions {
   hermes: HermesAdapter;
-  isEnabled: () => boolean;
+  isEnabled: (group: KindroidGroup) => boolean;
   groupBackgroundContext: (group: KindroidGroup, latestSpeakerKinId: string | null) => GroupBackgroundContext;
 }
 
@@ -20,7 +20,7 @@ export class GroupBackgroundPrewarmCoordinator extends PrewarmCoordinatorBase {
     super(options, {
       kind: "groupBackground",
       deferLabel: "group background",
-      isRuntimeEnabled: options.isEnabled
+      isRuntimeEnabled: () => true
     });
   }
 
@@ -49,7 +49,7 @@ export class GroupBackgroundPrewarmCoordinator extends PrewarmCoordinatorBase {
     }
 
     const source = { scope: "group" as const, id: group.groupId };
-    if (!this.begin(source, input, this.options.isEnabled())) {
+    if (!this.begin(source, input, this.options.isEnabled(group))) {
       return;
     }
 

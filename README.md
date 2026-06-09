@@ -420,11 +420,13 @@ panel can force a background prewarm and can generate a local PNG from a reviewe
 Generated images are saved under the app data directory and shown for review in the Background tab. From there, the user
 can explicitly apply a generated image to Kindroid; Kinagent uploads the PNG, registers it as a background image, and
 updates the selected group's background settings from the latest group state. It does not mutate Kindroid background
-settings automatically unless autonomous group background updates are enabled. In autonomous mode, Kinagent accepts a
-qualifying proposal, generates the image, applies it to Kindroid, reloads the Kindroid browser UI through the browser
-extension bridge when available, and dismisses the review item after a successful apply. Background proposals also have a
-group prewarm path based on the current group local-scene snapshot, so Group Gaming can handle a live turn without
-forcing background generation to hunt through older chat history.
+settings automatically unless autonomous group background updates are enabled for that group. The Group > Background
+tab stores per-group `enabled` and `autonomous` preferences with an explicit Save Background button; the config file
+values act as defaults for groups without a saved preference. In autonomous mode, Kinagent accepts a qualifying proposal,
+generates the image, applies it to Kindroid, reloads the Kindroid browser UI through the browser extension bridge when
+available, and dismisses the review item after a successful apply. Background proposals also have a group prewarm path
+based on the current group local-scene snapshot, so Group Gaming can handle a live turn without forcing background
+generation to hunt through older chat history.
 
 Use a non-default config file:
 
