@@ -7,11 +7,6 @@ chrome.runtime.onMessage.addListener((message) => {
 
   if (message.type === "kinagent-show-notice") {
     showNotice(typeof message.text === "string" ? message.text : "Kinagent is connected.");
-  } else if (message.type === "kinagent-reload-kindroid") {
-    showNotice("Kinagent is reloading this Kindroid tab.");
-    setTimeout(() => {
-      window.location.reload();
-    }, 500);
   }
 });
 

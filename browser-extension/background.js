@@ -63,15 +63,24 @@ function dispatchCommand(command) {
       }
 
       if (command.type === "show-notice") {
-        chrome.tabs.sendMessage(tab.id, {
-          type: "kinagent-show-notice",
-          text: typeof command.text === "string" ? command.text : "Kinagent is connected."
-        });
+        sendKindroidNotice(tab.id, typeof command.text === "string" ? command.text : "Kinagent is connected.");
       } else if (command.type === "reload-kindroid") {
-        chrome.tabs.sendMessage(tab.id, { type: "kinagent-reload-kindroid" });
+        sendKindroidNotice(tab.id, "Kinagent is reloading this Kindroid tab.");
+        setTimeout(() => {
+          chrome.tabs.reload(tab.id).catch(() => undefined);
+        }, 500);
       }
     }
   });
+}
+
+function sendKindroidNotice(tabId, text) {
+  chrome.tabs
+    .sendMessage(tabId, {
+      type: "kinagent-show-notice",
+      text
+    })
+    .catch(() => undefined);
 }
 
 function pollNativeHost() {

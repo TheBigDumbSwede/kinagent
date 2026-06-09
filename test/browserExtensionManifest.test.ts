@@ -16,6 +16,8 @@ interface BrowserExtensionManifest {
 }
 
 const manifestPath = path.join(process.cwd(), "browser-extension", "manifest.json");
+const backgroundPath = path.join(process.cwd(), "browser-extension", "background.js");
+const contentPath = path.join(process.cwd(), "browser-extension", "content.js");
 
 describe("browser extension manifest", () => {
   it("keeps the extension on the narrow native messaging and Kindroid-only surface", () => {
@@ -32,5 +34,14 @@ describe("browser extension manifest", () => {
         run_at: "document_idle"
       }
     ]);
+  });
+
+  it("keeps deliberate reloads in the background script and treats notices as best-effort", () => {
+    const background = fs.readFileSync(backgroundPath, "utf8");
+    const content = fs.readFileSync(contentPath, "utf8");
+
+    expect(background).toContain("chrome.tabs.reload");
+    expect(background).toContain(".catch(() => undefined)");
+    expect(content).not.toContain("kinagent-reload-kindroid");
   });
 });
