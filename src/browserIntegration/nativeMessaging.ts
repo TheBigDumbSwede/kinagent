@@ -16,6 +16,11 @@ export interface NativeMessagingManifestFilesInput extends NativeMessagingManife
   targets: NativeMessagingTarget[];
 }
 
+export interface NativeMessagingManifestFileInput extends NativeMessagingManifestInput {
+  manifestDir: string;
+  target: NativeMessagingTarget;
+}
+
 export interface NativeMessagingRegistryCommand {
   command: "reg.exe";
   args: string[];
@@ -66,15 +71,25 @@ export async function writeNativeMessagingManifestFiles(
 
   const files: NativeMessagingManifestFile[] = [];
   for (const target of input.targets) {
-    const manifest =
-      target === "firefox" ? buildFirefoxNativeMessagingManifest(input) : buildChromiumNativeMessagingManifest(input);
-    const manifestPath = nativeMessagingManifestPath(input.manifestDir, target);
-    await fs.writeFile(`${manifestPath}.tmp`, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
-    await fs.rename(`${manifestPath}.tmp`, manifestPath);
-    files.push({ target, path: manifestPath });
+    files.push(await writeNativeMessagingManifestFile({ ...input, target }));
   }
 
   return files;
+}
+
+export async function writeNativeMessagingManifestFile(
+  input: NativeMessagingManifestFileInput
+): Promise<NativeMessagingManifestFile> {
+  await fs.mkdir(input.manifestDir, { recursive: true });
+
+  const manifest =
+    input.target === "firefox"
+      ? buildFirefoxNativeMessagingManifest(input)
+      : buildChromiumNativeMessagingManifest(input);
+  const manifestPath = nativeMessagingManifestPath(input.manifestDir, input.target);
+  await fs.writeFile(`${manifestPath}.tmp`, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+  await fs.rename(`${manifestPath}.tmp`, manifestPath);
+  return { target: input.target, path: manifestPath };
 }
 
 export function nativeMessagingManifestPath(manifestDir: string, target: NativeMessagingTarget): string {

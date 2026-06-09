@@ -20,6 +20,14 @@ import { analyzeKinDesign, type KinAnalysisProgress } from "../kinAnalysis/kinAn
 import { BridgeRuntime, type BridgeRuntimeEvent, type KinSoundscapePreference } from "../runtime/bridgeRuntime.js";
 import type { JournalSuggestion } from "../journal/journalSuggestionStore.js";
 import { BrowserBridgeServer } from "../browserIntegration/browserBridgeServer.js";
+import {
+  readBrowserIntegrationStatus,
+  registerBrowserIntegration,
+  saveBrowserIntegrationSettings,
+  unregisterBrowserIntegration,
+  type BrowserIntegrationRegistrationPaths
+} from "../browserIntegration/browserIntegrationRegistration.js";
+import { nativeHostExecutablePath } from "../browserIntegration/nativeMessaging.js";
 import { createLogger, type Logger } from "../util/logger.js";
 import {
   loadKinVoicePreference,
@@ -31,6 +39,7 @@ import {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const launchCwd = process.cwd();
 
 let config: AppConfig;
 let logger: Logger;
@@ -200,6 +209,15 @@ function registerIpcHandlers(): void {
   ipcMain.handle("app:get-status", async () => getDesktopStatus());
   ipcMain.handle("settings:get", async () => getDesktopSettings());
   ipcMain.handle("settings:save", async (_event, input: unknown) => saveDesktopSettings(input));
+  ipcMain.handle("browser-integration:get-status", async () => readBrowserIntegrationStatus(browserIntegrationPaths()));
+  ipcMain.handle("browser-integration:save-settings", async (_event, input: unknown) => {
+    await saveBrowserIntegrationSettings(browserIntegrationPaths().settingsPath, input);
+    return readBrowserIntegrationStatus(browserIntegrationPaths());
+  });
+  ipcMain.handle("browser-integration:register", async (_event, input: unknown) =>
+    registerBrowserIntegration(browserIntegrationPaths(), input)
+  );
+  ipcMain.handle("browser-integration:unregister", async () => unregisterBrowserIntegration(browserIntegrationPaths()));
   ipcMain.handle("app:open-kindroid", async () => {
     await shell.openExternal("https://kindroid.ai/");
     return { ok: true };
@@ -373,6 +391,16 @@ function getDesktopSettings(input: { saved?: boolean } = {}) {
     configPath: desktopConfigPath,
     userDataDir: desktopUserDataDir,
     config
+  };
+}
+
+function browserIntegrationPaths(): BrowserIntegrationRegistrationPaths {
+  return {
+    settingsPath: path.join(desktopUserDataDir, "browser-integration.json"),
+    manifestDir: path.join(desktopUserDataDir, "native-messaging"),
+    hostPath: app.isPackaged
+      ? nativeHostExecutablePath(process.resourcesPath)
+      : path.join(launchCwd, "dist", "native-host", "win-x64", "kinagent-native-host.exe")
   };
 }
 

@@ -32,7 +32,43 @@ export interface ChatExportProgress {
   message?: string;
 }
 
+export type BrowserIntegrationTarget = "chrome" | "edge" | "firefox";
+
+export interface BrowserIntegrationSettings {
+  targets: BrowserIntegrationTarget[];
+  chromiumExtensionIds: string[];
+  firefoxExtensionIds: string[];
+}
+
+export interface BrowserIntegrationTargetStatus {
+  target: BrowserIntegrationTarget;
+  selected: boolean;
+  configured: boolean;
+  manifestPath: string;
+  manifestExists: boolean;
+  registryKey: string;
+  registryValue: string | null;
+  registered: boolean;
+  error?: string;
+}
+
+export interface BrowserIntegrationStatus {
+  ok?: boolean;
+  platform: string;
+  hostName: string;
+  hostPath: string;
+  hostExists: boolean;
+  manifestDir: string;
+  settings: BrowserIntegrationSettings;
+  validationErrors: string[];
+  targets: BrowserIntegrationTargetStatus[];
+}
+
 export interface KinagentApi {
+  getBrowserIntegrationStatus(): Promise<BrowserIntegrationStatus>;
+  saveBrowserIntegrationSettings(input: BrowserIntegrationSettings): Promise<BrowserIntegrationStatus>;
+  registerBrowserIntegration(input: BrowserIntegrationSettings): Promise<BrowserIntegrationStatus>;
+  unregisterBrowserIntegration(): Promise<BrowserIntegrationStatus>;
   analyzeKin(input: { kinId: string }): Promise<KinAnalysisResult>;
   exportKinChat(input: ChatExportRequest & { kinId: string }): Promise<ChatExportResult>;
   exportGroupChat(input: ChatExportRequest & { groupId: string }): Promise<ChatExportResult>;
