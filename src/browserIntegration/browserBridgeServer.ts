@@ -1,4 +1,5 @@
 import net from "node:net";
+import { randomUUID } from "node:crypto";
 import { NATIVE_MESSAGING_PIPE_NAME } from "./nativeMessaging.js";
 import type { Logger } from "../util/logger.js";
 
@@ -14,17 +15,47 @@ export interface BrowserBridgeRequest {
 
 export interface BrowserBridgeResponse {
   id: unknown;
-  type: "ack" | "error" | "pong";
+  type: "ack" | "commands" | "error" | "pong";
   ok?: boolean;
   code?: string;
+  commands?: BrowserBridgeCommand[];
   message?: string;
+}
+
+// Sent over an unauthenticated local pipe. Keep command payloads non-sensitive
+// until the pipe is hardened. See start().
+export const BROWSER_BRIDGE_COMMAND_TYPES = ["reload-kindroid", "show-notice"] as const;
+export type BrowserBridgeCommandType = (typeof BROWSER_BRIDGE_COMMAND_TYPES)[number];
+
+// Inbound types must stay non-mutating until the pipe is authenticated. See start().
+export const BROWSER_BRIDGE_INBOUND_MESSAGE_TYPES = ["ping", "browser-ready", "poll"] as const;
+
+export interface BrowserBridgeCommand {
+  id: string;
+  type: BrowserBridgeCommandType;
+  createdAt: string;
+  text?: string;
+}
+
+export interface BrowserBridgeRuntimeStatus {
+  connected: boolean;
+  queuedCommandCount: number;
+  lastReadyAt: string | null;
+  lastPollAt: string | null;
+}
+
+export interface BrowserBridgeMessageOptions {
+  commands?: BrowserBridgeCommand[];
 }
 
 export function nativeMessagingPipePath(pipeName = NATIVE_MESSAGING_PIPE_NAME): string {
   return `\\\\.\\pipe\\${pipeName}`;
 }
 
-export function handleBrowserBridgeMessage(input: unknown): BrowserBridgeResponse {
+export function handleBrowserBridgeMessage(
+  input: unknown,
+  options: BrowserBridgeMessageOptions = {}
+): BrowserBridgeResponse {
   if (!isRecord(input)) {
     return errorResponse(null, "invalid_message", "Browser bridge messages must be JSON objects.");
   }
@@ -39,6 +70,8 @@ export function handleBrowserBridgeMessage(input: unknown): BrowserBridgeRespons
       return { id, type: "pong", ok: true };
     case "browser-ready":
       return { id, type: "ack", ok: true };
+    case "poll":
+      return { id, type: "commands", ok: true, commands: options.commands ?? [] };
     default:
       return errorResponse(id, "unsupported_message", `Unsupported browser bridge message type: ${input.type}`);
   }
@@ -48,7 +81,10 @@ export class BrowserBridgeServer {
   private readonly logger: Logger;
   private readonly pipeName: string;
   private readonly sockets = new Set<net.Socket>();
+  private readonly queuedCommands: BrowserBridgeCommand[] = [];
   private server: net.Server | null = null;
+  private lastReadyAt: Date | null = null;
+  private lastPollAt: Date | null = null;
 
   constructor(options: BrowserBridgeServerOptions) {
     this.logger = options.logger;
@@ -69,6 +105,9 @@ export class BrowserBridgeServer {
     const pipePath = nativeMessagingPipePath(this.pipeName);
     this.server = server;
 
+    // This local pipe is intentionally unauthenticated for the MVP. Keep bridge
+    // payloads outbound-only and non-sensitive until the pipe DACL is pinned to
+    // the current user and the native host completes an authenticated handshake.
     try {
       await new Promise<void>((resolve, reject) => {
         const onError = (error: Error): void => {
@@ -112,6 +151,32 @@ export class BrowserBridgeServer {
     });
   }
 
+  queueCommand(type: BrowserBridgeCommandType, options: { text?: string } = {}): BrowserBridgeCommand {
+    const command: BrowserBridgeCommand = {
+      id: randomUUID(),
+      type,
+      createdAt: new Date().toISOString(),
+      text: options.text
+    };
+
+    this.queuedCommands.push(command);
+    if (this.queuedCommands.length > 20) {
+      this.queuedCommands.splice(0, this.queuedCommands.length - 20);
+    }
+
+    return command;
+  }
+
+  status(now = new Date()): BrowserBridgeRuntimeStatus {
+    const recentActivityAt = this.lastPollAt ?? this.lastReadyAt;
+    return {
+      connected: recentActivityAt ? now.getTime() - recentActivityAt.getTime() < 45_000 : false,
+      queuedCommandCount: this.queuedCommands.length,
+      lastReadyAt: this.lastReadyAt?.toISOString() ?? null,
+      lastPollAt: this.lastPollAt?.toISOString() ?? null
+    };
+  }
+
   private handleSocket(socket: net.Socket): void {
     this.sockets.add(socket);
     let buffer = "";
@@ -149,7 +214,26 @@ export class BrowserBridgeServer {
       return;
     }
 
-    socket.write(`${JSON.stringify(handleBrowserBridgeMessage(parsed))}\n`);
+    const commands = this.prepareCommandsFor(parsed);
+    socket.write(`${JSON.stringify(handleBrowserBridgeMessage(parsed, { commands }))}\n`);
+  }
+
+  private prepareCommandsFor(message: unknown): BrowserBridgeCommand[] {
+    if (!isRecord(message) || typeof message.type !== "string") {
+      return [];
+    }
+
+    if (message.type === "browser-ready") {
+      this.lastReadyAt = new Date();
+      return [];
+    }
+
+    if (message.type !== "poll") {
+      return [];
+    }
+
+    this.lastPollAt = new Date();
+    return this.queuedCommands.splice(0);
   }
 }
 

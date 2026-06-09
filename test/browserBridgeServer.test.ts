@@ -1,6 +1,8 @@
 import net from "node:net";
 import { describe, expect, it } from "vitest";
 import {
+  BROWSER_BRIDGE_COMMAND_TYPES,
+  BROWSER_BRIDGE_INBOUND_MESSAGE_TYPES,
   BrowserBridgeServer,
   handleBrowserBridgeMessage,
   nativeMessagingPipePath
@@ -15,6 +17,14 @@ const silentLogger: Logger = {
 };
 
 describe("browser bridge server", () => {
+  it("pins the unauthenticated bridge to non-sensitive outbound commands", () => {
+    expect([...BROWSER_BRIDGE_COMMAND_TYPES].sort()).toEqual(["reload-kindroid", "show-notice"].sort());
+  });
+
+  it("pins unauthenticated inbound messages to non-mutating bridge requests", () => {
+    expect([...BROWSER_BRIDGE_INBOUND_MESSAGE_TYPES].sort()).toEqual(["browser-ready", "ping", "poll"].sort());
+  });
+
   it("handles native messaging bridge pings", () => {
     expect(handleBrowserBridgeMessage({ id: "ping-1", type: "ping" })).toEqual({
       id: "ping-1",
@@ -29,6 +39,54 @@ describe("browser bridge server", () => {
       type: "ack",
       ok: true
     });
+  });
+
+  it("returns queued browser commands only when the extension polls", () => {
+    const commands = [
+      {
+        id: "command-1",
+        type: "show-notice" as const,
+        createdAt: "2026-06-08T00:00:00.000Z",
+        text: "Kinagent is connected."
+      }
+    ];
+
+    expect(handleBrowserBridgeMessage({ id: "poll-1", type: "poll" }, { commands })).toEqual({
+      id: "poll-1",
+      type: "commands",
+      ok: true,
+      commands
+    });
+  });
+
+  it("tracks extension activity and drains queued commands", async () => {
+    if (process.platform !== "win32") {
+      return;
+    }
+
+    const pipeName = `kinagent-browser-bridge-test-${process.pid}-${Date.now()}`;
+    const server = new BrowserBridgeServer({ logger: silentLogger, pipeName });
+    await server.start();
+
+    try {
+      expect(server.status(new Date()).connected).toBe(false);
+      const command = server.queueCommand("reload-kindroid");
+      await expect(sendPipeRequest(pipeName, { id: "ready-1", type: "browser-ready" })).resolves.toEqual({
+        id: "ready-1",
+        type: "ack",
+        ok: true
+      });
+      expect(server.status(new Date()).connected).toBe(true);
+      await expect(sendPipeRequest(pipeName, { id: "poll-1", type: "poll" })).resolves.toEqual({
+        id: "poll-1",
+        type: "commands",
+        ok: true,
+        commands: [command]
+      });
+      expect(server.status(new Date()).queuedCommandCount).toBe(0);
+    } finally {
+      await server.stop();
+    }
   });
 
   it("rejects unsupported or malformed bridge messages", () => {
