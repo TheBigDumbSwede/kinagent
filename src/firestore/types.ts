@@ -23,7 +23,12 @@ export interface KindroidChatChangeNotification {
   textDecryptionError?: string;
   sender: string | null;
   role: string | null;
-  source: "firestore" | "soundscape-prewarm" | "local-scene-prewarm" | "previously-on-prewarm";
+  source:
+    | "firestore"
+    | "soundscape-prewarm"
+    | "local-scene-prewarm"
+    | "previously-on-prewarm"
+    | "group-background-prewarm";
 }
 
 export interface KindroidGroupChatChangeNotification {
@@ -38,7 +43,13 @@ export interface KindroidGroupChatChangeNotification {
   textDecryptionError?: string;
   sender: string | null;
   role: string | null;
-  source: "firestore" | "soundscape-prewarm" | "local-scene-prewarm" | "previously-on-prewarm";
+  source:
+    | "firestore"
+    | "soundscape-prewarm"
+    | "local-scene-prewarm"
+    | "previously-on-prewarm"
+    | "group-background-prewarm";
+  forceBackgroundProposal?: boolean;
 }
 
 export type KindroidChatNotification = KindroidChatChangeNotification | KindroidGroupChatChangeNotification;

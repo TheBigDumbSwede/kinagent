@@ -3,57 +3,49 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { AppConfig } from "../src/config/types.js";
-import { loadKinVoicePreference, saveKinVoicePreference, voicePreferencesPath } from "../src/voice/voicePreferences.js";
+import {
+  GroupBackgroundPreferenceStore,
+  groupBackgroundPreferencesPath
+} from "../src/groupBackground/groupBackgroundPreferences.js";
 
-describe("voicePreferences", () => {
-  it("defaults to disabled OpenAI voice per Kin", () => {
+describe("GroupBackgroundPreferenceStore", () => {
+  it("persists enable and autonomous settings per group", () => {
     const config = testConfig();
+    const store = GroupBackgroundPreferenceStore.fromConfig(config);
 
-    expect(loadKinVoicePreference(config, "kin-1")).toMatchObject({
+    expect(store.get("group-a")).toEqual({ enabled: false, autonomous: false });
+    expect(store.set("group-a", { enabled: true, autonomous: true })).toEqual({
+      enabled: true,
+      autonomous: true
+    });
+    expect(store.set("group-b", { enabled: false, autonomous: true })).toEqual({
       enabled: false,
-      provider: "openai",
-      openaiVoice: "marin",
-      elevenLabsVoiceId: "",
-      filterNarrationForTts: true,
-      narrationDelimiter: "*"
-    });
-  });
-
-  it("persists a Kin voice preference next to bridge storage", () => {
-    const config = testConfig();
-
-    saveKinVoicePreference(config, "kin-1", {
-      enabled: true,
-      provider: "elevenlabs",
-      elevenLabsVoiceId: "voice-id-1"
+      autonomous: false
     });
 
-    expect(loadKinVoicePreference(config, "kin-1")).toMatchObject({
-      enabled: true,
-      provider: "elevenlabs",
-      openaiVoice: "marin",
-      elevenLabsVoiceId: "voice-id-1",
-      filterNarrationForTts: true,
-      narrationDelimiter: "*"
-    });
-    expect(fs.existsSync(voicePreferencesPath(config))).toBe(true);
+    const reloaded = GroupBackgroundPreferenceStore.fromConfig(config);
+    expect(reloaded.get("group-a")).toEqual({ enabled: true, autonomous: true });
+    expect(reloaded.get("group-b")).toEqual({ enabled: false, autonomous: false });
+    expect(reloaded.get("group-c")).toEqual({ enabled: false, autonomous: false });
+    expect(fs.existsSync(groupBackgroundPreferencesPath(config))).toBe(true);
   });
 });
 
 function testConfig(): AppConfig {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "kinagent-voice-pref-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "kinagent-group-background-preferences-"));
   return {
     kindroid: {
+      apiKey: "",
       firebaseProjectId: "kindroid-ai",
       uid: "",
       kins: []
     },
     bridge: {
       dedupeWindowSeconds: 180,
-      logPath: path.join(tempDir, "kinagent.log"),
+      logPath: path.join(dir, "kinagent.log"),
       logLevel: "info",
-      sessionDir: path.join(tempDir, "session"),
-      sqlitePath: path.join(tempDir, "bridge.sqlite")
+      sessionDir: path.join(dir, "browser-session"),
+      sqlitePath: path.join(dir, "bridge.sqlite")
     },
     hermes: {
       enabled: false,
@@ -71,7 +63,7 @@ function testConfig(): AppConfig {
       },
       groupBackgrounds: {
         suggestions: {
-          enabled: true,
+          enabled: false,
           autonomous: false,
           minMessagesBetweenProposals: 12,
           minSignificance: 0.7
@@ -101,16 +93,16 @@ function testConfig(): AppConfig {
       }
     },
     voice: {
-      enabled: true,
-      provider: "openai",
+      enabled: false,
+      provider: "none",
       openai: {
-        apiKey: "openai-token",
+        apiKey: "",
         model: "gpt-4o-mini-tts",
         voice: "marin",
         instructions: ""
       },
       elevenlabs: {
-        apiKey: "elevenlabs-token",
+        apiKey: "",
         model: "eleven_flash_v2_5",
         outputFormat: "mp3_44100_128"
       }

@@ -16,15 +16,16 @@ disabled features are ignored.
 
 The active registry is built by `createHermesActionRegistry(...)`.
 
-| Action types                                                     | Handler                          | Execution | Scope                                                                                                  |
-| ---------------------------------------------------------------- | -------------------------------- | --------- | ------------------------------------------------------------------------------------------------------ |
-| `update_previously_on_brief`, `update_group_previously_on_brief` | `PreviouslyOnActionHandler`      | Immediate | Stores local-only continuity recap metadata for the same direct Kin or group chat.                     |
-| `update_local_scene_state`, `update_group_local_scene_state`     | `LocalSceneActionHandler`        | Immediate | Stores local-only backstage scene metadata for the same direct Kin or group chat.                      |
-| `update_current_scene`, `update_group_current_scene`             | `CurrentSceneActionHandler`      | Immediate | Updates Kindroid `current_scene` for the same direct Kin or group chat.                                |
-| `update_soundscape`, `update_group_soundscape`                   | `SoundscapeActionHandler`        | Immediate | Emits local procedural soundscape metadata for the same direct Kin or group chat.                      |
-| `send_ambient_context_turn`                                      | `AmbientContextActionHandler`    | Immediate | Sends a direct Kin ambient visible message with hidden `internet_response` context.                    |
-| `propose_journal_entry`, `delete_journal_entry`                  | `JournalSuggestionActionHandler` | Reviewed  | Creates pending desktop review items. Kindroid journals are changed only after user acceptance.        |
-| `propose_chat_dynamism_adjustment`                               | `ChatDynamismActionHandler`      | Reviewed  | Creates pending direct-Kin Chat Dynamism suggestions. No Kindroid mutation is performed automatically. |
+| Action types                                                     | Handler                          | Execution | Scope                                                                                                                                  |
+| ---------------------------------------------------------------- | -------------------------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `update_previously_on_brief`, `update_group_previously_on_brief` | `PreviouslyOnActionHandler`      | Immediate | Stores local-only continuity recap metadata for the same direct Kin or group chat.                                                     |
+| `update_local_scene_state`, `update_group_local_scene_state`     | `LocalSceneActionHandler`        | Immediate | Stores local-only backstage scene metadata for the same direct Kin or group chat.                                                      |
+| `update_current_scene`, `update_group_current_scene`             | `CurrentSceneActionHandler`      | Immediate | Updates Kindroid `current_scene` for the same direct Kin or group chat.                                                                |
+| `update_soundscape`, `update_group_soundscape`                   | `SoundscapeActionHandler`        | Immediate | Emits local procedural soundscape metadata for the same direct Kin or group chat.                                                      |
+| `propose_group_background_image`                                 | `GroupBackgroundActionHandler`   | Reviewed  | Creates pending group background image prompt proposals; desktop review can generate and explicitly apply a Kindroid background image. |
+| `send_ambient_context_turn`                                      | `AmbientContextActionHandler`    | Immediate | Sends a direct Kin ambient visible message with hidden `internet_response` context.                                                    |
+| `propose_journal_entry`, `delete_journal_entry`                  | `JournalSuggestionActionHandler` | Reviewed  | Creates pending desktop review items. Kindroid journals are changed only after user acceptance.                                        |
+| `propose_chat_dynamism_adjustment`                               | `ChatDynamismActionHandler`      | Reviewed  | Creates pending direct-Kin Chat Dynamism suggestions. No Kindroid mutation is performed automatically.                                 |
 
 ## Previously On Briefs
 
@@ -236,6 +237,47 @@ Guardrails:
 - It does not call Kindroid and does not write `current_scene`.
 - Soundscape prewarm uses the same shared prewarm watermark as local scene prewarm, persists generated soundscape state
   locally, and can be refreshed per source with Force Prewarm from the desktop Audio tab.
+
+## Group Background Prompt Proposals
+
+Group chats may request a reviewed background prompt proposal:
+
+```json
+{
+  "type": "propose_group_background_image",
+  "group_id": "<same group_id>",
+  "title": "<short visual proposal title>",
+  "target_current_scene": "<brief current setting if known>",
+  "scene_summary": "<visual scene summary>",
+  "visual_style": "<style guidance>",
+  "prompt": "<image generation prompt for a chat background, no text, no UI>",
+  "negative_prompt": "<optional exclusions>",
+  "reason": "<why the setting changed enough to justify a new background>",
+  "evidence": ["<specific scene-change evidence>"],
+  "significance": 0.82,
+  "confidence": "high"
+}
+```
+
+Guardrails:
+
+- By default this is review-only. Kinagent stores the prompt proposal for the desktop app. The user may generate a local
+  preview image from the proposal and explicitly apply it to Kindroid.
+- When autonomous group background updates are enabled for the source group, Kinagent accepts qualifying proposals,
+  generates the image, applies it to Kindroid, reloads the Kindroid browser UI through the browser bridge when available,
+  and dismisses the review item after a successful apply.
+- Only use this when `groupBackgroundContext.enabledForSource` is true and `significance` is at or above
+  `groupBackgroundContext.minSignificance`.
+- Use it only for substantial visual scene changes: new location, new time/weather, a major setting transition, or a
+  fresh chapter beat.
+- Do not propose for routine replies, emotional tone alone, dice rolls, minor movement, or small talk.
+- Prompt for environment or ambience. Do not create portraits of group participants unless a future reviewed workflow
+  explicitly asks for character art.
+- Background prompts must avoid text, logos, UI elements, private identifiers, and explicit gore.
+- Group background prewarm uses the current group local-scene snapshot as its source of truth. It does not perform
+  recent-chat-history catch-up. It returns only `propose_group_background_image` actions and exists so reviewed
+  background prompts can still be proposed when another group subsystem, such as Group Gaming, handles the live turn
+  before generic Hermes group actions run.
 
 ## Journal Suggestions
 

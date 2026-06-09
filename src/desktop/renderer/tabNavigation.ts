@@ -8,9 +8,9 @@ const groupSettingTabKeys = new Set([
   "group-profile"
 ]);
 const kinModes = ["settings", "local-scene", "journal", "hermes", "voice", "analyze", "export"];
-const groupModes = ["settings", "group-local-scene", "group-audio", "group-gaming", "group-export"];
+const groupModes = ["settings", "group-local-scene", "group-background", "group-audio", "group-gaming", "group-export"];
 const directModes = ["local-scene", "journal", "hermes", "voice", "analyze", "export"];
-const groupDirectModes = ["group-local-scene", "group-audio", "group-gaming", "group-export"];
+const groupDirectModes = ["group-local-scene", "group-background", "group-audio", "group-gaming", "group-export"];
 
 export interface TabNavigationState {
   activeTab: string;
@@ -181,6 +181,10 @@ export function tabLabelFor(context: Pick<TabNavigationContext, "state" | "eleme
     return "Audio";
   }
 
+  if (tab === "group-background") {
+    return "Background";
+  }
+
   if (tab === "group-gaming") {
     return "Gaming";
   }
@@ -270,6 +274,10 @@ export function subtitleForDetailMode(mode: string): string {
 
   if (mode === "group-audio") {
     return "Group audio configuration";
+  }
+
+  if (mode === "group-background") {
+    return "Group background proposals";
   }
 
   if (mode === "group-gaming") {

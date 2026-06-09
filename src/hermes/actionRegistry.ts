@@ -3,6 +3,10 @@ import {
   type ChatDynamismSuggestion,
   type ChatDynamismSuggestionStore
 } from "../chatDynamism/chatDynamismSuggestionStore.js";
+import {
+  type GroupBackgroundSuggestion,
+  type GroupBackgroundSuggestionStore
+} from "../groupBackground/groupBackgroundSuggestionStore.js";
 import { createCapturedJournalContextProvider, type JournalSuggestionContext } from "../journal/journalContext.js";
 import { type JournalSuggestion, type JournalSuggestionStore } from "../journal/journalSuggestionStore.js";
 import type { DedupeStore } from "../state/dedupeStore.js";
@@ -30,6 +34,7 @@ import {
   type ScopedSoundscapeUpdate,
   type SoundscapePreference
 } from "./soundscapeActionHandler.js";
+import { GroupBackgroundActionHandler, type GroupBackgroundContext } from "./groupBackgroundActionHandler.js";
 
 export interface HermesActionRegistryOptions {
   journalSuggestions?: JournalSuggestionStore;
@@ -42,6 +47,9 @@ export interface HermesActionRegistryOptions {
   onChatDynamismSuggestionCreated?: (suggestion: ChatDynamismSuggestion) => void;
   isChatDynamismEnabled?: (aiId: string) => boolean;
   chatDynamismRange?: (aiId: string) => { min: number; max: number };
+  groupBackgroundSuggestions?: GroupBackgroundSuggestionStore;
+  onGroupBackgroundSuggestionCreated?: (suggestion: GroupBackgroundSuggestion) => void;
+  groupBackgroundContextProvider?: (notification: KindroidChatNotification) => Promise<GroupBackgroundContext>;
   journalContextProvider?: (notification: KindroidChatNotification) => Promise<JournalSuggestionContext>;
   dedupeStore?: DedupeStore;
   onAmbientContextSent?: (event: AmbientContextSentEvent) => void;
@@ -92,6 +100,15 @@ export const hermesActionRegistryEntries: HermesActionRegistryEntry[] = [
       "a desktop soundscape callback is provided and the direct Kin or Group Audio soundscape setting is enabled",
     execution: "immediate",
     scope: "Emits local desktop procedural soundscape metadata for the same direct Kin or group chat."
+  },
+  {
+    actionTypes: ["propose_group_background_image"],
+    handler: "GroupBackgroundActionHandler",
+    enabledWhen:
+      "bridge runtime provides a GroupBackgroundSuggestionStore and hermes.groupBackgrounds.suggestions.enabled is true",
+    execution: "reviewed",
+    scope:
+      "Creates pending group chat background image prompt suggestions; no image generation or Kindroid mutation runs automatically."
   },
   {
     actionTypes: ["send_ambient_context_turn"],
@@ -175,6 +192,19 @@ export function createHermesActionRegistry(input: {
         {
           isEnabled: options.isChatDynamismEnabled,
           range: options.chatDynamismRange
+        }
+      )
+    );
+  }
+
+  if (options.groupBackgroundSuggestions) {
+    handlers.push(
+      new GroupBackgroundActionHandler(
+        input.logger,
+        options.groupBackgroundSuggestions,
+        options.onGroupBackgroundSuggestionCreated,
+        {
+          contextProvider: options.groupBackgroundContextProvider
         }
       )
     );

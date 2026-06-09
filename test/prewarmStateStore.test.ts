@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { PrewarmStateStore } from "../src/runtime/prewarmStateStore.js";
+import { PrewarmStateStore, prewarmKindsWithChatHistoryCursor } from "../src/runtime/prewarmStateStore.js";
 
 describe("PrewarmStateStore", () => {
   it("skips ready sources until the trigger watermark advances past the refresh interval", () => {
@@ -98,6 +98,15 @@ describe("PrewarmStateStore", () => {
     });
     expect(store.chatHistoryStartAfter("previouslyOn", source)).toBe(1_780_000_001_000);
     expect(store.chatHistoryStartAfter("localScene", source)).toBe(1_780_000_002_000);
+  });
+
+  it("does not resume group background chat history cursors", () => {
+    const store = testStore();
+    const source = { scope: "group" as const, id: "group-1" };
+
+    store.markChatHistoryCursor("groupBackground", source, 1_780_000_003_000);
+
+    expect(prewarmKindsWithChatHistoryCursor(store.get(source)!)).toEqual([]);
   });
 
   it("persists readiness across store instances", () => {

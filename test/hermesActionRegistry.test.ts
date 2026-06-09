@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AppConfig } from "../src/config/types.js";
 import { ChatDynamismSuggestionStore } from "../src/chatDynamism/chatDynamismSuggestionStore.js";
+import { GroupBackgroundSuggestionStore } from "../src/groupBackground/groupBackgroundSuggestionStore.js";
 import { createHermesActionRegistry, hermesActionRegistryEntries } from "../src/hermes/actionRegistry.js";
 import type { KindroidSceneUpdater } from "../src/hermes/hermesAdapter.js";
 import { JournalSuggestionStore } from "../src/journal/journalSuggestionStore.js";
@@ -20,6 +21,7 @@ describe("Hermes action registry", () => {
       "update_group_current_scene",
       "update_soundscape",
       "update_group_soundscape",
+      "propose_group_background_image",
       "send_ambient_context_turn",
       "propose_journal_entry",
       "delete_journal_entry",
@@ -143,6 +145,40 @@ describe("Hermes action registry", () => {
     expect(prompt).toContain("propose_chat_dynamism_adjustment");
     expect(prompt).toContain("Never apply it automatically");
   });
+
+  it("registers group background suggestion actions when storage is available", () => {
+    const registry = createHermesActionRegistry({
+      config: testConfig(),
+      logger: testLogger,
+      kindroidClient: testSceneUpdater,
+      options: {
+        groupBackgroundSuggestions: GroupBackgroundSuggestionStore.fromConfig(testConfig())
+      }
+    });
+
+    const prompt = registry.handlers.flatMap((handler) => handler.promptLines()).join("\n");
+    expect(registry.handlers).toHaveLength(2);
+    expect(prompt).toContain("propose_group_background_image");
+    expect(prompt).toContain("reviewed desktop prompt");
+    expect(prompt).toContain("autonomous-generate-apply");
+  });
+
+  it("keeps the group background handler registered when the runtime toggle is disabled", () => {
+    const config = testConfig();
+    config.hermes.groupBackgrounds.suggestions.enabled = false;
+    const registry = createHermesActionRegistry({
+      config,
+      logger: testLogger,
+      kindroidClient: testSceneUpdater,
+      options: {
+        groupBackgroundSuggestions: GroupBackgroundSuggestionStore.fromConfig(config)
+      }
+    });
+
+    expect(registry.handlers.flatMap((handler) => handler.promptLines()).join("\n")).toContain(
+      "propose_group_background_image"
+    );
+  });
 });
 
 const testLogger: Logger = {
@@ -200,6 +236,24 @@ function testConfig(): AppConfig {
         enabled: true,
         throttleMessages: 20,
         strongEventBypass: true
+      },
+      groupBackgrounds: {
+        suggestions: {
+          enabled: true,
+          autonomous: false,
+          minMessagesBetweenProposals: 12,
+          minSignificance: 0.7
+        },
+        images: {
+          enabled: true,
+          provider: "openai",
+          openai: {
+            apiKey: "",
+            model: "gpt-image-1",
+            size: "1536x1024",
+            quality: "medium"
+          }
+        }
       },
       chatDynamism: {
         suggestions: {

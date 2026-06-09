@@ -57,9 +57,21 @@ export type HermesPreviouslyOnPrewarmRequest =
       previouslyOnContext: unknown;
     };
 
+export type HermesGroupBackgroundPrewarmRequest = {
+  scope: "group";
+  groupId: string;
+  aiId?: string | null;
+  documentId: string;
+  timestamp: string;
+  text: string;
+  groupBackgroundContext: unknown;
+  forceProposal?: boolean;
+};
+
 export interface HermesAdapter {
   handleChatChanged(notification: KindroidChatNotification): Promise<void>;
   prewarmSoundscape?(request: HermesSoundscapePrewarmRequest): Promise<void>;
   prewarmLocalScene?(request: HermesLocalScenePrewarmRequest): Promise<void>;
   prewarmPreviouslyOn?(request: HermesPreviouslyOnPrewarmRequest): Promise<void>;
+  prewarmGroupBackground?(request: HermesGroupBackgroundPrewarmRequest): Promise<void>;
 }

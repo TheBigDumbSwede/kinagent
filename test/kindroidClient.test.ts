@@ -11,6 +11,7 @@ import { KindroidClient } from "../src/kindroid/kindroidClient.js";
 import {
   buildBreakChatPayload,
   buildBreakGroupChatPayload,
+  buildApplyGroupBackgroundPayload,
   buildCreateGroupAiResponsePayload,
   buildCreateJournalEntryPayload,
   buildDeleteJournalEntryPayload,
@@ -292,6 +293,61 @@ describe("Kindroid client normalizers", () => {
     });
   });
 
+  it("builds group background update payloads without dropping existing group settings", () => {
+    expect(
+      buildApplyGroupBackgroundPayload({
+        storagePath: "users/firebase-uid/referenceimages/background.png",
+        group: {
+          group_id: "group-1",
+          group_ais: [{ ai_id: "kin-1" }, { aiId: "kin-2" }, "kin-3"],
+          group_name: "Prairie Ghosts",
+          group_context: "Existing context.",
+          group_directive: "Existing directive.",
+          use_manual_turntaking: true,
+          share_short_term_memory: true,
+          disable_ltm_recall: true,
+          disable_ltm_consolidate: false,
+          user_persona_id: "persona-1",
+          background_settings: {
+            background_url: "users/firebase-uid/referenceimages/old.png",
+            use_latest_gallery: true,
+            background_opacity: 42,
+            message_fading_strength: 3,
+            message_mask_drag: 0.4,
+            background_blur: 2,
+            enable_background_blur_on_wide_screen_only: false,
+            enable_message_fade: true,
+            top_offset: 12,
+            left_offset: 34
+          }
+        }
+      })
+    ).toEqual({
+      group_id: "group-1",
+      ai_list: ["kin-1", "kin-2", "kin-3"],
+      group_name: "Prairie Ghosts",
+      group_context: "Existing context.",
+      group_directive: "Existing directive.",
+      use_manual_turntaking: true,
+      share_short_term_memory: true,
+      disable_ltm_recall: true,
+      disable_ltm_consolidate: false,
+      user_persona_id: "persona-1",
+      background_settings: {
+        background_url: "users/firebase-uid/referenceimages/background.png",
+        use_latest_gallery: false,
+        background_opacity: 42,
+        message_fading_strength: 3,
+        message_mask_drag: 0.4,
+        background_blur: 2,
+        enable_background_blur_on_wide_screen_only: false,
+        enable_message_fade: true,
+        top_offset: 12,
+        left_offset: 34
+      }
+    });
+  });
+
   it("builds documented chat-break payloads", () => {
     expect(
       buildBreakChatPayload({
@@ -507,6 +563,112 @@ describe("Kindroid client normalizers", () => {
     ]);
   });
 
+  it("uploads, registers, and applies a reviewed generated group background image", async () => {
+    const sessionDir = createTestSessionDir(tempDirs);
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            url: "https://storage.example.test/upload",
+            path: "users/firebase-uid/referenceimages/generated.png"
+          }),
+          { status: 200 }
+        )
+      )
+      .mockResolvedValueOnce(new Response("", { status: 200 }))
+      .mockResolvedValueOnce(new Response("OK", { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            name: "projects/kindroid-ai/databases/(default)/documents/Users/firebase-uid/Groups/group-1",
+            fields: {
+              group_id: { stringValue: "group-1" },
+              group_ais: {
+                arrayValue: {
+                  values: [
+                    { mapValue: { fields: { ai_id: { stringValue: "kin-1" } } } },
+                    { mapValue: { fields: { aiId: { stringValue: "kin-2" } } } }
+                  ]
+                }
+              },
+              group_name: { stringValue: "Prairie Ghosts" },
+              group_context: { stringValue: "Existing context." },
+              group_directive: { stringValue: "Existing directive." },
+              use_manual_turntaking: { booleanValue: true },
+              share_short_term_memory: { booleanValue: true },
+              disable_ltm_recall: { booleanValue: false },
+              disable_ltm_consolidate: { booleanValue: false },
+              user_persona_id: { stringValue: "persona-1" },
+              background_settings: {
+                mapValue: {
+                  fields: {
+                    background_url: { stringValue: "users/firebase-uid/referenceimages/old.png" },
+                    background_opacity: { integerValue: "50" }
+                  }
+                }
+              }
+            }
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        )
+      )
+      .mockResolvedValueOnce(new Response("OK", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new KindroidClient(testConfig({ sessionDir, apiKey: "kn_test-token" }), testLogger);
+
+    await expect(
+      client.applyGroupBackground({
+        groupId: "group-1",
+        image: Buffer.from("png-bytes"),
+        fileName: "generated.png",
+        contentType: "image/png"
+      })
+    ).resolves.toMatchObject({
+      ok: true,
+      status: 200,
+      storagePath: expect.stringMatching(/^users\/firebase-uid\/referenceimages\/.+-generated\.png$/),
+      uploadStatus: 200,
+      registerStatus: 200,
+      applyStatus: 200
+    });
+
+    const storagePath = JSON.parse(String((fetchMock.mock.calls[0]?.[1] as RequestInit).body)).path as string;
+    expect(fetchMock.mock.calls.map((call) => String(call[0]).split("?")[0])).toEqual([
+      "https://api.kindroid.ai/v1/storage-presign",
+      "https://storage.example.test/upload",
+      "https://api.kindroid.ai/v1/update-info",
+      "https://firestore.googleapis.com/v1/projects/kindroid-ai/databases/(default)/documents/Users/firebase-uid/Groups/group-1",
+      "https://api.kindroid.ai/v1/groupchats-update"
+    ]);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "https://storage.example.test/upload",
+      expect.objectContaining({
+        method: "PUT",
+        headers: expect.objectContaining({
+          "Content-Type": "image/png",
+          "Content-Length": "9"
+        })
+      })
+    );
+    expect(JSON.parse(String((fetchMock.mock.calls[2]?.[1] as RequestInit).body))).toEqual({
+      uploaded_background_images: [storagePath]
+    });
+    expect(JSON.parse(String((fetchMock.mock.calls[4]?.[1] as RequestInit).body))).toMatchObject({
+      group_id: "group-1",
+      ai_list: ["kin-1", "kin-2"],
+      group_name: "Prairie Ghosts",
+      group_context: "Existing context.",
+      group_directive: "Existing directive.",
+      background_settings: {
+        background_url: storagePath,
+        use_latest_gallery: false,
+        background_opacity: 50
+      }
+    });
+  });
+
   it("calls documented chat-break, group chat-break, and rewind endpoints", async () => {
     const sessionDir = createTestSessionDir(tempDirs);
     const fetchMock = vi.fn(async (_input: string | URL, _init?: RequestInit) => new Response("OK", { status: 200 }));
@@ -719,6 +881,24 @@ function testConfig(overrides: { apiKey?: string; sessionDir?: string } = {}): A
         enabled: true,
         throttleMessages: 20,
         strongEventBypass: true
+      },
+      groupBackgrounds: {
+        suggestions: {
+          enabled: true,
+          autonomous: false,
+          minMessagesBetweenProposals: 12,
+          minSignificance: 0.7
+        },
+        images: {
+          enabled: true,
+          provider: "openai",
+          openai: {
+            apiKey: "",
+            model: "gpt-image-1",
+            size: "1536x1024",
+            quality: "medium"
+          }
+        }
       },
       chatDynamism: {
         suggestions: {

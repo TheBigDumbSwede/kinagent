@@ -29,6 +29,13 @@ const kinagentApi = {
   deleteInvalidatedJournalSuggestion: (input: unknown) =>
     ipcRenderer.invoke("journal:delete-invalidated-suggestion", input),
   dismissJournalSuggestion: (input: unknown) => ipcRenderer.invoke("journal:dismiss-suggestion", input),
+  listGroupBackgroundSuggestions: () => ipcRenderer.invoke("background:list-group-suggestions"),
+  dismissGroupBackgroundSuggestion: (input: unknown) =>
+    ipcRenderer.invoke("background:dismiss-group-suggestion", input),
+  generateGroupBackgroundImage: (input: unknown) => ipcRenderer.invoke("background:generate-group-image", input),
+  applyGroupBackgroundImage: (input: unknown) => ipcRenderer.invoke("background:apply-group-image", input),
+  getGroupBackgroundPreference: (input: unknown) => ipcRenderer.invoke("background:get-group-preference", input),
+  setGroupBackgroundPreference: (input: unknown) => ipcRenderer.invoke("background:set-group-preference", input),
   getKinVoicePreference: (input: unknown) => ipcRenderer.invoke("voice:get-kin-preference", input),
   setKinVoicePreference: (input: unknown) => ipcRenderer.invoke("voice:set-kin-preference", input),
   getGroupSoundscapePreference: (input: unknown) => ipcRenderer.invoke("soundscape:get-group-preference", input),
@@ -40,6 +47,7 @@ const kinagentApi = {
   forceLocalScenePrewarm: (input: unknown) => ipcRenderer.invoke("prewarm:local-scene", input),
   forceSoundscapePrewarm: (input: unknown) => ipcRenderer.invoke("prewarm:soundscape", input),
   forcePreviouslyOnPrewarm: (input: unknown) => ipcRenderer.invoke("prewarm:previously-on", input),
+  forceGroupBackgroundPrewarm: (input: unknown) => ipcRenderer.invoke("prewarm:group-background", input),
   getKinAmbientPreference: (input: unknown) => ipcRenderer.invoke("ambient:get-kin-preference", input),
   setKinAmbientPreference: (input: unknown) => ipcRenderer.invoke("ambient:set-kin-preference", input),
   exportKinChat: (input: unknown) => ipcRenderer.invoke("chat-export:kin", input),

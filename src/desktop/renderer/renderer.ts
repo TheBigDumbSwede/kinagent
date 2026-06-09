@@ -21,6 +21,11 @@ import {
   upsertJournalSuggestion
 } from "./journalSuggestionsPanel.js";
 import {
+  groupBackgroundSuggestionNotice,
+  renderGroupBackgroundPanel,
+  upsertGroupBackgroundSuggestion
+} from "./groupBackgroundPanel.js";
+import {
   clearVisibleMonitorMessages,
   handleMonitorLine,
   renderMessageList,
@@ -72,6 +77,9 @@ import type {
   GroupGamingPreference,
   GroupGamingPreferenceResult,
   GroupCampaignStateSummary,
+  GroupBackgroundPreference,
+  GroupBackgroundPreferenceResult,
+  GroupBackgroundSuggestionSummary,
   GroupSoundscapePreference,
   GroupSoundscapePreferenceResult,
   GroupSubscriptionSummary,
@@ -131,8 +139,10 @@ interface RendererState {
   selectedKinVoice: KinVoicePreferenceResult | null;
   selectedGroupSoundscape: GroupSoundscapePreferenceResult | null;
   selectedGroupGaming: GroupGamingPreferenceResult | null;
+  selectedGroupBackground: GroupBackgroundPreferenceResult | null;
   selectedKinAmbient: KinAmbientPreferenceResult | null;
   journalSuggestions: JournalSuggestionSummary[];
+  groupBackgroundSuggestions: GroupBackgroundSuggestionSummary[];
   localScenes: LocalSceneStateSummary[];
   previouslyOnBriefs: PreviouslyOnBriefSummary[];
   prewarmStates: PrewarmSourceSummary[];
@@ -140,6 +150,12 @@ interface RendererState {
   previouslyOnForceSaving: boolean;
   journalSavingId: string | null;
   journalError: string | null;
+  groupBackgroundLoading: boolean;
+  groupBackgroundForceSaving: boolean;
+  groupBackgroundSaving: boolean;
+  groupBackgroundSavingId: string | null;
+  groupBackgroundSavingAction: "generate" | "apply" | "dismiss" | null;
+  groupBackgroundError: string | null;
   captureLoading: boolean;
   captureError: string | null;
   voiceLoading: boolean;
@@ -243,6 +259,13 @@ interface RendererElements {
   browserIntegrationUnregisterButton: HTMLButtonElement;
   voiceForm: HTMLFormElement;
   groupAudioPanel: HTMLElement;
+  groupBackgroundPanel: HTMLElement;
+  groupBackgroundEnabledInput: HTMLInputElement;
+  groupBackgroundAutonomousInput: HTMLInputElement;
+  groupBackgroundSaveButton: HTMLButtonElement;
+  groupBackgroundStatusLine: HTMLElement;
+  groupBackgroundActions: HTMLElement;
+  groupBackgroundSuggestionList: HTMLElement;
   groupSoundscapeEnabledInput: HTMLInputElement;
   groupSoundscapeStatusLine: HTMLElement;
   groupSoundscapeLayerList: HTMLElement;
@@ -319,6 +342,7 @@ interface DesktopStatus {
   groups?: GroupSummary[];
   groupSubscriptions?: GroupSubscriptionSummary[];
   journalSuggestions?: JournalSuggestionSummary[];
+  groupBackgroundSuggestions?: GroupBackgroundSuggestionSummary[];
   localScenes?: LocalSceneStateSummary[];
   previouslyOn?: PreviouslyOnBriefSummary[];
   soundscapes?: ScopedSoundscapeUpdate[];
@@ -374,6 +398,15 @@ interface RendererApi {
   acceptJournalSuggestion(input: { id: string }): Promise<unknown>;
   deleteInvalidatedJournalSuggestion(input: { id: string }): Promise<unknown>;
   dismissJournalSuggestion(input: { id: string }): Promise<unknown>;
+  listGroupBackgroundSuggestions(): Promise<GroupBackgroundSuggestionSummary[]>;
+  dismissGroupBackgroundSuggestion(input: { id: string }): Promise<unknown>;
+  generateGroupBackgroundImage(input: { id: string }): Promise<unknown>;
+  applyGroupBackgroundImage(input: { id: string }): Promise<unknown>;
+  getGroupBackgroundPreference(input: { groupId: string }): Promise<GroupBackgroundPreferenceResult>;
+  setGroupBackgroundPreference(input: {
+    groupId: string;
+    preference: GroupBackgroundPreference;
+  }): Promise<GroupBackgroundPreferenceResult>;
   getKinVoicePreference(input: { kinId: string }): Promise<KinVoicePreferenceResult>;
   setKinVoicePreference(input: { kinId: string; preference: KinVoicePreference }): Promise<KinVoicePreferenceResult>;
   getGroupSoundscapePreference(input: { groupId: string }): Promise<GroupSoundscapePreferenceResult>;
@@ -400,6 +433,7 @@ interface RendererApi {
   forceLocalScenePrewarm(input: { scope: "kin" | "group"; id: string }): Promise<{ ok: boolean }>;
   forceSoundscapePrewarm(input: { scope: "kin" | "group"; id: string }): Promise<{ ok: boolean }>;
   forcePreviouslyOnPrewarm(input: { scope: "kin" | "group"; id: string }): Promise<{ ok: boolean }>;
+  forceGroupBackgroundPrewarm(input: { groupId: string }): Promise<{ ok: boolean }>;
   readSoundscapeAsset(input: { path: string }): Promise<ArrayBuffer | Uint8Array | number[]>;
   onEvent(callback: (message: RendererEvent) => void): () => void;
 }
@@ -458,8 +492,10 @@ const state: RendererState = {
   selectedKinVoice: null,
   selectedGroupSoundscape: null,
   selectedGroupGaming: null,
+  selectedGroupBackground: null,
   selectedKinAmbient: null,
   journalSuggestions: [],
+  groupBackgroundSuggestions: [],
   localScenes: [],
   previouslyOnBriefs: [],
   prewarmStates: [],
@@ -467,6 +503,12 @@ const state: RendererState = {
   previouslyOnForceSaving: false,
   journalSavingId: null,
   journalError: null,
+  groupBackgroundLoading: false,
+  groupBackgroundForceSaving: false,
+  groupBackgroundSaving: false,
+  groupBackgroundSavingId: null,
+  groupBackgroundSavingAction: null,
+  groupBackgroundError: null,
   captureLoading: false,
   captureError: null,
   voiceLoading: false,
@@ -580,6 +622,13 @@ const elements: RendererElements = {
   browserIntegrationUnregisterButton: query<HTMLButtonElement>("#browserIntegrationUnregisterButton"),
   voiceForm: query<HTMLFormElement>("#voiceForm"),
   groupAudioPanel: query<HTMLElement>("#groupAudioPanel"),
+  groupBackgroundPanel: query<HTMLElement>("#groupBackgroundPanel"),
+  groupBackgroundEnabledInput: query<HTMLInputElement>("#groupBackgroundEnabledInput"),
+  groupBackgroundAutonomousInput: query<HTMLInputElement>("#groupBackgroundAutonomousInput"),
+  groupBackgroundSaveButton: query<HTMLButtonElement>("#groupBackgroundSaveButton"),
+  groupBackgroundStatusLine: query<HTMLElement>("#groupBackgroundStatusLine"),
+  groupBackgroundActions: query<HTMLElement>("#groupBackgroundActions"),
+  groupBackgroundSuggestionList: query<HTMLElement>("#groupBackgroundSuggestionList"),
   groupSoundscapeEnabledInput: query<HTMLInputElement>("#groupSoundscapeEnabledInput"),
   groupSoundscapeStatusLine: query<HTMLElement>("#groupSoundscapeStatusLine"),
   groupSoundscapeLayerList: query<HTMLElement>("#groupSoundscapeLayerList"),
@@ -780,6 +829,28 @@ function journalSuggestionsContext() {
     },
     onDismissSuggestion: (id: string) => {
       void dismissJournalSuggestion(id);
+    }
+  };
+}
+
+function groupBackgroundPanelContext() {
+  return {
+    state,
+    elements,
+    onSavePreference: (preference: GroupBackgroundPreference) => {
+      void saveSelectedGroupBackground(preference);
+    },
+    onForcePrewarm: () => {
+      void forceSelectedGroupBackgroundPrewarm();
+    },
+    onGenerateImage: (id: string) => {
+      void generateGroupBackgroundImage(id);
+    },
+    onApplyImage: (id: string) => {
+      void applyGroupBackgroundImage(id);
+    },
+    onDismissSuggestion: (id: string) => {
+      void dismissGroupBackgroundSuggestion(id);
     }
   };
 }
@@ -1004,6 +1075,14 @@ window.kinagent.onEvent((message) => {
     return;
   }
 
+  if (message.channel === "group-background-suggestion-created") {
+    const suggestion = message.payload as GroupBackgroundSuggestionSummary | undefined;
+    upsertGroupBackgroundSuggestion(state, suggestion);
+    elements.monitorLine.textContent = groupBackgroundSuggestionNotice(state, suggestion);
+    renderActivity();
+    return;
+  }
+
   if (message.channel === "soundscape-updated") {
     handleSoundscapeUpdate(message.payload as ScopedSoundscapeUpdate | undefined);
     return;
@@ -1035,6 +1114,14 @@ window.kinagent.onEvent((message) => {
 
   if (message.channel === "journal-suggestions-updated") {
     state.journalSuggestions = Array.isArray(message.payload) ? (message.payload as JournalSuggestionSummary[]) : [];
+    renderActivity();
+    return;
+  }
+
+  if (message.channel === "group-background-suggestions-updated") {
+    state.groupBackgroundSuggestions = Array.isArray(message.payload)
+      ? (message.payload as GroupBackgroundSuggestionSummary[])
+      : [];
     renderActivity();
     return;
   }
@@ -1163,6 +1250,7 @@ function renderStatus(status: DesktopStatus): void {
   state.groups = status.groups || [];
   state.groupSubscriptions = status.groupSubscriptions || [];
   state.journalSuggestions = status.journalSuggestions || [];
+  state.groupBackgroundSuggestions = status.groupBackgroundSuggestions || [];
   state.localScenes = status.localScenes || [];
   state.previouslyOnBriefs = status.previouslyOn || [];
   state.prewarmStates = status.prewarmStates || [];
@@ -1214,6 +1302,7 @@ async function selectKin(kinId: string): Promise<void> {
   state.selectedKinVoice = null;
   state.selectedGroupSoundscape = null;
   state.selectedGroupGaming = null;
+  state.selectedGroupBackground = null;
   state.selectedKinAmbient = null;
   state.journalError = null;
   state.voiceError = null;
@@ -1258,10 +1347,12 @@ function selectGroup(groupId: string): void {
   state.selectedKinAmbient = null;
   state.voiceError = null;
   state.groupSoundscapeError = null;
+  state.groupBackgroundError = null;
   state.groupGamingError = null;
   state.ambientError = null;
   state.voiceLoading = false;
   state.groupSoundscapeLoading = false;
+  state.groupBackgroundLoading = false;
   state.groupGamingLoading = false;
   state.ambientLoading = false;
   resetKinActionPlaceholders();
@@ -1271,6 +1362,7 @@ function selectGroup(groupId: string): void {
   renderActivity();
   void loadGroupSoundscape(groupId);
   void loadGroupGaming(groupId);
+  void loadGroupBackground(groupId);
 
   void (async () => {
     try {
@@ -1329,6 +1421,21 @@ async function loadGroupGaming(groupId: string): Promise<void> {
     state.groupGamingError = errorMessage(error);
   } finally {
     state.groupGamingLoading = false;
+    renderActivity();
+  }
+}
+
+async function loadGroupBackground(groupId: string): Promise<void> {
+  state.groupBackgroundLoading = true;
+  state.groupBackgroundError = null;
+  renderActivity();
+
+  try {
+    state.selectedGroupBackground = await window.kinagent.getGroupBackgroundPreference({ groupId });
+  } catch (error) {
+    state.groupBackgroundError = errorMessage(error);
+  } finally {
+    state.groupBackgroundLoading = false;
     renderActivity();
   }
 }
@@ -1403,12 +1510,14 @@ function renderActivity(): void {
   elements.localSceneActions.hidden = true;
   elements.localSceneActions.replaceChildren();
   elements.browserIntegrationPanel.hidden = true;
+  elements.groupBackgroundPanel.hidden = true;
   const activeTab = state.activeTab || "monitor";
   const activeMode = modeForTab(activeTab);
   const isMonitor = activeMode === "monitor";
   const isVoice = activeMode === "voice";
   const isLocalScene = activeMode === "local-scene";
   const isGroupLocalScene = activeMode === "group-local-scene";
+  const isGroupBackground = activeMode === "group-background";
   const isGroupAudio = activeMode === "group-audio";
   const isGroupGaming = activeMode === "group-gaming";
   const isHermes = activeMode === "hermes";
@@ -1452,6 +1561,13 @@ function renderActivity(): void {
     elements.activityTitle.textContent = `${selectedGroup.name || "Group"} · Scene`;
     elements.monitorLine.textContent = subtitleForDetailMode(activeMode);
     renderLocalSceneTab("group", selectedGroup);
+    return;
+  }
+
+  if (selectedGroup && isGroupBackground) {
+    elements.activityTitle.textContent = `${selectedGroup.name || "Group"} · Background`;
+    elements.monitorLine.textContent = subtitleForDetailMode(activeMode);
+    renderGroupBackgroundTab(selectedGroup);
     return;
   }
 
@@ -1613,6 +1729,41 @@ function renderGroupCapturedTab(selectedGroup: GroupSummary, field: CapturedFiel
   });
 }
 
+function renderGroupBackgroundTab(selectedGroup: GroupSummary): void {
+  if (state.groupBackgroundLoading) {
+    renderDetailEmpty("Loading group background settings.");
+    return;
+  }
+
+  elements.kinDetailEmpty.hidden = true;
+  elements.kinDetailContent.hidden = false;
+  elements.kinDetailContent.classList.remove("app-settings-content", "scene-detail-content");
+  elements.kinDetailContent.classList.add("form-detail-content");
+  elements.fieldContent.hidden = true;
+  elements.journalSuggestionPanel.hidden = true;
+  elements.appSettingsForm.hidden = true;
+  elements.voiceForm.hidden = true;
+  elements.groupAudioPanel.hidden = true;
+  elements.groupBackgroundPanel.hidden = false;
+  elements.groupGamingPanel.hidden = true;
+  elements.kinHermesForm.hidden = true;
+  elements.kinAnalyzePanel.hidden = true;
+  elements.chatExportPanel.hidden = true;
+  elements.timeline.hidden = true;
+
+  renderGroupBackgroundPanel(groupBackgroundPanelContext(), selectedGroup);
+  renderDetailStats([
+    { label: "Group", value: selectedGroup.name || state.selectedGroupId || "Unknown" },
+    {
+      label: "Pending",
+      value: String(
+        state.groupBackgroundSuggestions.filter((suggestion) => suggestion.groupId === state.selectedGroupId).length
+      )
+    },
+    { label: "Mode", value: "Review" }
+  ]);
+}
+
 function renderGroupAudioTab(selectedGroup: GroupSummary): void {
   if (state.groupSoundscapeLoading) {
     renderDetailEmpty("Loading group audio settings.");
@@ -1634,6 +1785,7 @@ function renderGroupAudioTab(selectedGroup: GroupSummary): void {
   elements.appSettingsForm.hidden = true;
   elements.voiceForm.hidden = true;
   elements.groupAudioPanel.hidden = false;
+  elements.groupBackgroundPanel.hidden = true;
   elements.groupGamingPanel.hidden = true;
   elements.kinHermesForm.hidden = true;
   elements.kinAnalyzePanel.hidden = true;
@@ -1688,6 +1840,7 @@ function renderGroupGamingTab(selectedGroup: GroupSummary): void {
   elements.appSettingsForm.hidden = true;
   elements.voiceForm.hidden = true;
   elements.groupAudioPanel.hidden = true;
+  elements.groupBackgroundPanel.hidden = true;
   elements.groupGamingPanel.hidden = false;
   elements.kinHermesForm.hidden = true;
   elements.kinAnalyzePanel.hidden = true;
@@ -1910,6 +2063,7 @@ function renderLocalSceneContent(content: string, input: { stats: Array<{ label:
   elements.appSettingsForm.hidden = true;
   elements.voiceForm.hidden = true;
   elements.groupAudioPanel.hidden = true;
+  elements.groupBackgroundPanel.hidden = true;
   elements.groupGamingPanel.hidden = true;
   elements.kinHermesForm.hidden = true;
   elements.kinAnalyzePanel.hidden = true;
@@ -1999,6 +2153,56 @@ async function forceSelectedPreviouslyOnPrewarm(scope: "kin" | "group"): Promise
     state.previouslyOnForceSaving = false;
     renderActivity();
   }
+}
+
+async function forceSelectedGroupBackgroundPrewarm(): Promise<void> {
+  if (!state.selectedGroupId || state.groupBackgroundForceSaving) {
+    return;
+  }
+
+  state.groupBackgroundForceSaving = true;
+  state.groupBackgroundError = null;
+  renderActivity();
+  try {
+    await window.kinagent.forceGroupBackgroundPrewarm({ groupId: state.selectedGroupId });
+    state.groupBackgroundSuggestions = await window.kinagent.listGroupBackgroundSuggestions();
+    await refreshStatus();
+    elements.monitorLine.textContent = "Background prewarm requested.";
+  } catch (error) {
+    state.groupBackgroundError = errorMessage(error);
+    elements.monitorLine.textContent = state.groupBackgroundError;
+  } finally {
+    state.groupBackgroundForceSaving = false;
+    renderActivity();
+  }
+}
+
+async function saveSelectedGroupBackground(preference: GroupBackgroundPreference): Promise<void> {
+  if (!state.selectedGroupId || state.groupBackgroundSaving) {
+    return;
+  }
+
+  state.groupBackgroundSaving = true;
+  state.groupBackgroundError = null;
+  renderActivity();
+
+  try {
+    state.selectedGroupBackground = await window.kinagent.setGroupBackgroundPreference({
+      groupId: state.selectedGroupId,
+      preference
+    });
+    elements.monitorLine.textContent = state.selectedGroupBackground.preference?.autonomous
+      ? "Autonomous background updates enabled."
+      : state.selectedGroupBackground.preference?.enabled
+        ? "Background proposals enabled."
+        : "Background proposals disabled.";
+  } catch (error) {
+    state.groupBackgroundError = errorMessage(error);
+    elements.monitorLine.textContent = state.groupBackgroundError;
+  } finally {
+    state.groupBackgroundSaving = false;
+  }
+  renderActivity();
 }
 
 async function forceSelectedSoundscapePrewarm(scope: "kin" | "group"): Promise<void> {
@@ -2250,6 +2454,71 @@ async function focusJournalSuggestion(suggestion: JournalSuggestionSummary | nul
   state.activeTab = "journal";
   await selectKin(suggestion.aiId);
   state.activeTab = "journal";
+  renderActivity();
+}
+
+async function dismissGroupBackgroundSuggestion(id: string): Promise<void> {
+  state.groupBackgroundSavingId = id;
+  state.groupBackgroundSavingAction = "dismiss";
+  state.groupBackgroundError = null;
+  renderActivity();
+  try {
+    await window.kinagent.dismissGroupBackgroundSuggestion({ id });
+    state.groupBackgroundSuggestions = await window.kinagent.listGroupBackgroundSuggestions();
+  } catch (error) {
+    state.groupBackgroundError = errorMessage(error);
+  } finally {
+    state.groupBackgroundSavingId = null;
+    state.groupBackgroundSavingAction = null;
+  }
+  renderActivity();
+}
+
+async function generateGroupBackgroundImage(id: string): Promise<void> {
+  if (!id || state.groupBackgroundSavingId) {
+    return;
+  }
+
+  state.groupBackgroundSavingId = id;
+  state.groupBackgroundSavingAction = "generate";
+  state.groupBackgroundError = null;
+  renderActivity();
+  try {
+    await window.kinagent.generateGroupBackgroundImage({ id });
+    state.groupBackgroundSuggestions = await window.kinagent.listGroupBackgroundSuggestions();
+    elements.monitorLine.textContent = "Background image generated.";
+  } catch (error) {
+    state.groupBackgroundError = errorMessage(error);
+    state.groupBackgroundSuggestions = await window.kinagent.listGroupBackgroundSuggestions();
+    elements.monitorLine.textContent = state.groupBackgroundError;
+  } finally {
+    state.groupBackgroundSavingId = null;
+    state.groupBackgroundSavingAction = null;
+  }
+  renderActivity();
+}
+
+async function applyGroupBackgroundImage(id: string): Promise<void> {
+  if (!id || state.groupBackgroundSavingId) {
+    return;
+  }
+
+  state.groupBackgroundSavingId = id;
+  state.groupBackgroundSavingAction = "apply";
+  state.groupBackgroundError = null;
+  renderActivity();
+  try {
+    await window.kinagent.applyGroupBackgroundImage({ id });
+    state.groupBackgroundSuggestions = await window.kinagent.listGroupBackgroundSuggestions();
+    elements.monitorLine.textContent = "Background image applied to Kindroid.";
+  } catch (error) {
+    state.groupBackgroundError = errorMessage(error);
+    state.groupBackgroundSuggestions = await window.kinagent.listGroupBackgroundSuggestions();
+    elements.monitorLine.textContent = state.groupBackgroundError;
+  } finally {
+    state.groupBackgroundSavingId = null;
+    state.groupBackgroundSavingAction = null;
+  }
   renderActivity();
 }
 

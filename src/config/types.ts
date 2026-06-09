@@ -35,6 +35,24 @@ export interface HermesConfig {
     throttleMessages: number;
     strongEventBypass: boolean;
   };
+  groupBackgrounds: {
+    suggestions: {
+      enabled: boolean;
+      autonomous: boolean;
+      minMessagesBetweenProposals: number;
+      minSignificance: number;
+    };
+    images: {
+      enabled: boolean;
+      provider: "openai";
+      openai: {
+        apiKey: string;
+        model: string;
+        size: string;
+        quality: string;
+      };
+    };
+  };
   chatDynamism: {
     suggestions: {
       enabled: boolean;
