@@ -39,7 +39,7 @@ describe("loadConfig", () => {
       }
     });
     expect(config.hermes.groupBackgrounds.suggestions).toEqual({
-      enabled: true,
+      enabled: false,
       autonomous: false,
       minMessagesBetweenProposals: 12,
       minSignificance: 0.7

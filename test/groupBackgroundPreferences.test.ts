@@ -13,7 +13,7 @@ describe("GroupBackgroundPreferenceStore", () => {
     const config = testConfig();
     const store = GroupBackgroundPreferenceStore.fromConfig(config);
 
-    expect(store.get("group-a")).toEqual({ enabled: true, autonomous: false });
+    expect(store.get("group-a")).toEqual({ enabled: false, autonomous: false });
     expect(store.set("group-a", { enabled: true, autonomous: true })).toEqual({
       enabled: true,
       autonomous: true
@@ -26,7 +26,7 @@ describe("GroupBackgroundPreferenceStore", () => {
     const reloaded = GroupBackgroundPreferenceStore.fromConfig(config);
     expect(reloaded.get("group-a")).toEqual({ enabled: true, autonomous: true });
     expect(reloaded.get("group-b")).toEqual({ enabled: false, autonomous: false });
-    expect(reloaded.get("group-c")).toEqual({ enabled: true, autonomous: false });
+    expect(reloaded.get("group-c")).toEqual({ enabled: false, autonomous: false });
     expect(fs.existsSync(groupBackgroundPreferencesPath(config))).toBe(true);
   });
 });
@@ -63,7 +63,7 @@ function testConfig(): AppConfig {
       },
       groupBackgrounds: {
         suggestions: {
-          enabled: true,
+          enabled: false,
           autonomous: false,
           minMessagesBetweenProposals: 12,
           minSignificance: 0.7

@@ -40,7 +40,7 @@ const defaultConfig: AppConfig = {
     },
     groupBackgrounds: {
       suggestions: {
-        enabled: true,
+        enabled: false,
         autonomous: false,
         minMessagesBetweenProposals: 12,
         minSignificance: 0.7
