@@ -358,18 +358,21 @@ export class GameRuntime {
       throw new Error("The pending game decision has no Keeper message to send.");
     }
 
+    const isRollResultDecision = state.rollHistory.some(
+      (entry) => entry.sourceDocumentId === state.pendingDecision?.sourceDocumentId
+    );
     const sendResult = await this.keeperMessenger.send(
       group,
       state.pendingDecision.sourceDocumentId,
       state.pendingDecision.keeperMessage,
       {
-        source: "approved-suggestion"
+        source: isRollResultDecision ? "roll-result" : "approved-suggestion"
       }
     );
     if (!sendResult.ok) {
       throw new Error("Keeper suggestion could not be sent to the Group.");
     }
-    if (state.rollHistory.some((entry) => entry.sourceDocumentId === state.pendingDecision?.sourceDocumentId)) {
+    if (isRollResultDecision) {
       this.options.campaignStates.markRollResultSent({
         groupId: group.groupId,
         sourceDocumentId: state.pendingDecision.sourceDocumentId,

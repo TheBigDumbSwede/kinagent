@@ -1228,6 +1228,7 @@ describe("game campaign foundations", () => {
     });
     const store = CampaignStateStore.fromConfig(config);
     const sends: unknown[] = [];
+    const sceneUpdates: unknown[] = [];
     const hermesPayloads: Record<string, unknown>[] = [];
     const runtime = testGameRuntime(
       config,
@@ -1257,10 +1258,13 @@ describe("game campaign foundations", () => {
             idempotencyKey: input.idempotencyKey
           };
         },
-        updateGroupCurrentScene: async () => ({
-          status: 200,
-          ok: true
-        })
+        updateGroupCurrentScene: async (input) => {
+          sceneUpdates.push(input);
+          return {
+            status: 200,
+            ok: true
+          };
+        }
       },
       {
         diceRoller: createSequenceDiceRoller([4, 5]),
@@ -1278,6 +1282,7 @@ describe("game campaign foundations", () => {
       message: "*(Outcome: success.) The static resolves into a clear street address.*",
       triggerAiResponse: false
     });
+    expect(sceneUpdates).toEqual([]);
     expect(hermesPayloads[1]).toMatchObject({
       type: "kinagent.game.post_roll_narration",
       roll: {
@@ -1324,6 +1329,7 @@ describe("game campaign foundations", () => {
     });
     const store = CampaignStateStore.fromConfig(config);
     const sends: unknown[] = [];
+    const sceneUpdates: unknown[] = [];
     const runtime = testGameRuntime(
       config,
       preferences,
@@ -1351,10 +1357,13 @@ describe("game campaign foundations", () => {
             idempotencyKey: input.idempotencyKey
           };
         },
-        updateGroupCurrentScene: async () => ({
-          status: 200,
-          ok: true
-        })
+        updateGroupCurrentScene: async (input) => {
+          sceneUpdates.push(input);
+          return {
+            status: 200,
+            ok: true
+          };
+        }
       },
       { diceRoller: createSequenceDiceRoller([3, 4]) }
     );
@@ -1384,6 +1393,7 @@ describe("game campaign foundations", () => {
       message:
         "*(Outcome: partial success with complication.) The clue is useful, but the phone line stays open both ways.*"
     });
+    expect(sceneUpdates).toEqual([]);
     expect(store.getForGroup("group-a")?.pendingDecision).toBeUndefined();
     expect(store.getForGroup("group-a")?.rollHistory.at(-1)?.sent).toMatchObject({
       ok: true,

@@ -171,6 +171,37 @@ describe("KeeperMessenger", () => {
     });
     expect(sceneUpdates).toEqual([]);
   });
+
+  it("skips current-scene sync for roll-result messages by default", async () => {
+    const config = testConfig();
+    const campaignStates = CampaignStateStore.fromConfig(config);
+    campaignStates.ensureInitialized({
+      groupId: "group-a",
+      campaign: campaignPack(),
+      mysteryId: "fixture-mystery"
+    });
+    const sends: SendKindroidGroupMessageInput[] = [];
+    const sceneUpdates: UpdateKindroidGroupCurrentSceneInput[] = [];
+    const messenger = new KeeperMessenger({
+      config,
+      logger: testLogger,
+      campaignStates,
+      dedupeStore: new InMemoryDedupeStore(10_000),
+      kindroidClient: kindroidClient({ sends, sceneUpdates })
+    });
+
+    const result = await messenger.send(group(), "doc-roll", "*(Outcome: success.) The clue opens up.*", {
+      source: "roll-result"
+    });
+
+    expect(result.ok).toBe(true);
+    expect(sends).toHaveLength(1);
+    expect(campaignStates.getForGroup("group-a")?.lastKeeperMessage).toMatchObject({
+      text: "*(Outcome: success.) The clue opens up.*",
+      sourceDocumentId: "doc-roll"
+    });
+    expect(sceneUpdates).toEqual([]);
+  });
 });
 
 describe("keeperMessageCurrentScene", () => {

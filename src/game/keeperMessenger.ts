@@ -53,7 +53,7 @@ export class KeeperMessenger {
     const idempotencyKey = newRequestId();
     const triggerAiResponse = input.triggerAiResponse ?? false;
     const recordCampaignState = input.recordCampaignState ?? true;
-    const syncCurrentScene = input.syncCurrentScene ?? true;
+    const syncCurrentScene = input.syncCurrentScene ?? input.source !== "roll-result";
     const result = await this.sendGroupMessage({
       groupId: group.groupId,
       message,
