@@ -64,7 +64,7 @@ jobs:
 
       - name: Azure login for signing
         if: ${{ steps.signing.outputs.enabled == '1' }}
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID || secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID || secrets.AZURE_TENANT_ID }}
