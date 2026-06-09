@@ -22,6 +22,8 @@ export interface BrowserBridgeResponse {
   message?: string;
 }
 
+// Sent over an unauthenticated local pipe. Keep command payloads non-sensitive
+// until the pipe is hardened. See start().
 export type BrowserBridgeCommandType = "reload-kindroid" | "show-notice";
 
 export interface BrowserBridgeCommand {
@@ -59,6 +61,7 @@ export function handleBrowserBridgeMessage(
     return errorResponse(id, "invalid_message", "Browser bridge messages require a string type.");
   }
 
+  // Inbound types must stay non-mutating until the pipe is authenticated. See start().
   switch (input.type) {
     case "ping":
       return { id, type: "pong", ok: true };
