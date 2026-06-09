@@ -29,7 +29,7 @@ describe("browser extension manifest", () => {
     const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8")) as BrowserExtensionManifest;
 
     expect(manifest.manifest_version).toBe(3);
-    expect(manifest.permissions?.sort()).toEqual(["nativeMessaging", "tabs"].sort());
+    expect(manifest.permissions?.sort()).toEqual(["nativeMessaging"].sort());
     expect(manifest.host_permissions).toEqual(["https://kindroid.ai/*"]);
     expect(manifest.icons).toEqual({
       "16": "icons/icon-16.png",

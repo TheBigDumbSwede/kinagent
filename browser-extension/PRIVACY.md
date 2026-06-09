@@ -20,7 +20,7 @@ only with the Kinagent desktop application running locally on the same computer.
   messaging host `com.kinagent.bridge`. It sends simple presence/poll messages
   (`browser-ready`, `poll`) and receives display requests (`show-notice`,
   `reload-kindroid`). This traffic never leaves your computer.
-- **Kindroid tabs (`tabs` + host access to `https://kindroid.ai/*`).** The
+- **Kindroid tab access (host access to `https://kindroid.ai/*`).** The
   extension locates your open Kindroid tab so it can (a) display a small on-page
   status notice (for example, "Kinagent is connected") and (b) reload the tab when
   the desktop app requests it. The extension does **not** read, store, or transmit

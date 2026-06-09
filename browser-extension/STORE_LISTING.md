@@ -65,14 +65,6 @@ Kinagent desktop application through Chrome native messaging (host
 reload requests. No data is sent to any remote server.
 ```
 
-**`tabs`**
-
-```
-Used to locate the open Kindroid tab so the extension can deliver an on-page
-status notice and reload that tab when the desktop app requests it. The extension
-does not read tab contents or browsing history.
-```
-
 **Host permission `https://kindroid.ai/*`**
 
 ```
