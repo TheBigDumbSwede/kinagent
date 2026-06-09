@@ -1,0 +1,10 @@
+# Normalize line endings: store everything as LF in the repo, check out as LF.
+# Keeps Prettier (endOfLine: "auto") consistent across Windows/macOS/Linux and
+# prevents mixed-ending working copies from failing `npm run check`.
+* text=auto eol=lf
+
+# Binary assets must never be line-ending normalized.
+*.png binary
+*.ico binary
+*.exe binary
+*.zip binary
