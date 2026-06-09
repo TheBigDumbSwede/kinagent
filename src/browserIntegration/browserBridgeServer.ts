@@ -99,6 +99,9 @@ export class BrowserBridgeServer {
     const pipePath = nativeMessagingPipePath(this.pipeName);
     this.server = server;
 
+    // This local pipe is intentionally unauthenticated for the MVP. Keep bridge
+    // payloads outbound-only and non-sensitive until the pipe DACL is pinned to
+    // the current user and the native host completes an authenticated handshake.
     try {
       await new Promise<void>((resolve, reject) => {
         const onError = (error: Error): void => {
