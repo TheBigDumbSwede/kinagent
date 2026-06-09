@@ -1,6 +1,8 @@
 import net from "node:net";
 import { describe, expect, it } from "vitest";
 import {
+  BROWSER_BRIDGE_COMMAND_TYPES,
+  BROWSER_BRIDGE_INBOUND_MESSAGE_TYPES,
   BrowserBridgeServer,
   handleBrowserBridgeMessage,
   nativeMessagingPipePath
@@ -15,6 +17,14 @@ const silentLogger: Logger = {
 };
 
 describe("browser bridge server", () => {
+  it("pins the unauthenticated bridge to non-sensitive outbound commands", () => {
+    expect([...BROWSER_BRIDGE_COMMAND_TYPES].sort()).toEqual(["reload-kindroid", "show-notice"].sort());
+  });
+
+  it("pins unauthenticated inbound messages to non-mutating bridge requests", () => {
+    expect([...BROWSER_BRIDGE_INBOUND_MESSAGE_TYPES].sort()).toEqual(["browser-ready", "ping", "poll"].sort());
+  });
+
   it("handles native messaging bridge pings", () => {
     expect(handleBrowserBridgeMessage({ id: "ping-1", type: "ping" })).toEqual({
       id: "ping-1",
