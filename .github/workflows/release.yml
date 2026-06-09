@@ -12,6 +12,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write
 
 concurrency:
   group: release-${{ github.event_name == 'push' && github.ref_name || inputs.tag || github.run_id }}
@@ -20,6 +21,7 @@ concurrency:
 jobs:
   windows-portable:
     runs-on: windows-latest
+    environment: release
 
     steps:
       - name: Checkout
@@ -41,24 +43,46 @@ jobs:
         id: signing
         shell: pwsh
         env:
-          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
-          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID || secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID || secrets.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID || secrets.AZURE_SUBSCRIPTION_ID }}
         run: |
-          if ($env:AZURE_CLIENT_ID -and $env:AZURE_CLIENT_SECRET -and $env:AZURE_TENANT_ID) {
-            "KINAGENT_SIGN=1" | Out-File -FilePath $env:GITHUB_ENV -Append
+          $missing = @()
+          foreach ($name in @("AZURE_CLIENT_ID", "AZURE_TENANT_ID", "AZURE_SUBSCRIPTION_ID")) {
+            if (-not (Get-Item "env:$name" -ErrorAction SilentlyContinue).Value) {
+              $missing += $name
+            }
+          }
+
+          if ($missing.Count -eq 0) {
             "enabled=1" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-            Write-Host "Azure signing credentials present; signing enabled."
+            Write-Host "Azure OIDC signing configuration present; signing enabled."
           } else {
             "enabled=0" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-            Write-Host "Complete Azure signing credentials were not found; building unsigned."
+            Write-Host "Azure OIDC signing configuration incomplete ($($missing -join ', ')); building unsigned."
           }
+
+      - name: Azure login for signing
+        if: ${{ steps.signing.outputs.enabled == '1' }}
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID || secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID || secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID || secrets.AZURE_SUBSCRIPTION_ID }}
+          enable-AzPSSession: true
+
+      - name: Enable signing
+        if: ${{ steps.signing.outputs.enabled == '1' }}
+        shell: pwsh
+        run: |
+          "KINAGENT_SIGN=1" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Build Windows artifacts
         env:
-          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
-          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          KINAGENT_AZURE_PUBLISHER_NAME: ${{ vars.KINAGENT_AZURE_PUBLISHER_NAME }}
+          KINAGENT_AZURE_TRUSTED_SIGNING_ENDPOINT: ${{ vars.KINAGENT_AZURE_TRUSTED_SIGNING_ENDPOINT }}
+          KINAGENT_AZURE_SIGNING_ACCOUNT_NAME: ${{ vars.KINAGENT_AZURE_SIGNING_ACCOUNT_NAME }}
+          KINAGENT_AZURE_CERTIFICATE_PROFILE_NAME: ${{ vars.KINAGENT_AZURE_CERTIFICATE_PROFILE_NAME }}
         run: npm run dist:win
 
       - name: Build campaign pack downloads
@@ -67,17 +91,14 @@ jobs:
       - name: Locate Windows artifacts
         shell: pwsh
         run: |
-          $portable = Get-ChildItem -Path release -Filter "Kinagent-*-portable.exe" |
-            Sort-Object Length -Descending |
-            Select-Object -First 1
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          $portable = Get-Item -Path "release/Kinagent-$version-portable.exe" -ErrorAction SilentlyContinue
           if (-not $portable) {
-            throw "Portable Kinagent exe was not found in release/."
+            throw "Portable Kinagent exe for version $version was not found in release/."
           }
-          $installer = Get-ChildItem -Path release -Filter "Kinagent-*-setup.exe" |
-            Sort-Object Length -Descending |
-            Select-Object -First 1
+          $installer = Get-Item -Path "release/Kinagent-$version-setup.exe" -ErrorAction SilentlyContinue
           if (-not $installer) {
-            throw "Installer Kinagent exe was not found in release/."
+            throw "Installer Kinagent exe for version $version was not found in release/."
           }
           "PORTABLE_EXE=$($portable.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
           "PORTABLE_NAME=$($portable.Name)" | Out-File -FilePath $env:GITHUB_ENV -Append

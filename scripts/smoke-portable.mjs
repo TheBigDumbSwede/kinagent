@@ -5,13 +5,16 @@ import process from "node:process";
 import { spawn, spawnSync } from "node:child_process";
 
 const releaseDir = path.resolve(process.cwd(), "release");
+const packageJson = JSON.parse(fs.readFileSync(path.resolve(process.cwd(), "package.json"), "utf8"));
+const packageVersion = packageJson.version;
+const escapedPackageVersion = escapeRegExp(packageVersion);
 
 if (!fs.existsSync(releaseDir)) {
   fail("release directory does not exist.");
 }
 
-const portableExe = findReleaseExe(/Kinagent-\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?-portable\.exe/i);
-const installerExe = findReleaseExe(/Kinagent-\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?-setup\.exe/i);
+const portableExe = findReleaseExe(new RegExp(`^Kinagent-${escapedPackageVersion}-portable\\.exe$`, "i"));
+const installerExe = findReleaseExe(new RegExp(`^Kinagent-${escapedPackageVersion}-setup\\.exe$`, "i"));
 const packagedNativeHost = path.join(
   releaseDir,
   "win-unpacked",
@@ -21,11 +24,11 @@ const packagedNativeHost = path.join(
 );
 
 if (!portableExe) {
-  fail("portable Kinagent exe was not found in release/.");
+  fail(`portable Kinagent exe for version ${packageVersion} was not found in release/.`);
 }
 
 if (!installerExe) {
-  fail("installer Kinagent exe was not found in release/.");
+  fail(`installer Kinagent exe for version ${packageVersion} was not found in release/.`);
 }
 
 if (portableExe.size < 50_000_000) {
@@ -116,6 +119,10 @@ function findReleaseExe(pattern) {
       };
     })
     .sort((left, right) => right.size - left.size)[0];
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function fail(message) {

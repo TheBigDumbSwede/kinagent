@@ -10,16 +10,15 @@ const electronBuilderCli = path.join(process.cwd(), "node_modules", "electron-bu
 
 // Azure Trusted Signing is opt-in via KINAGENT_SIGN=1 so unsigned local/CI builds
 // keep working without Azure credentials. The values below are non-secret identifiers;
-// authentication comes from Azure Identity environment credentials.
+// GitHub release signing authenticates with azure/login and OIDC before this runs.
 const signingEnabled = process.env.KINAGENT_SIGN === "1";
-const signingArgs = signingEnabled
-  ? [
-      "-c.win.azureSignOptions.publisherName=Bruce Mager",
-      "-c.win.azureSignOptions.endpoint=https://eus.codesigning.azure.net/",
-      "-c.win.azureSignOptions.codeSigningAccountName=BigDumbSwede",
-      "-c.win.azureSignOptions.certificateProfileName=BigDumbSwede"
-    ]
-  : [];
+const trustedSigningConfig = {
+  publisherName: envOrDefault("KINAGENT_AZURE_PUBLISHER_NAME", "Bruce Mager"),
+  endpoint: envOrDefault("KINAGENT_AZURE_TRUSTED_SIGNING_ENDPOINT", "https://eus.codesigning.azure.net/"),
+  codeSigningAccountName: envOrDefault("KINAGENT_AZURE_SIGNING_ACCOUNT_NAME", "BigDumbSwede"),
+  certificateProfileName: envOrDefault("KINAGENT_AZURE_CERTIFICATE_PROFILE_NAME", "BigDumbSwede")
+};
+const signingArgs = signingEnabled ? trustedSigningArgs(trustedSigningConfig) : [];
 
 run(process.execPath, [electronBuilderCli, "--win", "portable", "nsis", ...signingArgs, "--publish", "never"], {
   NODE_OPTIONS: appendNodeOption(process.env.NODE_OPTIONS, "--disable-warning=DEP0190")
@@ -68,4 +67,20 @@ function appendNodeOption(current, option) {
   }
 
   return `${current} ${option}`;
+}
+
+function envOrDefault(name, fallback) {
+  const value = process.env[name]?.trim();
+  return value || fallback;
+}
+
+function trustedSigningArgs(config) {
+  for (const [key, value] of Object.entries(config)) {
+    if (!value) {
+      process.stderr.write(`Missing Azure Trusted Signing value for ${key}.\n`);
+      process.exit(1);
+    }
+  }
+
+  return Object.entries(config).map(([key, value]) => `-c.win.azureSignOptions.${key}=${value}`);
 }

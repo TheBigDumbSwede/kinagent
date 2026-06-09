@@ -484,6 +484,35 @@ input, it produces downloadable workflow artifacts only. With an existing tag
 input, it verifies the version and uploads the portable exe, setup exe, and
 campaign downloads to that release.
 
+Release signing is optional. Local builds and CI release builds remain unsigned
+unless `KINAGENT_SIGN=1` is set. The GitHub release workflow enables signing
+only after an OIDC Azure login succeeds; it does not use `AZURE_CLIENT_SECRET`.
+
+To sign release artifacts, configure Azure Trusted Signing with a federated
+credential for the GitHub `release` environment, then set these GitHub repository
+variables:
+
+- `AZURE_CLIENT_ID`
+- `AZURE_TENANT_ID`
+- `AZURE_SUBSCRIPTION_ID`
+
+The federated credential subject should match:
+
+```text
+repo:TheBigDumbSwede/kinagent:environment:release
+```
+
+Grant that Azure identity the Trusted Signing Certificate Profile Signer role on
+the certificate profile. The current signing defaults are:
+`Bruce Mager` as publisher, `https://eus.codesigning.azure.net/` as endpoint,
+and `BigDumbSwede` for both the signing account and certificate profile. Override
+them with repository variables if the Azure resource names change:
+
+- `KINAGENT_AZURE_PUBLISHER_NAME`
+- `KINAGENT_AZURE_TRUSTED_SIGNING_ENDPOINT`
+- `KINAGENT_AZURE_SIGNING_ACCOUNT_NAME`
+- `KINAGENT_AZURE_CERTIFICATE_PROFILE_NAME`
+
 ## Configuration
 
 ```yaml
