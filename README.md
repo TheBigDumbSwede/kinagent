@@ -85,6 +85,7 @@ Runtime
   -> Hermes
   -> update_local_scene_state or update_group_local_scene_state
   -> ./data/local-scene-state.json
+  -> optional app-owned scene ledger in ./data/scene-ledger-state.json
   -> ./data/prewarm-state.json freshness watermark
   -> desktop Kin or Group Scene tab
 
@@ -347,6 +348,11 @@ activity, tension, privacy, soundscape hints, visual palette hints, and supporti
 keyed by the group rather than by an owner Kin; the latest speaker Kin is recorded only as metadata. The desktop Kin or
 Group `Scene` tab shows the current local snapshot. Use Kindroid `current_scene` when the saved Kindroid scene should
 change; use local scene state for inspectable app-owned context that should remain inside Kinagent.
+
+Kinagent also has a local scene ledger model under `scene-ledger-state.json` for future continuity drift detection,
+Director Mode, recaps, and scene-aware side systems. The ledger stores bounded per-source scene facts with provenance,
+confidence, review status, and lifecycle status. It is local metadata only; it does not write Kindroid memory, journals,
+`current_scene`, or chat text.
 
 Local scene prewarm is separate from soundscape prewarm. It uses the same documented `/v1/get-chat-messages` API for
 bounded recent context, but runs through its own coordinator and only executes local scene actions. Kinagent persists a

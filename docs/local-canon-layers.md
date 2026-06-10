@@ -25,18 +25,18 @@ It should not encode lifecycle. `pending`, `accepted`, `dismissed`, `stale`, `so
 
 ## Current System Mapping
 
-| System                        | Current layer mapping                         | Notes                                                                                                   |
-| ----------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| Journal suggestions           | `hard_canon` candidate                        | A suggestion targets durable memory, but it is not hard canon until the user accepts it.                |
-| Accepted journal writes       | `hard_canon`                                  | Accepted writes have user review and Kindroid-side mutation results.                                    |
-| Previously On briefs          | `scene_state`                                 | Continuity recap for re-entry. It is not Kindroid memory and is not automatically injected into chat.   |
-| Local scene state             | `scene_state`                                 | App-owned backstage current-scene metadata for a Kin or group.                                          |
-| Soundscape state              | `scene_state` derived cue                     | Presentation state inferred from scene context. It is not evidence and should not be promoted directly. |
-| Group Gaming campaign state   | `game_state`                                  | Validated against campaign pack IDs and owned by Kinagent. Hermes may propose, but Kinagent validates.  |
-| Chat Dynamism suggestions     | `system_observation` targeting preference     | Drift observation that may lead to reviewed Kindroid configuration changes.                             |
-| Future scene ledger           | `scene_state`, with possible promotions later | Ledger entries should start temporary unless reviewed into another layer.                               |
-| Future diagnostics            | `system_observation`                          | Diagnostics can influence recommendations but should not become Kin memory without review.              |
-| Future Director Mode settings | `user_preference` or `scene_state`            | Stable user taste belongs in preferences; immediate staging instructions belong in scene state.         |
+| System                        | Current layer mapping                     | Notes                                                                                                   |
+| ----------------------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| Journal suggestions           | `hard_canon` candidate                    | A suggestion targets durable memory, but it is not hard canon until the user accepts it.                |
+| Accepted journal writes       | `hard_canon`                              | Accepted writes have user review and Kindroid-side mutation results.                                    |
+| Previously On briefs          | `scene_state`                             | Continuity recap for re-entry. It is not Kindroid memory and is not automatically injected into chat.   |
+| Local scene state             | `scene_state`                             | App-owned backstage current-scene metadata for a Kin or group.                                          |
+| Scene ledger                  | `scene_state`                             | Per-source scene facts with provenance for later continuity reasoning.                                  |
+| Soundscape state              | `scene_state` derived cue                 | Presentation state inferred from scene context. It is not evidence and should not be promoted directly. |
+| Group Gaming campaign state   | `game_state`                              | Validated against campaign pack IDs and owned by Kinagent. Hermes may propose, but Kinagent validates.  |
+| Chat Dynamism suggestions     | `system_observation` targeting preference | Drift observation that may lead to reviewed Kindroid configuration changes.                             |
+| Future diagnostics            | `system_observation`                      | Diagnostics can influence recommendations but should not become Kin memory without review.              |
+| Future Director Mode settings | `user_preference` or `scene_state`        | Stable user taste belongs in preferences; immediate staging instructions belong in scene state.         |
 
 ## Provenance
 
