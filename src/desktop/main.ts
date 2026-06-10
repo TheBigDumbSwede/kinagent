@@ -125,6 +125,14 @@ function createMainWindow(): void {
     logger.error("Failed to load desktop renderer.", { error: error.message });
   });
 
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (isSafeExternalUrl(url)) {
+      void shell.openExternal(url);
+    }
+
+    return { action: "deny" };
+  });
+
   mainWindow.once("ready-to-show", () => {
     mainWindow?.show();
     if (process.env.KINAGENT_DESKTOP_SMOKE === "1") {
@@ -146,6 +154,10 @@ function createMainWindow(): void {
     event.preventDefault();
     mainWindow?.hide();
   });
+}
+
+function isSafeExternalUrl(url: string): boolean {
+  return url.startsWith("https://");
 }
 
 async function startRuntime(): Promise<void> {

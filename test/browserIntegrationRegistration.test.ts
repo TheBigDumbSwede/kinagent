@@ -4,6 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   browserIntegrationValidationErrors,
+  KINAGENT_CHROMIUM_EXTENSION_ID,
   loadBrowserIntegrationSettings,
   normalizeBrowserIntegrationSettings,
   parseRegistryDefaultValue,
@@ -20,9 +21,17 @@ describe("browser integration registration helpers", () => {
       })
     ).toEqual({
       targets: ["chrome", "edge", "firefox"],
-      chromiumExtensionIds: ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],
+      chromiumExtensionIds: [
+        KINAGENT_CHROMIUM_EXTENSION_ID,
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      ],
       firefoxExtensionIds: ["kinagent@example.com"]
     });
+  });
+
+  it("preloads the published Chrome Web Store extension id for Chromium browsers", () => {
+    expect(normalizeBrowserIntegrationSettings({}).chromiumExtensionIds).toEqual([KINAGENT_CHROMIUM_EXTENSION_ID]);
   });
 
   it("preserves an explicit empty browser selection", () => {
@@ -84,7 +93,7 @@ HKEY_CURRENT_USER\\Software\\Google\\Chrome\\NativeMessagingHosts\\com.kinagent.
     try {
       await expect(loadBrowserIntegrationSettings(settingsPath)).resolves.toEqual({
         targets: ["chrome", "edge"],
-        chromiumExtensionIds: [],
+        chromiumExtensionIds: [KINAGENT_CHROMIUM_EXTENSION_ID],
         firefoxExtensionIds: []
       });
 
@@ -96,7 +105,7 @@ HKEY_CURRENT_USER\\Software\\Google\\Chrome\\NativeMessagingHosts\\com.kinagent.
 
       await expect(loadBrowserIntegrationSettings(settingsPath)).resolves.toEqual({
         targets: ["firefox"],
-        chromiumExtensionIds: [],
+        chromiumExtensionIds: [KINAGENT_CHROMIUM_EXTENSION_ID],
         firefoxExtensionIds: ["kinagent@example.com"]
       });
     } finally {
