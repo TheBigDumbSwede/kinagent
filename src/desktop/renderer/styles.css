@@ -165,6 +165,11 @@ h2 {
   font-size: 12px;
 }
 
+.panel-note a {
+  color: #2d5a7b;
+  font-weight: 600;
+}
+
 .button-row,
 .input-grid {
   display: grid;

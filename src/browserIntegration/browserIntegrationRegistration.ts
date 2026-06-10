@@ -50,10 +50,12 @@ export interface BrowserIntegrationRegistrationPaths {
   hostPath: string;
 }
 
+export const KINAGENT_CHROMIUM_EXTENSION_ID = "cggbaonfbomoejmmmomapjmejacmbpon";
+
 const allTargets: NativeMessagingTarget[] = ["chrome", "edge", "firefox"];
 const defaultSettings: BrowserIntegrationSettings = {
   targets: ["chrome", "edge"],
-  chromiumExtensionIds: [],
+  chromiumExtensionIds: [KINAGENT_CHROMIUM_EXTENSION_ID],
   firefoxExtensionIds: []
 };
 const chromiumExtensionIdPattern = /^[a-p]{32}$/;
@@ -148,7 +150,10 @@ export function normalizeBrowserIntegrationSettings(input: unknown): BrowserInte
 
   return {
     targets: Array.isArray(value.targets) ? targets : [...defaultSettings.targets],
-    chromiumExtensionIds: normalizeExtensionIds(value.chromiumExtensionIds),
+    chromiumExtensionIds: mergeExtensionIds(
+      defaultSettings.chromiumExtensionIds,
+      normalizeExtensionIds(value.chromiumExtensionIds)
+    ),
     firefoxExtensionIds: normalizeExtensionIds(value.firefoxExtensionIds)
   };
 }
@@ -221,6 +226,10 @@ function normalizeExtensionIds(input: unknown): string[] {
         .filter(Boolean)
     )
   );
+}
+
+function mergeExtensionIds(...lists: string[][]): string[] {
+  return Array.from(new Set(lists.flat()));
 }
 
 function cloneDefaultSettings(): BrowserIntegrationSettings {

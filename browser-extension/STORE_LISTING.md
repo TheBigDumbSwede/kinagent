@@ -4,6 +4,12 @@ Submission-ready text for the Kinagent Browser Bridge extension. Paste these int
 the matching fields in the Chrome Web Store Developer Dashboard. Not shipped with
 the extension; kept here for reference and reuse.
 
+Published Chrome Web Store listing:
+https://chromewebstore.google.com/detail/kinagent-browser-bridge/cggbaonfbomoejmmmomapjmejacmbpon
+
+Published Chrome / Edge extension ID:
+`cggbaonfbomoejmmmomapjmejacmbpon`
+
 ---
 
 ## Product name
@@ -125,6 +131,6 @@ the install link from the project README.
 - [ ] Privacy policy URL set and reachable
 - [ ] Permission justifications pasted
 - [ ] Reviewer notes pasted
-- [ ] After publishing: copy the Web Store-assigned extension ID into the Kinagent
+- [x] After publishing: copy the Web Store-assigned extension ID into the Kinagent
       desktop Browser panel and re-register the native host (the published ID
       differs from the unpacked dev ID)

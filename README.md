@@ -209,6 +209,16 @@ In the desktop app:
 - `Manage` expands per-Kin subscription toggles for users who want desktop control.
 - Minimize or close hides the window to the Windows tray; use the tray menu to show or quit.
 
+Optional browser integration:
+
+- Install
+  [Kinagent Browser Bridge](https://chromewebstore.google.com/detail/kinagent-browser-bridge/cggbaonfbomoejmmmomapjmejacmbpon)
+  for Chrome or Edge.
+- In the desktop `Browser` panel, register the native messaging host. The published Chrome / Edge extension ID
+  `cggbaonfbomoejmmmomapjmejacmbpon` is prefilled; add any unpacked development IDs only if you are testing a local
+  extension build.
+- Use the Browser panel's connection test buttons after opening `https://kindroid.ai/`.
+
 Log in and save local browser state:
 
 ```powershell
