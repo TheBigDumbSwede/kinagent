@@ -42,6 +42,10 @@ notifications; historical recent-message probes use Kindroid's documented `/v1/g
 
 The background runtime is the source of truth for subscriptions and side effects. The desktop app may manage, display, and manually toggle that runtime, but it should not introduce a separate listener path that bypasses Hermes, session warming, dedupe, or Kindroid mutation adapters.
 
+Local records use the taxonomy in [docs/local-canon-layers.md](docs/local-canon-layers.md) to distinguish durable
+memory candidates, provisional facts, current-scene state, user preferences, system observations, and Group Gaming state.
+That layer vocabulary is intentionally separate from lifecycle states such as pending, accepted, stale, or expired.
+
 ```text
 Kindroid browser login
   -> Playwright visible Chromium
