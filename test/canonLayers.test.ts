@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { canonLayerIds, normalizeCanonLayerId, normalizeCanonProvenance } from "../src/state/canonLayers.js";
+import {
+  canonLayerIds,
+  isCanonLayerId,
+  normalizeCanonLayerId,
+  normalizeCanonProvenance
+} from "../src/state/canonLayers.js";
 
 describe("canon layers", () => {
   it("normalizes canonical layer ids and common aliases", () => {
@@ -14,6 +19,12 @@ describe("canon layers", () => {
     expect(normalizeCanonLayerId("lore_bucket")).toBeNull();
     expect(normalizeCanonLayerId("")).toBeNull();
     expect(normalizeCanonLayerId(null)).toBeNull();
+  });
+
+  it("only treats already-canonical string layer ids as layer ids", () => {
+    expect(isCanonLayerId("hard_canon")).toBe(true);
+    expect(isCanonLayerId("Hard Canon")).toBe(false);
+    expect(isCanonLayerId(null)).toBe(false);
   });
 
   it("keeps the exported canonical layer set stable", () => {

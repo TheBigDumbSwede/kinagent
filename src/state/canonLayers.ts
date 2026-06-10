@@ -157,7 +157,7 @@ export function normalizeCanonLayerId(value: unknown): CanonLayerId | null {
 }
 
 export function isCanonLayerId(value: unknown): value is CanonLayerId {
-  return normalizeCanonLayerId(value) === value;
+  return typeof value === "string" && (canonLayerIds as readonly string[]).includes(value);
 }
 
 export function normalizeCanonProvenance(input: CanonProvenanceInput): CanonProvenance {
