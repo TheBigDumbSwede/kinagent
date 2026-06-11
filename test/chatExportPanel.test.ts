@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { generateSelectedStorybook, renderStorybookExportProgress } from "../src/desktop/renderer/chatExportPanel.js";
+import {
+  generateImportedStorybook,
+  generateSelectedStorybook,
+  renderStorybookExportProgress
+} from "../src/desktop/renderer/chatExportPanel.js";
 import type { ChatExportPanelElements, KinagentApi, PanelState } from "../src/desktop/renderer/rendererTypes.js";
 
 describe("chat export panel Storybook controls", () => {
@@ -55,11 +59,32 @@ describe("chat export panel Storybook controls", () => {
     expect(context.elements.storybookProgress.removedValue).toBe(true);
     expect(context.elements.storybookStatusLine.textContent).toBe("Creating storybook outline.");
   });
+
+  it("imports an external transcript with Storybook options but no selected source", async () => {
+    const context = storybookContext({
+      selectedKinId: null,
+      organizationMode: "day",
+      style: "warm memoir"
+    });
+
+    await generateImportedStorybook(context);
+
+    expect(context.api.importStorybookTranscript).toHaveBeenCalledWith({
+      organizationMode: "day",
+      length: "compact",
+      style: "warm memoir",
+      quoteMode: "paraphrase_only"
+    });
+    expect(context.state.storybookJobId).toBe("import-job-1");
+    expect(context.elements.storybookStatusLine.textContent).toContain(
+      "Imported 4 messages as kinagent-markdown (high confidence)."
+    );
+  });
 });
 
 function storybookContext(input: StorybookContextInput = {}) {
   const state: PanelState = {
-    selectedKinId: input.selectedGroupId ? null : "kin-1",
+    selectedKinId: input.selectedKinId === null ? null : input.selectedGroupId ? null : "kin-1",
     selectedGroupId: input.selectedGroupId ?? null,
     kinAnalysisRunning: false,
     kinAnalysisJobId: null,
@@ -81,6 +106,7 @@ function storybookContext(input: StorybookContextInput = {}) {
     storybookQuoteModeInput: inputElement(input.quoteMode ?? "paraphrase_only"),
     storybookPrivacyInput: checkboxElement(input.privacyAccepted ?? true),
     storybookGenerateButton: buttonElement(),
+    storybookImportButton: buttonElement(),
     storybookSavePdfButton: buttonElement(),
     storybookProgress: progressElement(),
     storybookStatusLine: textElement()
@@ -95,6 +121,18 @@ function storybookContext(input: StorybookContextInput = {}) {
       warningCount: 0,
       opened: true
     })),
+    importStorybookTranscript: vi.fn(async () => ({
+      ok: true,
+      jobId: "import-job-1",
+      previewPath: "C:\\temp\\imported-storybook.html",
+      title: "Imported Story",
+      chapterCount: 1,
+      warningCount: 0,
+      opened: true,
+      parserFormat: "kinagent-markdown",
+      parserConfidence: "high",
+      importedMessageCount: 4
+    })),
     saveStorybookPdf: vi.fn()
   } as unknown as KinagentApi;
 
@@ -107,6 +145,7 @@ function storybookContext(input: StorybookContextInput = {}) {
 }
 
 interface StorybookContextInput {
+  selectedKinId?: string | null;
   selectedGroupId?: string;
   fromDate?: string;
   toDate?: string;

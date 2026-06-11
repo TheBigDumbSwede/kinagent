@@ -3,7 +3,7 @@ import { renderStorybookHtml } from "../src/storybook/storybookRender.js";
 import type { StorybookDocument } from "../src/storybook/storybook.js";
 
 describe("storybook HTML renderer", () => {
-  it("renders escaped preview HTML with chapter provenance and generation notes", () => {
+  it("renders escaped preview HTML without internal provenance artifacts", () => {
     const html = renderStorybookHtml(
       storybookDocument({
         body: "They spoke around <script>alert('x')</script> and chose trust."
@@ -14,9 +14,26 @@ describe("storybook HTML renderer", () => {
     expect(html).toContain("One &amp; Two");
     expect(html).toContain("The &lt;Signal&gt;");
     expect(html).toContain("&lt;script&gt;alert(&#39;x&#39;)&lt;/script&gt;");
-    expect(html).toContain("Source scenes: scene-1, scene-2");
-    expect(html).toContain("Hermes returned &lt;partial&gt; output.");
     expect(html).not.toContain("<script>alert");
+    expect(html).not.toContain("Source scenes:");
+    expect(html).not.toContain("Alex &amp; Bruce");
+    expect(html).not.toContain("Generated ");
+    expect(html).not.toContain("literary chronicle");
+    expect(html).not.toContain("Paraphrase Only");
+    expect(html).not.toContain("Generation Notes");
+    expect(html).not.toContain("Hermes returned");
+    expect(html).not.toContain("Direct quotes were paraphrased.");
+  });
+
+  it("uses zero print margins with cloned document padding for full-page PDF background", () => {
+    const html = renderStorybookHtml(storybookDocument({ body: "A readable chapter." }));
+
+    expect(html).toContain("@page {\n      size: Letter;\n      margin: 0;");
+    expect(html).toContain("body {\n      margin: 0;\n      background: #fbfaf6;");
+    expect(html).toContain(".book {\n      -webkit-box-decoration-break: clone;");
+    expect(html).toContain("padding: 0.72in;");
+    expect(html).not.toContain("article {\n      break-inside: avoid-page;");
+    expect(html).not.toContain("body::before");
   });
 
   it("turns long single-block chapter prose into readable paragraphs", () => {

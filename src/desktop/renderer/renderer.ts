@@ -15,6 +15,7 @@ import {
 } from "./capturedDetailPanel.js";
 import {
   exportSelectedChat,
+  generateImportedStorybook,
   generateSelectedStorybook,
   renderChatExportProgress,
   renderStorybookExportProgress,
@@ -338,6 +339,7 @@ interface RendererElements {
   storybookQuoteModeInput: HTMLSelectElement;
   storybookPrivacyInput: HTMLInputElement;
   storybookGenerateButton: HTMLButtonElement;
+  storybookImportButton: HTMLButtonElement;
   storybookSavePdfButton: HTMLButtonElement;
   storybookProgress: HTMLProgressElement;
   storybookStatusLine: HTMLElement;
@@ -473,6 +475,7 @@ interface RendererApi {
   exportKinChat(input: ChatExportRequest & { kinId: string }): Promise<ChatExportResult>;
   exportGroupChat(input: ChatExportRequest & { groupId: string }): Promise<ChatExportResult>;
   generateStorybook(input: StorybookExportRequest): Promise<StorybookExportResult>;
+  importStorybookTranscript(input: StorybookExportRequest): Promise<StorybookExportResult>;
   saveStorybookPdf(input: { jobId: string }): Promise<StorybookExportResult>;
   analyzeKin(input: { kinId: string }): Promise<KinAnalysisResult>;
   forceLocalScenePrewarm(input: { scope: "kin" | "group"; id: string }): Promise<{ ok: boolean }>;
@@ -732,6 +735,7 @@ const elements: RendererElements = {
   storybookQuoteModeInput: query<HTMLSelectElement>("#storybookQuoteModeInput"),
   storybookPrivacyInput: query<HTMLInputElement>("#storybookPrivacyInput"),
   storybookGenerateButton: query<HTMLButtonElement>("#storybookGenerateButton"),
+  storybookImportButton: query<HTMLButtonElement>("#storybookImportButton"),
   storybookSavePdfButton: query<HTMLButtonElement>("#storybookSavePdfButton"),
   storybookProgress: query<HTMLProgressElement>("#storybookProgress"),
   storybookStatusLine: query<HTMLElement>("#storybookStatusLine"),
@@ -1105,6 +1109,9 @@ elements.storybookPrivacyInput.addEventListener("change", () => {
 });
 elements.storybookGenerateButton.addEventListener("click", () => {
   void generateSelectedStorybook({ state, elements, api: window.kinagent, renderActivity }, false);
+});
+elements.storybookImportButton.addEventListener("click", () => {
+  void generateImportedStorybook({ state, elements, api: window.kinagent, renderActivity });
 });
 elements.storybookSavePdfButton.addEventListener("click", () => {
   void saveStorybookPdf({ state, elements, api: window.kinagent, renderActivity });

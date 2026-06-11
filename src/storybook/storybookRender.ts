@@ -8,12 +8,6 @@ export function renderStorybookHtml(book: StorybookDocument): string {
     )
     .join("\n");
   const chapters = book.chapters.map(renderChapter).join("\n");
-  const warningList =
-    book.warnings.length > 0
-      ? `<section class="warnings"><h2>Generation Notes</h2><ul>${book.warnings
-          .map((warning) => `<li>${escapeHtml(warning)}</li>`)
-          .join("")}</ul></section>`
-      : "";
 
   return `<!doctype html>
 <html lang="en">
@@ -21,36 +15,44 @@ export function renderStorybookHtml(book: StorybookDocument): string {
   <meta charset="utf-8" />
   <title>${escapeHtml(book.title)}</title>
   <style>
-    @page { margin: 0.72in; }
+    @page {
+      size: Letter;
+      margin: 0;
+    }
     :root {
       color: #24221f;
       background: #fbfaf6;
       font-family: "Georgia", "Times New Roman", serif;
     }
+    html {
+      min-height: 100%;
+      background: #fbfaf6;
+    }
     body {
       margin: 0;
+      background: #fbfaf6;
       line-height: 1.55;
       font-size: 12.5pt;
     }
+    .book {
+      -webkit-box-decoration-break: clone;
+      box-decoration-break: clone;
+      box-sizing: border-box;
+      min-height: 100vh;
+      padding: 0.72in;
+    }
     .cover {
-      min-height: 82vh;
+      min-height: calc(100vh - 1.44in);
       display: flex;
       flex-direction: column;
       justify-content: center;
       border-bottom: 1px solid #c9c2b8;
-      page-break-after: always;
-    }
-    .source {
-      font-family: "Segoe UI", Arial, sans-serif;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      font-size: 9pt;
-      color: #696157;
+      break-after: page;
     }
     h1 {
       font-size: 34pt;
       line-height: 1.05;
-      margin: 0.25in 0 0.08in;
+      margin: 0 0 0.08in;
       font-weight: 600;
     }
     .subtitle {
@@ -58,13 +60,8 @@ export function renderStorybookHtml(book: StorybookDocument): string {
       color: #55504a;
       margin: 0;
     }
-    .meta, .provenance, .notes {
-      font-family: "Segoe UI", Arial, sans-serif;
-      font-size: 9.5pt;
-      color: #696157;
-    }
-    .toc, .warnings, article {
-      page-break-before: always;
+    .toc, article {
+      break-before: page;
     }
     h2 {
       font-size: 20pt;
@@ -85,47 +82,38 @@ export function renderStorybookHtml(book: StorybookDocument): string {
     ul {
       padding-left: 0.24in;
     }
-    article {
-      break-inside: avoid-page;
-    }
     .chapter-body p {
       margin: 0 0 0.15in;
       overflow-wrap: anywhere;
+      break-inside: avoid;
+      orphans: 3;
+      widows: 3;
     }
     .chapter-body p + p {
       text-indent: 0.18in;
     }
-    .provenance {
-      border-top: 1px solid #d8d1c7;
-      padding-top: 0.1in;
-      margin-top: 0.22in;
-    }
   </style>
 </head>
 <body>
-  <section class="cover">
-    <div class="source">${escapeHtml(book.source.displayName)} · ${escapeHtml(book.source.scope)}</div>
-    <h1>${escapeHtml(book.title)}</h1>
-    <p class="subtitle">${escapeHtml(book.subtitle)}</p>
-    <p class="meta">Generated ${escapeHtml(formatDate(book.generatedAt))} · ${escapeHtml(book.options.style)} · ${escapeHtml(formatOption(book.options.quoteMode))}</p>
-  </section>
-  <section class="toc">
-    <h2>Contents</h2>
-    <ol>${chapterNav}</ol>
-  </section>
-  ${warningList}
-  ${chapters}
+  <main class="book">
+    <section class="cover">
+      <h1>${escapeHtml(book.title)}</h1>
+      <p class="subtitle">${escapeHtml(book.subtitle)}</p>
+    </section>
+    <section class="toc">
+      <h2>Contents</h2>
+      <ol>${chapterNav}</ol>
+    </section>
+    ${chapters}
+  </main>
 </body>
 </html>`;
 }
 
 function renderChapter(chapter: StorybookChapter): string {
-  const notes = chapter.notes.length > 0 ? `<p class="notes">${escapeHtml(chapter.notes.join(" "))}</p>` : "";
   return `<article id="${escapeAttribute(chapter.chapterId)}">
   <h2>${escapeHtml(chapter.chapterTitle)}</h2>
   <div class="chapter-body">${renderParagraphs(chapter.body)}</div>
-  ${notes}
-  <p class="provenance">Source scenes: ${escapeHtml(chapter.sourceSceneIds.join(", "))}</p>
 </article>`;
 }
 
@@ -182,18 +170,6 @@ function splitLongParagraph(paragraph: string): string[] {
   }
 
   return paragraphs.length > 0 ? paragraphs : [paragraph];
-}
-
-function formatOption(value: string): string {
-  return value
-    .split("_")
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
-}
-
-function formatDate(value: string): string {
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
 }
 
 function escapeHtml(value: string): string {

@@ -56,6 +56,9 @@ export interface StorybookExportResult {
   warningCount?: number;
   opened?: boolean;
   openError?: string;
+  parserFormat?: string;
+  parserConfidence?: string;
+  importedMessageCount?: number;
 }
 
 export interface StorybookExportProgress {
@@ -120,6 +123,7 @@ export interface KinagentApi {
   exportKinChat(input: ChatExportRequest & { kinId: string }): Promise<ChatExportResult>;
   exportGroupChat(input: ChatExportRequest & { groupId: string }): Promise<ChatExportResult>;
   generateStorybook(input: StorybookExportRequest): Promise<StorybookExportResult>;
+  importStorybookTranscript(input: StorybookExportRequest): Promise<StorybookExportResult>;
   saveStorybookPdf(input: { jobId: string }): Promise<StorybookExportResult>;
   listGroupBackgroundSuggestions(): Promise<GroupBackgroundSuggestionSummary[]>;
   dismissGroupBackgroundSuggestion(input: { id: string }): Promise<unknown>;
@@ -191,6 +195,7 @@ export interface ChatExportPanelElements {
   storybookQuoteModeInput: HTMLSelectElement;
   storybookPrivacyInput: HTMLInputElement;
   storybookGenerateButton: HTMLButtonElement;
+  storybookImportButton: HTMLButtonElement;
   storybookSavePdfButton: HTMLButtonElement;
   storybookProgress: HTMLProgressElement;
   storybookStatusLine: HTMLElement;

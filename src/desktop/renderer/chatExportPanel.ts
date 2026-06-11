@@ -128,6 +128,47 @@ export async function generateSelectedStorybook(
   }
 }
 
+export async function generateImportedStorybook(context: PanelContext<ChatExportPanelElements>): Promise<void> {
+  const { state, elements, api, renderActivity } = context;
+  if (state.storybookSaving || state.chatExportSaving) {
+    return;
+  }
+
+  if (!elements.storybookPrivacyInput.checked) {
+    elements.storybookStatusLine.textContent = "Acknowledge the privacy warning before importing.";
+    renderActivity();
+    return;
+  }
+
+  state.storybookSaving = true;
+  state.storybookJobId = null;
+  state.storybookPreviewPath = null;
+  elements.storybookProgress.hidden = false;
+  elements.storybookProgress.removeAttribute("value");
+  elements.storybookStatusLine.textContent = "Choosing transcript file.";
+  renderActivity();
+
+  try {
+    const result = await api.importStorybookTranscript(storybookOptionsRequest(elements));
+    state.storybookJobId = result.jobId || null;
+    state.storybookPreviewPath = result.previewPath || null;
+    if (result.ok) {
+      elements.storybookStatusLine.textContent = storybookPreviewStatus(result);
+    } else if (result.canceled) {
+      elements.storybookStatusLine.textContent = "Transcript import was canceled.";
+    } else {
+      elements.storybookStatusLine.textContent = "Imported Storybook preview did not complete.";
+    }
+  } catch (error) {
+    elements.storybookStatusLine.textContent = errorMessage(error);
+  } finally {
+    state.storybookSaving = false;
+    elements.storybookProgress.hidden = true;
+    elements.storybookProgress.value = 0;
+    renderActivity();
+  }
+}
+
 export async function saveStorybookPdf(context: PanelContext<ChatExportPanelElements>): Promise<void> {
   const { state, elements, api, renderActivity } = context;
   if (!state.storybookJobId || state.storybookSaving) {
@@ -184,14 +225,10 @@ export function renderStorybookExportProgress(
 
 function storybookRequest(context: PanelContext<ChatExportPanelElements>, exportAll: boolean): StorybookExportRequest {
   const { state, elements } = context;
-  const request: StorybookExportRequest = {
+  const request = storybookOptionsRequest(elements, {
     fromDate: exportAll ? "" : elements.chatExportFromInput.value,
-    toDate: exportAll ? "" : elements.chatExportToInput.value,
-    organizationMode: storybookOrganizationMode(elements.storybookOrganizationInput.value),
-    length: storybookLength(elements.storybookLengthInput.value),
-    style: elements.storybookStyleInput.value,
-    quoteMode: storybookQuoteMode(elements.storybookQuoteModeInput.value)
-  };
+    toDate: exportAll ? "" : elements.chatExportToInput.value
+  });
 
   if (state.selectedGroupId) {
     request.groupId = state.selectedGroupId;
@@ -202,15 +239,35 @@ function storybookRequest(context: PanelContext<ChatExportPanelElements>, export
   return request;
 }
 
+function storybookOptionsRequest(
+  elements: ChatExportPanelElements,
+  range: Pick<StorybookExportRequest, "fromDate" | "toDate"> = {}
+): StorybookExportRequest {
+  return {
+    ...range,
+    organizationMode: storybookOrganizationMode(elements.storybookOrganizationInput.value),
+    length: storybookLength(elements.storybookLengthInput.value),
+    style: elements.storybookStyleInput.value,
+    quoteMode: storybookQuoteMode(elements.storybookQuoteModeInput.value)
+  };
+}
+
 function storybookPreviewStatus(result: {
   title?: string;
   chapterCount?: number;
   warningCount?: number;
   opened?: boolean;
   openError?: string;
+  parserFormat?: string;
+  parserConfidence?: string;
+  importedMessageCount?: number;
 }): string {
   const title = result.title ? `"${result.title}"` : "Storybook";
   const chapters = `${result.chapterCount ?? 0} chapter${result.chapterCount === 1 ? "" : "s"}`;
+  const parser =
+    result.parserFormat && result.parserConfidence
+      ? ` Imported ${result.importedMessageCount ?? 0} messages as ${result.parserFormat} (${result.parserConfidence} confidence).`
+      : "";
   const warnings =
     result.warningCount && result.warningCount > 0
       ? ` ${result.warningCount} warning${result.warningCount === 1 ? "" : "s"}.`
@@ -220,7 +277,7 @@ function storybookPreviewStatus(result: {
     : result.openError
       ? ` Preview saved but could not open: ${result.openError}.`
       : "";
-  return `Prepared ${title} with ${chapters}.${warnings}${preview}`;
+  return `Prepared ${title} with ${chapters}.${parser}${warnings}${preview}`;
 }
 
 function storybookOrganizationMode(value: string): StorybookOrganizationMode {

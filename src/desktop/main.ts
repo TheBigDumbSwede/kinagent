@@ -38,6 +38,7 @@ import {
   type StorybookOptions,
   type StorybookProgress
 } from "../storybook/storybook.js";
+import { parseImportedStorybookTranscript } from "../storybook/transcriptImport.js";
 import { renderStorybookHtml } from "../storybook/storybookRender.js";
 import { BridgeRuntime, type BridgeRuntimeEvent, type KinSoundscapePreference } from "../runtime/bridgeRuntime.js";
 import type { JournalSuggestion } from "../journal/journalSuggestionStore.js";
@@ -502,6 +503,9 @@ function registerIpcHandlers(): void {
   );
   ipcMain.handle("storybook:generate", async (_event, input: StorybookDesktopRequest = {}) =>
     generateStorybookPreview(input)
+  );
+  ipcMain.handle("storybook:import-generate", async (_event, input: StorybookDesktopRequest = {}) =>
+    generateImportedStorybookPreview(input)
   );
   ipcMain.handle("storybook:save-pdf", async (_event, input: { jobId?: string } = {}) =>
     saveStorybookPdf(input.jobId ?? "")
@@ -1168,38 +1172,134 @@ async function generateStorybookPreview(input: StorybookDesktopRequest) {
     throw new Error("No readable chat entries found for the selected source and date range.");
   }
 
-  const document = await createStorybookFromTranscript({
+  return createStorybookPreviewJob({
     transcript,
-    hermes: new HttpStorybookHermesClient(config),
-    options: {
-      organizationMode: input.organizationMode,
-      length: input.length,
-      style: input.style,
-      quoteMode: input.quoteMode
-    },
-    onProgress: progress
+    input,
+    jobId,
+    progress
   });
+}
+
+async function generateImportedStorybookPreview(input: StorybookDesktopRequest) {
+  const openOptions = {
+    title: "Import transcript",
+    properties: ["openFile"] as Array<"openFile">,
+    filters: [
+      { name: "Transcript files", extensions: ["md", "txt"] },
+      { name: "Markdown", extensions: ["md"] },
+      { name: "Text", extensions: ["txt"] }
+    ]
+  };
+  const openResult = mainWindow
+    ? await dialog.showOpenDialog(mainWindow, openOptions)
+    : await dialog.showOpenDialog(openOptions);
+  if (openResult.canceled || !openResult.filePaths[0]) {
+    return { ok: false, canceled: true };
+  }
+
+  const filePath = openResult.filePaths[0];
+  const stat = fs.statSync(filePath);
+  if (stat.size > 5 * 1024 * 1024) {
+    throw new Error("Imported transcript is too large. Use a file under 5 MB.");
+  }
+
+  const jobId = randomUUID();
+  const progress = (payload: StorybookProgress) => {
+    sendRendererEvent("storybook-export-progress", { jobId, ...payload });
+  };
+  progress({ stage: "chunking", processed: 0, message: "Reading imported transcript." });
+  const imported = parseImportedStorybookTranscript(fs.readFileSync(filePath, "utf8"), {
+    fileName: path.basename(filePath)
+  });
+  progress({
+    stage: "chunking",
+    processed: imported.transcript.messages.length,
+    total: imported.transcript.messages.length,
+    message: `Imported ${imported.transcript.messages.length} transcript message${
+      imported.transcript.messages.length === 1 ? "" : "s"
+    }.`
+  });
+
+  return createStorybookPreviewJob({
+    transcript: imported.transcript,
+    input,
+    jobId,
+    progress,
+    options: importedStorybookOptions(input),
+    parser: {
+      format: imported.format,
+      confidence: imported.confidence,
+      warnings: imported.warnings,
+      filePath
+    }
+  });
+}
+
+async function createStorybookPreviewJob(input: {
+  transcript: Parameters<typeof createStorybookFromTranscript>[0]["transcript"];
+  input: StorybookDesktopRequest;
+  jobId: string;
+  progress: (payload: StorybookProgress) => void;
+  options?: StorybookOptions;
+  parser?: {
+    format: string;
+    confidence: string;
+    warnings: string[];
+    filePath: string;
+  };
+}) {
+  const document = await createStorybookFromTranscript({
+    transcript: input.transcript,
+    hermes: new HttpStorybookHermesClient(config),
+    options: input.options ?? storybookOptions(input.input),
+    onProgress: input.progress
+  });
+  if (input.parser?.warnings.length) {
+    document.warnings.unshift(...input.parser.warnings.map((warning) => `Import parser: ${warning}`));
+  }
   const html = renderStorybookHtml(document);
-  const jobDir = path.join(storybookTempDir(), jobId);
+  const jobDir = path.join(storybookTempDir(), input.jobId);
   fs.mkdirSync(jobDir, { recursive: true });
   const htmlPath = path.join(jobDir, `${safeArtifactName(document.title)}.html`);
   fs.writeFileSync(htmlPath, html, "utf8");
-  storybookJobs.set(jobId, { jobId, htmlPath, document });
+  storybookJobs.set(input.jobId, { jobId: input.jobId, htmlPath, document });
 
   const openError = await shell.openPath(htmlPath);
   if (openError) {
-    logger.warn("Storybook preview could not be opened.", { jobId, htmlPath, error: openError });
+    logger.warn("Storybook preview could not be opened.", { jobId: input.jobId, htmlPath, error: openError });
   }
 
   return {
     ok: true,
-    jobId,
+    jobId: input.jobId,
     previewPath: htmlPath,
     title: document.title,
     chapterCount: document.chapters.length,
     warningCount: document.warnings.length,
     opened: !openError,
-    openError: openError || undefined
+    openError: openError || undefined,
+    parserFormat: input.parser?.format,
+    parserConfidence: input.parser?.confidence,
+    importedMessageCount: input.parser ? input.transcript.messages.length : undefined
+  };
+}
+
+function storybookOptions(input: StorybookDesktopRequest): StorybookOptions {
+  return {
+    organizationMode: input.organizationMode,
+    length: input.length,
+    style: input.style,
+    quoteMode: input.quoteMode
+  };
+}
+
+function importedStorybookOptions(input: StorybookDesktopRequest): StorybookOptions {
+  return {
+    ...storybookOptions(input),
+    chunking: {
+      maxMessagesPerChunk: 40,
+      maxCharactersPerChunk: 6_000
+    }
   };
 }
 
@@ -1211,7 +1311,7 @@ async function saveStorybookPdf(jobId: string) {
 
   const saveOptions = {
     title: "Save storybook PDF",
-    defaultPath: `${safeArtifactName(job.document.title)}.pdf`,
+    defaultPath: `${safeArtifactName(job.document.title)}-${timestampArtifactSuffix(new Date())}.pdf`,
     filters: [{ name: "PDF", extensions: ["pdf"] }]
   };
   const saveResult = mainWindow
@@ -1225,12 +1325,35 @@ async function saveStorybookPdf(jobId: string) {
     };
   }
 
-  await renderStorybookPdf(job.htmlPath, saveResult.filePath);
+  try {
+    await saveStorybookPdfFile(job.htmlPath, saveResult.filePath);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.error("Failed to save Storybook PDF.", {
+      jobId,
+      pdfPath: saveResult.filePath,
+      error: message
+    });
+    throw new Error(
+      `Could not save Storybook PDF. Close any existing copy of the file or choose a new name. ${message}`,
+      { cause: error }
+    );
+  }
   return {
     ok: true,
     jobId,
     filePath: saveResult.filePath
   };
+}
+
+async function saveStorybookPdfFile(htmlPath: string, pdfPath: string): Promise<void> {
+  const tempPath = path.join(storybookTempDir(), `${randomUUID()}.pdf`);
+  try {
+    await renderStorybookPdf(htmlPath, tempPath);
+    fs.copyFileSync(tempPath, pdfPath);
+  } finally {
+    fs.rmSync(tempPath, { force: true });
+  }
 }
 
 function storybookTarget(input: StorybookDesktopRequest): { scope: "kin" | "group"; id: string } {
@@ -1253,10 +1376,10 @@ async function renderStorybookPdf(htmlPath: string, pdfPath: string): Promise<vo
       format: "Letter",
       printBackground: true,
       margin: {
-        top: "0.72in",
-        right: "0.72in",
-        bottom: "0.72in",
-        left: "0.72in"
+        top: "0",
+        right: "0",
+        bottom: "0",
+        left: "0"
       }
     });
   } finally {
@@ -1429,6 +1552,15 @@ function safeArtifactName(value: string): string {
     .slice(0, 80)
     .toLowerCase();
   return normalized || "storybook";
+}
+
+function timestampArtifactSuffix(value: Date): string {
+  return value
+    .toISOString()
+    .replace(/\.\d{3}Z$/, "Z")
+    .replace(/[-:]/g, "")
+    .replace("T", "-")
+    .replace("Z", "");
 }
 
 function sendVoicePlayback(chunk: unknown): void {

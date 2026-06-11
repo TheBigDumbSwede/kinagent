@@ -4,7 +4,8 @@ import { isMessageInRange, normalizeDateRange } from "../chatExport/chatExport.j
 import { chatHistoryDisplayName, loadAllKindroidChatHistoryMessages } from "../kindroid/chatHistory.js";
 import type { Logger } from "../util/logger.js";
 
-export type StorybookSourceScope = "kin" | "group";
+export type StorybookKindroidSourceScope = "kin" | "group";
+export type StorybookSourceScope = StorybookKindroidSourceScope | "import";
 export type StorybookOrganizationMode = "scene" | "day" | "event" | "relationship_arc";
 export type StorybookLength = "compact" | "medium" | "full";
 export type StorybookQuoteMode = "direct_quotes" | "paraphrase_only";
@@ -36,7 +37,7 @@ export interface StorybookTranscriptSource {
   scope: StorybookSourceScope;
   id: string;
   displayName: string;
-  source: "kindroid-chat-history";
+  source: "kindroid-chat-history" | "imported-transcript";
 }
 
 export interface StorybookParticipant {
@@ -174,7 +175,7 @@ export interface StorybookGenerationInput {
 }
 
 export interface KindroidStorybookTranscriptOptions {
-  scope: StorybookSourceScope;
+  scope: StorybookKindroidSourceScope;
   id: string;
   displayName: string;
   speakerNames?: Record<string, string>;
@@ -421,26 +422,31 @@ export class HttpStorybookHermesClient implements StorybookHermesClient {
       throw new Error("Hermes must be enabled and configured before generating a storybook.");
     }
 
-    const response = await this.fetchImpl(`${normalizeBaseUrl(this.config.hermes.baseUrl)}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${this.config.hermes.apiKey}`
-      },
-      body: JSON.stringify({
-        model: "hermes-agent",
-        messages: [
-          {
-            role: "system",
-            content: storybookSystemPrompt()
-          },
-          {
-            role: "user",
-            content: JSON.stringify(request)
-          }
-        ]
-      })
-    });
+    let response: Response;
+    try {
+      response = await this.fetchImpl(`${normalizeBaseUrl(this.config.hermes.baseUrl)}/chat/completions`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${this.config.hermes.apiKey}`
+        },
+        body: JSON.stringify({
+          model: "hermes-agent",
+          messages: [
+            {
+              role: "system",
+              content: storybookSystemPrompt()
+            },
+            {
+              role: "user",
+              content: JSON.stringify(request)
+            }
+          ]
+        })
+      });
+    } catch (error) {
+      throw new Error(hermesFetchErrorMessage(request.stage, error), { cause: error });
+    }
 
     const responseText = await response.text();
     if (!response.ok) {
@@ -454,6 +460,18 @@ export class HttpStorybookHermesClient implements StorybookHermesClient {
     }
     return JSON.parse(jsonText) as unknown;
   }
+}
+
+function hermesFetchErrorMessage(stage: StorybookHermesRequest["stage"], error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  const cause = error instanceof Error && error.cause instanceof Error ? error.cause : null;
+  const causeMessage = cause?.message ?? "";
+  const causeCode = cause && "code" in cause && typeof cause.code === "string" ? ` ${cause.code}` : "";
+  const timedOut = /timeout/i.test(`${message} ${causeMessage}${causeCode}`);
+  if (timedOut) {
+    return `Hermes timed out during the Storybook ${stage} step before returning a response. Try a shorter transcript or a smaller import; Hermes reported:${causeCode} ${causeMessage || message}`.trim();
+  }
+  return `Hermes Storybook ${stage} request failed before returning a response: ${causeMessage || message}`;
 }
 
 function normalizeTranscriptMessage(

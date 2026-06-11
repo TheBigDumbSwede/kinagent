@@ -59,6 +59,7 @@ const kinagentApi = {
   exportKinChat: (input: unknown) => ipcRenderer.invoke("chat-export:kin", input),
   exportGroupChat: (input: unknown) => ipcRenderer.invoke("chat-export:group", input),
   generateStorybook: (input: unknown) => ipcRenderer.invoke("storybook:generate", input),
+  importStorybookTranscript: (input: unknown) => ipcRenderer.invoke("storybook:import-generate", input),
   saveStorybookPdf: (input: unknown) => ipcRenderer.invoke("storybook:save-pdf", input),
   analyzeKin: (input: unknown) => ipcRenderer.invoke("kin-analyze:run", input),
   readSoundscapeAsset: (input: unknown) => ipcRenderer.invoke("soundscape:read-asset", input),

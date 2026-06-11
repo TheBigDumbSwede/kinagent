@@ -4,9 +4,11 @@ import {
   chunkStorybookTranscript,
   createStorybookFromTranscript,
   createStorybookTranscriptFromMessages,
+  HttpStorybookHermesClient,
   type StorybookHermesClient,
   type StorybookHermesRequest
 } from "../src/storybook/storybook.js";
+import type { AppConfig } from "../src/config/types.js";
 
 describe("storybook pipeline", () => {
   it("normalizes selected direct and group chat history into a storybook transcript", () => {
@@ -236,6 +238,24 @@ describe("storybook pipeline", () => {
       ])
     );
   });
+
+  it("wraps Hermes fetch header timeouts with the Storybook stage", async () => {
+    const cause = Object.assign(new Error("Headers Timeout Error"), { code: "UND_ERR_HEADERS_TIMEOUT" });
+    const fetchError = Object.assign(new TypeError("fetch failed"), { cause });
+    const client = new HttpStorybookHermesClient(storybookConfig(), async () => {
+      throw fetchError;
+    });
+
+    await expect(
+      client.completeJson({
+        stage: "scene_summary",
+        instructions: [],
+        input: {}
+      })
+    ).rejects.toThrow(
+      "Hermes timed out during the Storybook scene_summary step before returning a response. Try a shorter transcript or a smaller import"
+    );
+  });
 });
 
 function scriptedHermesClient(resolve: (request: StorybookHermesRequest) => unknown): StorybookHermesClient & {
@@ -261,5 +281,82 @@ function message(overrides: Partial<NormalizedKindroidMessage>): NormalizedKindr
     role: null,
     raw: {},
     ...overrides
+  };
+}
+
+function storybookConfig(): AppConfig {
+  return {
+    kindroid: {
+      firebaseProjectId: "kindroid-ai",
+      uid: "user",
+      kins: []
+    },
+    bridge: {
+      dedupeWindowSeconds: 60,
+      logPath: "kinagent.log",
+      logLevel: "info",
+      sessionDir: "sessions",
+      sqlitePath: "state.sqlite"
+    },
+    hermes: {
+      enabled: true,
+      baseUrl: "http://127.0.0.1:3000",
+      apiKey: "test-key",
+      agentId: "agent",
+      currentSceneUpdates: {
+        enabled: false,
+        maxLength: 160
+      },
+      journalSuggestions: {
+        enabled: false,
+        throttleMessages: 10,
+        strongEventBypass: false
+      },
+      groupBackgrounds: {
+        suggestions: {
+          enabled: false,
+          autonomous: false,
+          minMessagesBetweenProposals: 10,
+          minSignificance: 0.5
+        },
+        images: {
+          enabled: false,
+          provider: "openai",
+          openai: {
+            apiKey: "",
+            model: "gpt-image-1",
+            size: "1024x1024",
+            quality: "medium"
+          }
+        }
+      },
+      chatDynamism: {
+        suggestions: {
+          enabled: false
+        },
+        autoAdjust: {
+          enabled: false,
+          minTurnsBetweenAdjustments: 10,
+          min: 0.8,
+          max: 1.4,
+          maxDelta: 0.1
+        }
+      }
+    },
+    voice: {
+      enabled: false,
+      provider: "none",
+      openai: {
+        apiKey: "",
+        model: "gpt-4o-mini-tts",
+        voice: "alloy",
+        instructions: ""
+      },
+      elevenlabs: {
+        apiKey: "",
+        model: "eleven_multilingual_v2",
+        outputFormat: "mp3_44100_128"
+      }
+    }
   };
 }

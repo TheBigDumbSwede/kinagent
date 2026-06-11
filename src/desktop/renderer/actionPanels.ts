@@ -31,6 +31,7 @@ export interface ActionPanelElements {
   chatExportAllButton: HTMLButtonElement;
   storybookPrivacyInput: HTMLInputElement;
   storybookGenerateButton: HTMLButtonElement;
+  storybookImportButton: HTMLButtonElement;
   storybookSavePdfButton: HTMLButtonElement;
   timeline: HTMLElement;
   detailStats: HTMLElement;
@@ -74,6 +75,7 @@ function renderExportButtons(context: ActionPanelContext): void {
   context.elements.chatExportRangeButton.disabled = busy;
   context.elements.chatExportAllButton.disabled = busy;
   context.elements.storybookGenerateButton.disabled = busy || !context.elements.storybookPrivacyInput.checked;
+  context.elements.storybookImportButton.disabled = busy || !context.elements.storybookPrivacyInput.checked;
   context.elements.storybookSavePdfButton.disabled = context.state.storybookSaving || !context.state.storybookJobId;
 }
 
