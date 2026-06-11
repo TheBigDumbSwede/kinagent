@@ -23,7 +23,12 @@ export interface Logger {
 
 export interface CreateLoggerOptions {
   logPath?: string;
+  maxBytes?: number;
+  maxFiles?: number;
 }
+
+const defaultMaxLogBytes = 5 * 1024 * 1024;
+const defaultMaxLogFiles = 3;
 
 export function createLogger(level: LogLevel, options: CreateLoggerOptions = {}): Logger {
   const threshold = levels[level];
@@ -37,7 +42,10 @@ export function createLogger(level: LogLevel, options: CreateLoggerOptions = {})
     const stream = messageLevel === "error" || messageLevel === "warn" ? process.stderr : process.stdout;
     stream.write(`${line}\n`);
     if (options.logPath) {
-      appendLogLine(options.logPath, line);
+      appendLogLine(options.logPath, line, {
+        maxBytes: options.maxBytes ?? defaultMaxLogBytes,
+        maxFiles: options.maxFiles ?? defaultMaxLogFiles
+      });
     }
   }
 
@@ -49,13 +57,38 @@ export function createLogger(level: LogLevel, options: CreateLoggerOptions = {})
   };
 }
 
-function appendLogLine(logPath: string, line: string): void {
+function appendLogLine(logPath: string, line: string, rotation: { maxBytes: number; maxFiles: number }): void {
   try {
     fs.mkdirSync(path.dirname(logPath), { recursive: true });
+    rotateLogIfNeeded(logPath, rotation);
     fs.appendFileSync(logPath, `${line}\n`, "utf8");
   } catch {
     // Logging must never break the bridge runtime.
   }
+}
+
+function rotateLogIfNeeded(logPath: string, rotation: { maxBytes: number; maxFiles: number }): void {
+  if (rotation.maxBytes <= 0 || rotation.maxFiles <= 0 || !fs.existsSync(logPath)) {
+    return;
+  }
+
+  const current = fs.statSync(logPath);
+  if (current.size < rotation.maxBytes) {
+    return;
+  }
+
+  for (let index = rotation.maxFiles - 1; index >= 1; index -= 1) {
+    const source = `${logPath}.${index}`;
+    const target = `${logPath}.${index + 1}`;
+    if (fs.existsSync(source)) {
+      fs.rmSync(target, { force: true });
+      fs.renameSync(source, target);
+    }
+  }
+
+  const firstRotated = `${logPath}.1`;
+  fs.rmSync(firstRotated, { force: true });
+  fs.renameSync(logPath, firstRotated);
 }
 
 function format(level: LogLevel, message: string, meta?: unknown): string {

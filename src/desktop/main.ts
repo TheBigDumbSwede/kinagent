@@ -33,6 +33,20 @@ import {
 import { nativeHostExecutablePath } from "../browserIntegration/nativeMessaging.js";
 import { createLogger, type Logger } from "../util/logger.js";
 import {
+  applyStoredConfigSecrets,
+  migrateConfigSecretsToSecureStore,
+  saveConfigSecrets,
+  scrubConfigSecrets,
+  SecureSecretStore,
+  secureSecretsPath
+} from "./secureSecrets.js";
+import {
+  clearElectronCaches,
+  clearSavedBrowserSession,
+  profileDataReport,
+  pruneProfileData
+} from "../profile/profileDataMaintenance.js";
+import {
   loadKinVoicePreference,
   openAiVoiceOptions,
   saveKinVoicePreference,
@@ -54,6 +68,7 @@ let isQuitting = false;
 let loginSession: { browser: Browser; context: BrowserContext } | null = null;
 let runtime: BridgeRuntime | null = null;
 let browserBridgeServer: BrowserBridgeServer | null = null;
+let secureSecretStore: SecureSecretStore | null = null;
 let smokeWindowReady = false;
 let smokeRuntimeReady = false;
 
@@ -98,6 +113,8 @@ function initializeDesktopConfig(): void {
     configPath: desktopConfigPath,
     createDefaultConfig: true
   });
+  secureSecretStore = new SecureSecretStore(secureSecretsPath(desktopUserDataDir));
+  config = migrateConfigSecretsToSecureStore(config, desktopConfigPath, secureSecretStore);
   logger = createLogger(config.bridge.logLevel, { logPath: config.bridge.logPath });
 }
 
@@ -226,6 +243,10 @@ function registerIpcHandlers(): void {
   ipcMain.handle("app:get-status", async () => getDesktopStatus());
   ipcMain.handle("settings:get", async () => getDesktopSettings());
   ipcMain.handle("settings:save", async (_event, input: unknown) => saveDesktopSettings(input));
+  ipcMain.handle("settings:prune-profile-data", async () => pruneDesktopProfileData());
+  ipcMain.handle("settings:clear-saved-session", async () => clearDesktopSavedSession());
+  ipcMain.handle("settings:clear-cache", async () => clearDesktopCache());
+  ipcMain.handle("settings:open-profile-folder", async () => shell.openPath(desktopUserDataDir));
   ipcMain.handle("browser-integration:get-status", async () => getBrowserIntegrationStatus());
   ipcMain.handle("browser-integration:save-settings", async (_event, input: unknown) => {
     await saveBrowserIntegrationSettings(browserIntegrationPaths().settingsPath, input);
@@ -443,6 +464,8 @@ function getDesktopSettings(input: { saved?: boolean } = {}) {
     requiresRestart: Boolean(input.saved),
     configPath: desktopConfigPath,
     userDataDir: desktopUserDataDir,
+    dataReport: profileDataReport(config, desktopUserDataDir, desktopConfigPath),
+    secureSecrets: secureSecretStore?.status() ?? null,
     config
   };
 }
@@ -530,12 +553,46 @@ function saveDesktopSettings(input: unknown) {
   next.voice.elevenlabs.model = stringSetting(fields.elevenLabsModel, next.voice.elevenlabs.model);
   next.voice.elevenlabs.outputFormat = stringSetting(fields.elevenLabsOutputFormat, next.voice.elevenlabs.outputFormat);
 
-  saveConfig(next, desktopConfigPath);
+  const secretsSecured = secureSecretStore ? saveConfigSecrets(next, secureSecretStore) : false;
+  saveConfig(secretsSecured ? scrubConfigSecrets(next) : next, desktopConfigPath);
   config = loadConfig({ configPath: desktopConfigPath, createDefaultConfig: true });
+  if (secureSecretStore) {
+    config = applyStoredConfigSecrets(config, secureSecretStore);
+  }
   logger = createLogger(config.bridge.logLevel, { logPath: config.bridge.logPath });
   logger.info("Saved desktop settings.", { configPath: desktopConfigPath });
 
   return getDesktopSettings({ saved: true });
+}
+
+function pruneDesktopProfileData() {
+  const result = pruneProfileData(config, desktopUserDataDir);
+  logger.info("Pruned profile data.", {
+    journalSuggestionsRemoved: result.journalSuggestionsRemoved,
+    groupBackgroundSuggestionsRemoved: result.groupBackgroundSuggestionsRemoved,
+    chatDynamismSuggestionsRemoved: result.chatDynamismSuggestionsRemoved,
+    orphanedGroupBackgroundImagesRemoved: result.orphanedGroupBackgroundImagesRemoved
+  });
+  return result;
+}
+
+async function clearDesktopSavedSession() {
+  const result = clearSavedBrowserSession(config);
+  logger.info("Cleared saved Kindroid session.", { path: result.path, removed: result.removed });
+  sendRendererEvent("session-updated", await getDesktopStatus());
+  return {
+    ...result,
+    report: profileDataReport(config, desktopUserDataDir, desktopConfigPath)
+  };
+}
+
+function clearDesktopCache() {
+  const result = clearElectronCaches(desktopUserDataDir);
+  logger.info("Cleared Electron caches.", { removedBytes: result.removedBytes, removedFiles: result.removedFiles });
+  return {
+    ...result,
+    report: profileDataReport(config, desktopUserDataDir, desktopConfigPath)
+  };
 }
 
 function cloneConfig(value: AppConfig): AppConfig {

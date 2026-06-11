@@ -1,5 +1,13 @@
 import { providerLabel } from "./formatters.js";
-import type { AppConfigView, AppSettingsFormValue, AppSettingsResult, KinagentApi } from "./rendererTypes.js";
+import type {
+  AppConfigView,
+  AppSettingsFormValue,
+  AppSettingsResult,
+  KinagentApi,
+  ProfileDataActionResult,
+  ProfileDataPruneResult,
+  ProfileDataReport
+} from "./rendererTypes.js";
 
 export interface AppSettingsState {
   appSettings: AppSettingsResult | null;
@@ -26,6 +34,12 @@ export interface AppSettingsElements {
   appSettingsStatusLine: HTMLElement;
   appSettingsSaveButton: HTMLButtonElement;
   settingsPathLine: HTMLElement;
+  settingsSecretStorageLine: HTMLElement;
+  settingsDataStatusList: HTMLElement;
+  settingsOpenProfileButton: HTMLButtonElement;
+  settingsPruneDataButton: HTMLButtonElement;
+  settingsClearSessionButton: HTMLButtonElement;
+  settingsClearCacheButton: HTMLButtonElement;
   settingsKindroidApiKeyInput: HTMLInputElement;
   settingsLogLevelInput: HTMLInputElement | HTMLSelectElement;
   settingsDedupeWindowInput: HTMLInputElement;
@@ -53,7 +67,10 @@ export interface AppSettingsElements {
 export interface AppSettingsContext {
   state: AppSettingsState;
   elements: AppSettingsElements;
-  api: Pick<KinagentApi, "saveSettings">;
+  api: Pick<
+    KinagentApi,
+    "saveSettings" | "pruneProfileData" | "clearSavedSession" | "clearCache" | "openProfileFolder"
+  >;
   renderActivity: () => void;
   renderDetailEmpty: (message: string) => void;
   loadAppSettings: () => void | Promise<void>;
@@ -102,6 +119,7 @@ export function renderAppSettingsTab(context: AppSettingsContext): void {
   ]);
 
   populateAppSettingsForm(context, config);
+  wireDataButtons(context);
 }
 
 export async function saveAppSettings(context: AppSettingsContext): Promise<void> {
@@ -136,6 +154,7 @@ function populateAppSettingsForm(context: AppSettingsContext, config: AppConfigV
   elements.settingsLogLevelInput.value = bridge.logLevel || "info";
   elements.settingsDedupeWindowInput.value = String(bridge.dedupeWindowSeconds || 180);
   elements.settingsPathLine.textContent = state.appSettings?.configPath || "";
+  renderProfileData(context);
   elements.settingsKindroidApiKeyInput.value = kindroid.apiKey || "";
 
   elements.settingsHermesEnabledInput.checked = Boolean(hermes.enabled);
@@ -164,6 +183,143 @@ function populateAppSettingsForm(context: AppSettingsContext, config: AppConfigV
   } else {
     elements.appSettingsStatusLine.textContent = "Changes are written to the desktop config file.";
   }
+}
+
+function wireDataButtons(context: AppSettingsContext): void {
+  const { elements } = context;
+  elements.settingsOpenProfileButton.onclick = () => {
+    void openProfileFolder(context);
+  };
+  elements.settingsPruneDataButton.onclick = () => {
+    void pruneProfileData(context);
+  };
+  elements.settingsClearSessionButton.onclick = () => {
+    void clearSavedSession(context);
+  };
+  elements.settingsClearCacheButton.onclick = () => {
+    void clearCache(context);
+  };
+}
+
+function renderProfileData(context: AppSettingsContext): void {
+  const { state, elements } = context;
+  const report = state.appSettings?.dataReport;
+  const secureSecrets = state.appSettings?.secureSecrets;
+  elements.settingsSecretStorageLine.textContent = secureSecrets?.available
+    ? `API keys are stored with OS account encryption. ${secureSecrets.storedKeys.length} secret fields are in secure storage.`
+    : "OS secure storage is unavailable; API keys remain in the desktop config file.";
+  elements.settingsDataStatusList.replaceChildren();
+  if (!report) {
+    appendDataStatus(elements.settingsDataStatusList, "Profile", "Unavailable");
+    return;
+  }
+
+  appendDataStatus(
+    elements.settingsDataStatusList,
+    "Profile total",
+    `${formatBytes(report.totalBytes)} across ${report.totalFiles} files`
+  );
+  for (const category of report.categories) {
+    appendDataStatus(
+      elements.settingsDataStatusList,
+      category.label,
+      category.exists ? `${formatBytes(category.bytes)} across ${category.files} files` : "Not present"
+    );
+  }
+}
+
+async function pruneProfileData(context: AppSettingsContext): Promise<void> {
+  const { state, elements, api, renderActivity } = context;
+  elements.appSettingsStatusLine.textContent = "Pruning profile history.";
+  try {
+    const result = (await api.pruneProfileData()) as ProfileDataPruneResult;
+    updateProfileReport(state.appSettings, result.report);
+    elements.appSettingsStatusLine.textContent =
+      `Pruned ${result.journalSuggestionsRemoved ?? 0} journal, ` +
+      `${result.groupBackgroundSuggestionsRemoved ?? 0} background, ` +
+      `${result.chatDynamismSuggestionsRemoved ?? 0} dynamism items; ` +
+      `${result.orphanedGroupBackgroundImagesRemoved ?? 0} orphaned images removed.`;
+  } catch (error) {
+    state.appSettingsError = errorMessage(error);
+  } finally {
+    renderActivity();
+  }
+}
+
+async function clearSavedSession(context: AppSettingsContext): Promise<void> {
+  const { state, elements, api, renderActivity } = context;
+  if (!window.confirm("Clear the saved Kindroid login session from this profile?")) {
+    return;
+  }
+
+  elements.appSettingsStatusLine.textContent = "Clearing saved session.";
+  try {
+    const result = (await api.clearSavedSession()) as ProfileDataActionResult;
+    updateProfileReport(state.appSettings, result.report);
+    elements.appSettingsStatusLine.textContent = result.removed
+      ? "Saved Kindroid session cleared."
+      : "No saved Kindroid session was present.";
+  } catch (error) {
+    state.appSettingsError = errorMessage(error);
+  } finally {
+    renderActivity();
+  }
+}
+
+async function clearCache(context: AppSettingsContext): Promise<void> {
+  const { state, elements, api, renderActivity } = context;
+  if (!window.confirm("Clear Electron cache files from this profile?")) {
+    return;
+  }
+
+  elements.appSettingsStatusLine.textContent = "Clearing cache files.";
+  try {
+    const result = (await api.clearCache()) as ProfileDataActionResult;
+    updateProfileReport(state.appSettings, result.report);
+    elements.appSettingsStatusLine.textContent = `Cleared ${formatBytes(result.removedBytes ?? 0)} across ${result.removedFiles ?? 0} cache files.`;
+  } catch (error) {
+    state.appSettingsError = errorMessage(error);
+  } finally {
+    renderActivity();
+  }
+}
+
+async function openProfileFolder(context: AppSettingsContext): Promise<void> {
+  const { elements, api } = context;
+  const result = await api.openProfileFolder();
+  elements.appSettingsStatusLine.textContent = result
+    ? `Profile folder open failed: ${result}`
+    : "Profile folder opened.";
+}
+
+function updateProfileReport(settings: AppSettingsResult | null, report: ProfileDataReport | undefined): void {
+  if (settings && report) {
+    settings.dataReport = report;
+  }
+}
+
+function appendDataStatus(container: HTMLElement, labelText: string, valueText: string): void {
+  const row = document.createElement("div");
+  const label = document.createElement("dt");
+  label.textContent = labelText;
+  const value = document.createElement("dd");
+  value.textContent = valueText;
+  row.append(label, value);
+  container.append(row);
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+  const units = ["KB", "MB", "GB"];
+  let value = bytes / 1024;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  return `${value.toFixed(value >= 10 ? 1 : 2)} ${units[unitIndex]}`;
 }
 
 function readAppSettingsForm(elements: AppSettingsElements): AppSettingsFormValue {

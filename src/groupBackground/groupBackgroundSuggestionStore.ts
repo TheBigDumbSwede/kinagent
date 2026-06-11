@@ -71,6 +71,17 @@ interface GroupBackgroundSuggestionFile {
   pacing?: Record<string, GroupBackgroundSuggestionPacing>;
 }
 
+export interface GroupBackgroundPruneOptions {
+  maxAgeDays?: number;
+  maxCompleted?: number;
+  now?: Date;
+}
+
+export interface GroupBackgroundPruneResult {
+  removed: number;
+  retained: number;
+}
+
 export class GroupBackgroundSuggestionStore {
   constructor(
     private readonly filePath: string,
@@ -92,6 +103,19 @@ export class GroupBackgroundSuggestionStore {
 
   listReviewable(): GroupBackgroundSuggestion[] {
     return this.list("pending");
+  }
+
+  pruneCompleted(options: GroupBackgroundPruneOptions = {}): GroupBackgroundPruneResult {
+    const file = this.read();
+    const suggestions = file.suggestions ?? [];
+    const nextSuggestions = pruneSuggestions(suggestions, options);
+    if (nextSuggestions.length !== suggestions.length) {
+      this.write({ ...file, suggestions: nextSuggestions });
+    }
+    return {
+      removed: suggestions.length - nextSuggestions.length,
+      retained: nextSuggestions.length
+    };
   }
 
   get(id: string): GroupBackgroundSuggestion | null {
@@ -402,4 +426,33 @@ function normalizeStringArray(values: string[] | undefined, maxCount: number, ma
   return [...new Set((values ?? []).map((value) => value.trim().replace(/\s+/g, " ")).filter(Boolean))]
     .slice(0, maxCount)
     .map((value) => value.slice(0, maxLength));
+}
+
+function pruneSuggestions(
+  suggestions: GroupBackgroundSuggestion[],
+  options: GroupBackgroundPruneOptions
+): GroupBackgroundSuggestion[] {
+  const maxAgeDays = options.maxAgeDays ?? 30;
+  const maxCompleted = options.maxCompleted ?? 200;
+  const cutoffMs = (options.now?.getTime() ?? Date.now()) - maxAgeDays * 24 * 60 * 60 * 1000;
+  const protectedSuggestions = suggestions.filter((suggestion) => suggestion.status === "pending");
+  const candidates = suggestions.filter((suggestion) => suggestion.status !== "pending");
+  const recentCandidates = candidates.filter((suggestion) => suggestionTimestampMs(suggestion) >= cutoffMs);
+  const retainedCandidateIds = new Set(
+    [...recentCandidates]
+      .sort((left, right) => suggestionTimestampMs(right) - suggestionTimestampMs(left))
+      .slice(0, maxCompleted)
+      .map((suggestion) => suggestion.id)
+  );
+  const protectedIds = new Set(protectedSuggestions.map((suggestion) => suggestion.id));
+  return suggestions.filter((suggestion) => protectedIds.has(suggestion.id) || retainedCandidateIds.has(suggestion.id));
+}
+
+function suggestionTimestampMs(suggestion: GroupBackgroundSuggestion): number {
+  const updated = Date.parse(suggestion.updatedAt);
+  if (Number.isFinite(updated)) {
+    return updated;
+  }
+  const created = Date.parse(suggestion.createdAt);
+  return Number.isFinite(created) ? created : Number.MAX_SAFE_INTEGER;
 }
