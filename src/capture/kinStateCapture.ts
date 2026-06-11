@@ -82,10 +82,12 @@ export async function captureKindroidState(
   const outputDir = path.resolve(process.cwd(), options.outputDir ?? defaultCaptureOutputDir);
   const workspaceDir = path.join(outputDir, "workspace");
   const stagingDir = path.join(outputDir, `.workspace-next-${process.pid}-${Date.now()}`);
+  const activeMarkerPath = path.join(outputDir, ".capture-active");
   const rest = new FirestoreRestClient(config, logger);
   const uid = await rest.resolveUid();
 
   fs.mkdirSync(outputDir, { recursive: true });
+  fs.writeFileSync(activeMarkerPath, `${process.pid}\n`, "utf8");
   await ensureGitRepository(outputDir);
   recoverInterruptedWorkspace(outputDir, workspaceDir);
   cleanupTransientWorkspaces(outputDir);
@@ -173,6 +175,7 @@ export async function captureKindroidState(
     };
   } finally {
     fs.rmSync(stagingDir, { recursive: true, force: true });
+    fs.rmSync(activeMarkerPath, { force: true });
   }
 }
 

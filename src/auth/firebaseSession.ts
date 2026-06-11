@@ -1,5 +1,4 @@
-import fs from "node:fs";
-import { assertStorageStateExists } from "./tokenStore.js";
+import { currentBrowserSessionStorage } from "./browserSessionStorage.js";
 
 export interface BrowserCookie {
   name: string;
@@ -71,19 +70,18 @@ export interface LoadedBrowserSession {
 const firebaseAuthKeyPattern = /^firebase:authUser:([^:]+):(.+)$/;
 
 export function loadBrowserSession(sessionDir: string): LoadedBrowserSession {
-  const statePath = assertStorageStateExists(sessionDir);
-  const storageState = JSON.parse(fs.readFileSync(statePath, "utf8")) as BrowserStorageState;
+  const storage = currentBrowserSessionStorage();
+  const storageState = storage.load(sessionDir);
 
   return {
-    storageStatePath: statePath,
+    storageStatePath: storage.storageStatePath(sessionDir),
     storageState,
     firebaseAuth: extractFirebaseAuthState(storageState)
   };
 }
 
 export function saveBrowserStorageState(sessionDir: string, storageState: BrowserStorageState): void {
-  const statePath = assertStorageStateExists(sessionDir);
-  fs.writeFileSync(statePath, `${JSON.stringify(storageState, null, 2)}\n`);
+  currentBrowserSessionStorage().save(sessionDir, storageState);
 }
 
 export function extractFirebaseAuthState(storageState: BrowserStorageState): FirebaseAuthState | null {

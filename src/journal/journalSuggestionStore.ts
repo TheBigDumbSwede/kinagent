@@ -118,6 +118,17 @@ interface JournalSuggestionFile {
   pacing?: Record<string, JournalSuggestionPacing>;
 }
 
+export interface SuggestionPruneOptions {
+  maxAgeDays?: number;
+  maxCompleted?: number;
+  now?: Date;
+}
+
+export interface SuggestionPruneResult {
+  removed: number;
+  retained: number;
+}
+
 export class JournalSuggestionStore {
   constructor(
     private readonly filePath: string,
@@ -148,6 +159,23 @@ export class JournalSuggestionStore {
       (suggestion) => suggestion.status === "pending" || suggestion.status === "source_invalidated"
     );
     return [...filtered].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+  }
+
+  pruneCompleted(options: SuggestionPruneOptions = {}): SuggestionPruneResult {
+    const file = this.read();
+    const suggestions = file.suggestions ?? [];
+    const nextSuggestions = pruneSuggestions(
+      suggestions,
+      (suggestion) => suggestion.status !== "pending" && suggestion.status !== "source_invalidated",
+      options
+    );
+    if (nextSuggestions.length !== suggestions.length) {
+      this.write({ ...file, suggestions: nextSuggestions });
+    }
+    return {
+      removed: suggestions.length - nextSuggestions.length,
+      retained: nextSuggestions.length
+    };
   }
 
   get(id: string): JournalSuggestion | null {
@@ -459,6 +487,36 @@ function aiIdFromNotification(notification: KindroidChatNotification): string | 
 
 function normalizeStringArray(values: string[], maxCount: number): string[] {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))].slice(0, maxCount);
+}
+
+function pruneSuggestions<T extends { createdAt: string; updatedAt?: string; id: string }>(
+  suggestions: T[],
+  canPrune: (suggestion: T) => boolean,
+  options: SuggestionPruneOptions
+): T[] {
+  const maxAgeDays = options.maxAgeDays ?? 30;
+  const maxCompleted = options.maxCompleted ?? 200;
+  const cutoffMs = (options.now?.getTime() ?? Date.now()) - maxAgeDays * 24 * 60 * 60 * 1000;
+  const protectedSuggestions = suggestions.filter((suggestion) => !canPrune(suggestion));
+  const candidates = suggestions.filter(canPrune);
+  const recentCandidates = candidates.filter((suggestion) => suggestionTimestampMs(suggestion) >= cutoffMs);
+  const retainedCandidateIds = new Set(
+    [...recentCandidates]
+      .sort((left, right) => suggestionTimestampMs(right) - suggestionTimestampMs(left))
+      .slice(0, maxCompleted)
+      .map((suggestion) => suggestion.id)
+  );
+  const protectedIds = new Set(protectedSuggestions.map((suggestion) => suggestion.id));
+  return suggestions.filter((suggestion) => protectedIds.has(suggestion.id) || retainedCandidateIds.has(suggestion.id));
+}
+
+function suggestionTimestampMs(suggestion: { createdAt: string; updatedAt?: string }): number {
+  const updated = suggestion.updatedAt ? Date.parse(suggestion.updatedAt) : NaN;
+  if (Number.isFinite(updated)) {
+    return updated;
+  }
+  const created = Date.parse(suggestion.createdAt);
+  return Number.isFinite(created) ? created : Number.MAX_SAFE_INTEGER;
 }
 
 function normalizeOptionalString(value: string | undefined): string | undefined {

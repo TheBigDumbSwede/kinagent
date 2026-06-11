@@ -96,6 +96,9 @@ import type {
   LocalSceneStateSummary,
   PrewarmSourceSummary,
   PreviouslyOnBriefSummary,
+  CaptureVaultActionResult,
+  ProfileDataActionResult,
+  ProfileDataPruneResult,
   SceneLedgerFactSummary,
   SceneLedgerSummary
 } from "./rendererTypes.js";
@@ -228,6 +231,14 @@ interface RendererElements {
   appSettingsStatusLine: HTMLElement;
   appSettingsSaveButton: HTMLButtonElement;
   settingsPathLine: HTMLElement;
+  settingsSecretStorageLine: HTMLElement;
+  settingsDataStatusList: HTMLElement;
+  settingsCaptureVaultEnabledInput: HTMLInputElement;
+  settingsUnlockCaptureVaultButton: HTMLButtonElement;
+  settingsOpenProfileButton: HTMLButtonElement;
+  settingsPruneDataButton: HTMLButtonElement;
+  settingsClearSessionButton: HTMLButtonElement;
+  settingsClearCacheButton: HTMLButtonElement;
   settingsKindroidApiKeyInput: HTMLInputElement;
   settingsLogLevelInput: HTMLInputElement;
   settingsDedupeWindowInput: HTMLInputElement;
@@ -384,6 +395,12 @@ interface RendererApi {
   getStatus(): Promise<DesktopStatus>;
   getSettings(): Promise<AppSettingsResult>;
   saveSettings(input: AppSettingsFormValue): Promise<AppSettingsResult>;
+  pruneProfileData(): Promise<ProfileDataPruneResult>;
+  clearSavedSession(): Promise<ProfileDataActionResult>;
+  clearCache(): Promise<ProfileDataActionResult>;
+  setCaptureVaultEnabled(input: { enabled: boolean }): Promise<CaptureVaultActionResult>;
+  unlockCaptureVault(): Promise<CaptureVaultActionResult>;
+  openProfileFolder(): Promise<string>;
   getBrowserIntegrationStatus(): Promise<BrowserIntegrationStatus>;
   saveBrowserIntegrationSettings(input: BrowserIntegrationSettings): Promise<BrowserIntegrationStatus>;
   registerBrowserIntegration(input: BrowserIntegrationSettings): Promise<BrowserIntegrationStatus>;
@@ -594,6 +611,14 @@ const elements: RendererElements = {
   appSettingsStatusLine: query<HTMLElement>("#appSettingsStatusLine"),
   appSettingsSaveButton: query<HTMLButtonElement>("#appSettingsSaveButton"),
   settingsPathLine: query<HTMLElement>("#settingsPathLine"),
+  settingsSecretStorageLine: query<HTMLElement>("#settingsSecretStorageLine"),
+  settingsDataStatusList: query<HTMLElement>("#settingsDataStatusList"),
+  settingsCaptureVaultEnabledInput: query<HTMLInputElement>("#settingsCaptureVaultEnabledInput"),
+  settingsUnlockCaptureVaultButton: query<HTMLButtonElement>("#settingsUnlockCaptureVaultButton"),
+  settingsOpenProfileButton: query<HTMLButtonElement>("#settingsOpenProfileButton"),
+  settingsPruneDataButton: query<HTMLButtonElement>("#settingsPruneDataButton"),
+  settingsClearSessionButton: query<HTMLButtonElement>("#settingsClearSessionButton"),
+  settingsClearCacheButton: query<HTMLButtonElement>("#settingsClearCacheButton"),
   settingsKindroidApiKeyInput: query<HTMLInputElement>("#settingsKindroidApiKeyInput"),
   settingsLogLevelInput: query<HTMLInputElement>("#settingsLogLevelInput"),
   settingsDedupeWindowInput: query<HTMLInputElement>("#settingsDedupeWindowInput"),

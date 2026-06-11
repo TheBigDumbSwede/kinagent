@@ -16,7 +16,7 @@ export function writeText(filePath: string, value: string): void {
 }
 
 export async function ensureGitRepository(outputDir: string): Promise<void> {
-  if (!fs.existsSync(path.join(outputDir, ".git"))) {
+  if (!(await isGitRepository(outputDir))) {
     await execFileAsync("git", ["init"], { cwd: outputDir });
     await execFileAsync("git", ["config", "user.name", "Kinagent Capture"], { cwd: outputDir });
     await execFileAsync("git", ["config", "user.email", "kinagent-capture@local"], { cwd: outputDir });
@@ -132,7 +132,7 @@ function transientWorkspaceDirs(outputDir: string, prefix: string): string[] {
 
 function ensureCaptureGitExcludes(outputDir: string): void {
   const excludePath = path.join(outputDir, ".git", "info", "exclude");
-  const excludeLines = [".workspace-next-*", ".workspace-prev-*"];
+  const excludeLines = [".capture-active", ".workspace-next-*", ".workspace-prev-*"];
   const existing = fs.existsSync(excludePath) ? fs.readFileSync(excludePath, "utf8") : "";
   const missing = excludeLines.filter((line) => !existing.split(/\r?\n/).includes(line));
   if (missing.length > 0) {
@@ -141,6 +141,15 @@ function ensureCaptureGitExcludes(outputDir: string): void {
       excludePath,
       `${existing.endsWith("\n") || existing.length === 0 ? "" : "\n"}${missing.join("\n")}\n`
     );
+  }
+}
+
+async function isGitRepository(outputDir: string): Promise<boolean> {
+  try {
+    const result = await execFileAsync("git", ["rev-parse", "--is-inside-work-tree"], { cwd: outputDir });
+    return result.stdout.trim() === "true";
+  } catch {
+    return false;
   }
 }
 

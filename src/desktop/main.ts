@@ -3,10 +3,23 @@ import os from "node:os";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, Menu, nativeImage, Notification, shell, Tray, ipcMain, dialog } from "electron";
+import {
+  app,
+  BrowserWindow,
+  Menu,
+  nativeImage,
+  Notification,
+  shell,
+  Tray,
+  ipcMain,
+  dialog,
+  safeStorage
+} from "electron";
 import type { Event as ElectronEvent } from "electron";
 import { chromium, type Browser, type BrowserContext } from "playwright";
-import { ensureSessionDir, storageStatePath } from "../auth/tokenStore.js";
+import { setBrowserSessionStorageForProcess } from "../auth/browserSessionStorage.js";
+import type { BrowserStorageState } from "../auth/firebaseSession.js";
+import { ensureSessionDir } from "../auth/tokenStore.js";
 import { loadConfig, saveConfig } from "../config/loadConfig.js";
 import type { AppConfig, LogLevel, VoiceProvider } from "../config/types.js";
 import { readCapturedGroup, readCapturedKin } from "../capture/captureReader.js";
@@ -33,6 +46,22 @@ import {
 import { nativeHostExecutablePath } from "../browserIntegration/nativeMessaging.js";
 import { createLogger, type Logger } from "../util/logger.js";
 import {
+  applyStoredConfigSecrets,
+  migrateConfigSecretsToSecureStore,
+  saveConfigSecrets,
+  scrubConfigSecrets,
+  SecureSecretStore,
+  secureSecretsPath
+} from "./secureSecrets.js";
+import {
+  clearElectronCaches,
+  clearSavedBrowserSession,
+  profileDataReport,
+  pruneProfileData
+} from "../profile/profileDataMaintenance.js";
+import { EncryptedBrowserSessionStorage } from "./encryptedBrowserSessionStorage.js";
+import { CaptureHistoryVault, captureVaultPaths, type CaptureVaultActionResult } from "./captureVault.js";
+import {
   loadKinVoicePreference,
   openAiVoiceOptions,
   saveKinVoicePreference,
@@ -54,6 +83,9 @@ let isQuitting = false;
 let loginSession: { browser: Browser; context: BrowserContext } | null = null;
 let runtime: BridgeRuntime | null = null;
 let browserBridgeServer: BrowserBridgeServer | null = null;
+let secureSecretStore: SecureSecretStore | null = null;
+let encryptedBrowserSessionStorage: EncryptedBrowserSessionStorage | null = null;
+let captureVault: CaptureHistoryVault | null = null;
 let smokeWindowReady = false;
 let smokeRuntimeReady = false;
 
@@ -98,12 +130,31 @@ function initializeDesktopConfig(): void {
     configPath: desktopConfigPath,
     createDefaultConfig: true
   });
+  secureSecretStore = new SecureSecretStore(secureSecretsPath(desktopUserDataDir), safeStorage);
+  config = migrateConfigSecretsToSecureStore(config, desktopConfigPath, secureSecretStore);
+  encryptedBrowserSessionStorage = new EncryptedBrowserSessionStorage();
+  setBrowserSessionStorageForProcess(encryptedBrowserSessionStorage);
   logger = createLogger(config.bridge.logLevel, { logPath: config.bridge.logPath });
+  captureVault = new CaptureHistoryVault({ ...captureVaultPaths(desktopUserDataDir), cipher: safeStorage });
+  const unlockResult = captureVault.unlockIfEnabled();
+  if (unlockResult?.changed) {
+    logger.info("Unlocked captured Kin history vault.", { archivePath: unlockResult.status.archivePath });
+  }
+  if (captureVault.status().lastError) {
+    logger.warn("Captured Kin history vault unlock failed.", { error: captureVault.status().lastError });
+  }
 }
 
 app.on("before-quit", () => {
   isQuitting = true;
   runtime?.stop();
+  const lockResult = captureVault?.lockIfEnabled();
+  if (lockResult?.changed) {
+    logger?.info("Locked captured Kin history vault.", { archivePath: lockResult.status.archivePath });
+  }
+  if (captureVault?.status().lastError) {
+    logger?.warn("Captured Kin history vault lock failed.", { error: captureVault.status().lastError });
+  }
   void browserBridgeServer?.stop();
   cleanupChatExportTempFiles();
   void closeLoginSession();
@@ -226,6 +277,14 @@ function registerIpcHandlers(): void {
   ipcMain.handle("app:get-status", async () => getDesktopStatus());
   ipcMain.handle("settings:get", async () => getDesktopSettings());
   ipcMain.handle("settings:save", async (_event, input: unknown) => saveDesktopSettings(input));
+  ipcMain.handle("settings:prune-profile-data", async () => pruneDesktopProfileData());
+  ipcMain.handle("settings:clear-saved-session", async () => clearDesktopSavedSession());
+  ipcMain.handle("settings:clear-cache", async () => clearDesktopCache());
+  ipcMain.handle("settings:capture-vault-enable", async (_event, input: { enabled?: boolean } = {}) =>
+    setCaptureVaultEnabled(Boolean(input.enabled))
+  );
+  ipcMain.handle("settings:capture-vault-unlock", async () => unlockCaptureVault());
+  ipcMain.handle("settings:open-profile-folder", async () => shell.openPath(desktopUserDataDir));
   ipcMain.handle("browser-integration:get-status", async () => getBrowserIntegrationStatus());
   ipcMain.handle("browser-integration:save-settings", async (_event, input: unknown) => {
     await saveBrowserIntegrationSettings(browserIntegrationPaths().settingsPath, input);
@@ -443,6 +502,15 @@ function getDesktopSettings(input: { saved?: boolean } = {}) {
     requiresRestart: Boolean(input.saved),
     configPath: desktopConfigPath,
     userDataDir: desktopUserDataDir,
+    dataReport: profileDataReport(config, desktopUserDataDir, desktopConfigPath),
+    secureSecrets: secureSecretStore?.status() ?? null,
+    browserSessionEncryption: encryptedBrowserSessionStorage
+      ? {
+          available: encryptedBrowserSessionStorage.encryptionAvailable(),
+          encrypted: encryptedBrowserSessionStorage.encrypted(config.bridge.sessionDir)
+        }
+      : null,
+    captureVault: captureVault?.status() ?? null,
     config
   };
 }
@@ -530,12 +598,64 @@ function saveDesktopSettings(input: unknown) {
   next.voice.elevenlabs.model = stringSetting(fields.elevenLabsModel, next.voice.elevenlabs.model);
   next.voice.elevenlabs.outputFormat = stringSetting(fields.elevenLabsOutputFormat, next.voice.elevenlabs.outputFormat);
 
-  saveConfig(next, desktopConfigPath);
+  const secretsSecured = secureSecretStore ? saveConfigSecrets(next, secureSecretStore) : false;
+  saveConfig(secretsSecured ? scrubConfigSecrets(next) : next, desktopConfigPath);
   config = loadConfig({ configPath: desktopConfigPath, createDefaultConfig: true });
+  if (secureSecretStore) {
+    config = applyStoredConfigSecrets(config, secureSecretStore);
+  }
   logger = createLogger(config.bridge.logLevel, { logPath: config.bridge.logPath });
   logger.info("Saved desktop settings.", { configPath: desktopConfigPath });
 
   return getDesktopSettings({ saved: true });
+}
+
+function pruneDesktopProfileData() {
+  const result = pruneProfileData(config, desktopUserDataDir);
+  logger.info("Pruned profile data.", {
+    journalSuggestionsRemoved: result.journalSuggestionsRemoved,
+    groupBackgroundSuggestionsRemoved: result.groupBackgroundSuggestionsRemoved,
+    chatDynamismSuggestionsRemoved: result.chatDynamismSuggestionsRemoved,
+    orphanedGroupBackgroundImagesRemoved: result.orphanedGroupBackgroundImagesRemoved
+  });
+  return result;
+}
+
+async function clearDesktopSavedSession() {
+  const result = clearSavedBrowserSession(config);
+  logger.info("Cleared saved Kindroid session.", { path: result.path, removed: result.removed });
+  sendRendererEvent("session-updated", await getDesktopStatus());
+  return {
+    ...result,
+    report: profileDataReport(config, desktopUserDataDir, desktopConfigPath)
+  };
+}
+
+function clearDesktopCache() {
+  const result = clearElectronCaches(desktopUserDataDir);
+  logger.info("Cleared Electron caches.", { removedBytes: result.removedBytes, removedFiles: result.removedFiles });
+  return {
+    ...result,
+    report: profileDataReport(config, desktopUserDataDir, desktopConfigPath)
+  };
+}
+
+function setCaptureVaultEnabled(enabled: boolean): CaptureVaultActionResult {
+  const result = requireCaptureVault().setEnabled(enabled);
+  logger.info("Updated captured Kin history vault preference.", {
+    enabled: result.status.enabled,
+    available: result.status.available
+  });
+  return result;
+}
+
+function unlockCaptureVault(): CaptureVaultActionResult {
+  const result = requireCaptureVault().unlock();
+  logger.info("Unlocked captured Kin history vault.", {
+    changed: result.changed,
+    captureDir: result.status.captureDir
+  });
+  return result;
 }
 
 function cloneConfig(value: AppConfig): AppConfig {
@@ -587,13 +707,13 @@ async function saveLoginSession() {
     throw new Error("No Kindroid login browser is open.");
   }
 
-  const statePath = storageStatePath(config.bridge.sessionDir);
-  await loginSession.context.storageState({ path: statePath, indexedDB: true });
+  const storageState = (await loginSession.context.storageState({ indexedDB: true })) as BrowserStorageState;
+  encryptedBrowserSessionStorage?.save(config.bridge.sessionDir, storageState);
   await closeLoginSession();
   await requireRuntime().refreshKins();
   await requireRuntime().refreshGroups();
   sendRendererEvent("session-updated", await getDesktopStatus());
-  return { ok: true, path: statePath };
+  return { ok: true, path: encryptedBrowserSessionStorage?.storageStatePath(config.bridge.sessionDir) };
 }
 
 async function closeLoginSession() {
@@ -1151,6 +1271,14 @@ function requireRuntime(): BridgeRuntime {
   }
 
   return runtime;
+}
+
+function requireCaptureVault(): CaptureHistoryVault {
+  if (!captureVault) {
+    throw new Error("Captured Kin history vault is not ready.");
+  }
+
+  return captureVault;
 }
 
 function desktopIconPath(fileName: string): string {

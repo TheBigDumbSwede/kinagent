@@ -341,6 +341,25 @@
                     </label>
                   </section>
 
+                  <section class="settings-section">
+                    <h2>Data</h2>
+                    <p id="settingsSecretStorageLine" class="panel-note"></p>
+                    <label class="checkbox-label">
+                      <input id="settingsCaptureVaultEnabledInput" type="checkbox" />
+                      <span>Encrypt capture history when Kinagent closes</span>
+                    </label>
+                    <dl id="settingsDataStatusList" class="status-list browser-status-list"></dl>
+                    <div class="button-row form-action-row">
+                      <button id="settingsOpenProfileButton" class="secondary" type="button">Open Profile</button>
+                      <button id="settingsPruneDataButton" class="secondary" type="button">Prune History</button>
+                      <button id="settingsUnlockCaptureVaultButton" class="secondary" type="button">
+                        Unlock Capture History
+                      </button>
+                      <button id="settingsClearSessionButton" class="secondary" type="button">Clear Session</button>
+                      <button id="settingsClearCacheButton" class="secondary" type="button">Clear Cache</button>
+                    </div>
+                  </section>
+
                   <p id="appSettingsStatusLine" class="panel-note"></p>
                   <div class="button-row narrow">
                     <button id="appSettingsSaveButton" type="submit">Save Settings</button>

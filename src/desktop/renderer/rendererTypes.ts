@@ -91,6 +91,12 @@ export interface KinagentApi {
   applyGroupBackgroundImage(input: { id: string }): Promise<unknown>;
   getCapturedGroup(input: { groupId: string }): Promise<CapturedGroupSummary & { fields?: CapturedFieldSummary[] }>;
   saveSettings(input: AppSettingsFormValue): Promise<AppSettingsResult>;
+  pruneProfileData(): Promise<ProfileDataPruneResult>;
+  clearSavedSession(): Promise<ProfileDataActionResult>;
+  clearCache(): Promise<ProfileDataActionResult>;
+  setCaptureVaultEnabled(input: { enabled: boolean }): Promise<CaptureVaultActionResult>;
+  unlockCaptureVault(): Promise<CaptureVaultActionResult>;
+  openProfileFolder(): Promise<string>;
   setKinVoicePreference(input: { kinId: string; preference: KinVoicePreference }): Promise<KinVoicePreferenceResult>;
   setGroupSoundscapePreference(input: {
     groupId: string;
@@ -607,10 +613,74 @@ export interface AppConfigView {
   };
 }
 
+export interface ProfileDataCategory {
+  key: string;
+  label: string;
+  path: string;
+  exists: boolean;
+  bytes: number;
+  files: number;
+}
+
+export interface ProfileDataReport {
+  userDataDir: string;
+  dataDir: string;
+  totalBytes: number;
+  totalFiles: number;
+  categories: ProfileDataCategory[];
+}
+
+export interface ProfileDataPruneResult {
+  ok?: boolean;
+  journalSuggestionsRemoved?: number;
+  groupBackgroundSuggestionsRemoved?: number;
+  chatDynamismSuggestionsRemoved?: number;
+  orphanedGroupBackgroundImagesRemoved?: number;
+  report?: ProfileDataReport;
+}
+
+export interface ProfileDataActionResult {
+  ok?: boolean;
+  removed?: boolean;
+  removedBytes?: number;
+  removedFiles?: number;
+  report?: ProfileDataReport;
+}
+
+export interface CaptureVaultStatus {
+  enabled: boolean;
+  available: boolean;
+  locked: boolean;
+  unlocked: boolean;
+  captureDir: string;
+  vaultDir: string;
+  archivePath: string;
+  metadataPath: string;
+  lastError?: string;
+}
+
+export interface CaptureVaultActionResult {
+  ok?: boolean;
+  action?: "enabled" | "disabled" | "locked" | "unlocked";
+  changed?: boolean;
+  status?: CaptureVaultStatus;
+}
+
 export interface AppSettingsResult {
   ok?: boolean;
   saved?: boolean;
   config?: AppConfigView;
   configPath?: string;
   userDataDir?: string;
+  dataReport?: ProfileDataReport;
+  secureSecrets?: {
+    available: boolean;
+    path: string;
+    storedKeys: string[];
+  } | null;
+  browserSessionEncryption?: {
+    available: boolean;
+    encrypted: boolean;
+  } | null;
+  captureVault?: CaptureVaultStatus | null;
 }
