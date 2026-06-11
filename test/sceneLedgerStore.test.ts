@@ -4,6 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { AppConfig } from "../src/config/types.js";
 import {
+  maxSceneLedgerFactsPerSource,
   normalizeSceneLedgerFactInput,
   normalizeSceneLedgerFactKind,
   SceneLedgerStore,
@@ -127,6 +128,37 @@ describe("SceneLedgerStore", () => {
       ["location", "archive basement"],
       ["object", "brass key"]
     ]);
+  });
+
+  it("caps facts per source on upsert with most recent facts retained", () => {
+    const store = SceneLedgerStore.fromConfig(testConfig());
+
+    for (let index = 0; index < maxSceneLedgerFactsPerSource + 5; index += 1) {
+      store.upsertFact(
+        { scope: "kin", kinId: "kin-1" },
+        { kind: "object", value: `prop ${index}` },
+        { now: `2026-06-01T17:${String(index).padStart(2, "0")}:00.000Z` }
+      );
+    }
+
+    const facts = store.getForKin("kin-1")?.facts ?? [];
+    expect(facts).toHaveLength(maxSceneLedgerFactsPerSource);
+    expect(facts[0]).toMatchObject({ value: `prop ${maxSceneLedgerFactsPerSource + 4}` });
+    expect(facts.at(-1)).toMatchObject({ value: "prop 5" });
+  });
+
+  it("caps facts per source when replacing a ledger", () => {
+    const store = SceneLedgerStore.fromConfig(testConfig());
+    const replaced = store.replaceFacts(
+      { scope: "group", groupId: "group-1" },
+      Array.from({ length: maxSceneLedgerFactsPerSource + 3 }, (_value, index) => ({
+        kind: "participant",
+        value: `participant ${index}`
+      }))
+    );
+
+    expect(replaced.facts).toHaveLength(maxSceneLedgerFactsPerSource);
+    expect(replaced.facts.at(-1)).toMatchObject({ value: `participant ${maxSceneLedgerFactsPerSource - 1}` });
   });
 
   it("marks an existing fact stale and leaves missing facts untouched", () => {

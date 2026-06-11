@@ -351,8 +351,8 @@ change; use local scene state for inspectable app-owned context that should rema
 
 Kinagent also has a local scene ledger model under `scene-ledger-state.json` for future continuity drift detection,
 Director Mode, recaps, and scene-aware side systems. The ledger stores bounded per-source scene facts with provenance,
-confidence, review status, and lifecycle status. It is local metadata only; it does not write Kindroid memory, journals,
-`current_scene`, or chat text.
+confidence, review status, and lifecycle status; both fact text and the per-source fact list are capped. It is local
+metadata only; it does not write Kindroid memory, journals, `current_scene`, or chat text.
 
 Local scene prewarm is separate from soundscape prewarm. It uses the same documented `/v1/get-chat-messages` API for
 bounded recent context, but runs through its own coordinator and only executes local scene actions. Kinagent persists a

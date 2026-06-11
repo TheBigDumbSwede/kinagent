@@ -9,6 +9,8 @@ import {
   normalizeCanonProvenance
 } from "../state/canonLayers.js";
 
+export const maxSceneLedgerFactsPerSource = 80;
+
 export type SceneLedgerScope = "kin" | "group";
 
 export const sceneLedgerFactKinds = [
@@ -117,7 +119,7 @@ export class SceneLedgerStore {
       .filter((fact): fact is SceneLedgerFact => Boolean(fact));
     const next = sceneLedgerRecord(target, {
       previous,
-      facts: normalizedFacts,
+      facts: trimSceneLedgerFacts(normalizedFacts),
       now
     });
     this.save(next);
@@ -151,9 +153,9 @@ export class SceneLedgerStore {
       return null;
     }
 
-    const facts = previousRecord
-      ? [nextFact, ...previousRecord.facts.filter((item) => item.id !== nextFact.id)]
-      : [nextFact];
+    const facts = trimSceneLedgerFacts(
+      previousRecord ? [nextFact, ...previousRecord.facts.filter((item) => item.id !== nextFact.id)] : [nextFact]
+    );
     const next = sceneLedgerRecord(target, {
       previous: previousRecord,
       facts,
@@ -193,7 +195,7 @@ export class SceneLedgerStore {
       return null;
     }
 
-    this.save({ ...previous, facts, updatedAt: now });
+    this.save({ ...previous, facts: trimSceneLedgerFacts(facts), updatedAt: now });
     return staleFact;
   }
 
@@ -287,8 +289,12 @@ function sceneLedgerRecord(
     groupId: target.scope === "group" ? target.groupId : undefined,
     sceneStartedAt: input.previous?.sceneStartedAt ?? input.now,
     updatedAt: input.now,
-    facts: input.facts
+    facts: trimSceneLedgerFacts(input.facts)
   };
+}
+
+function trimSceneLedgerFacts(facts: SceneLedgerFact[]): SceneLedgerFact[] {
+  return facts.slice(0, maxSceneLedgerFactsPerSource);
 }
 
 function normalizeSource(source: SceneLedgerSource): NormalizedSceneLedgerSource {
