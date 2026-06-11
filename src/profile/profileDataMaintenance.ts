@@ -49,6 +49,7 @@ export function profileDataReport(config: AppConfig, userDataDir: string, config
     ]),
     category("generatedImages", "Generated background images", path.join(dataDir, "group-background-images")),
     category("captureHistory", "Captured Kin history", path.join(dataDir, "kin-source-control")),
+    category("captureHistoryVault", "Captured Kin history vault", path.join(dataDir, "kin-source-control.vault")),
     category("electronCaches", "Electron caches", userDataDir, cacheDirectoryNames)
   ];
   return {

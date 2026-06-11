@@ -94,6 +94,8 @@ export interface KinagentApi {
   pruneProfileData(): Promise<ProfileDataPruneResult>;
   clearSavedSession(): Promise<ProfileDataActionResult>;
   clearCache(): Promise<ProfileDataActionResult>;
+  setCaptureVaultEnabled(input: { enabled: boolean }): Promise<CaptureVaultActionResult>;
+  unlockCaptureVault(): Promise<CaptureVaultActionResult>;
   openProfileFolder(): Promise<string>;
   setKinVoicePreference(input: { kinId: string; preference: KinVoicePreference }): Promise<KinVoicePreferenceResult>;
   setGroupSoundscapePreference(input: {
@@ -645,6 +647,25 @@ export interface ProfileDataActionResult {
   report?: ProfileDataReport;
 }
 
+export interface CaptureVaultStatus {
+  enabled: boolean;
+  available: boolean;
+  locked: boolean;
+  unlocked: boolean;
+  captureDir: string;
+  vaultDir: string;
+  archivePath: string;
+  metadataPath: string;
+  lastError?: string;
+}
+
+export interface CaptureVaultActionResult {
+  ok?: boolean;
+  action?: "enabled" | "disabled" | "locked" | "unlocked";
+  changed?: boolean;
+  status?: CaptureVaultStatus;
+}
+
 export interface AppSettingsResult {
   ok?: boolean;
   saved?: boolean;
@@ -661,4 +682,5 @@ export interface AppSettingsResult {
     available: boolean;
     encrypted: boolean;
   } | null;
+  captureVault?: CaptureVaultStatus | null;
 }

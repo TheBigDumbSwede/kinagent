@@ -96,6 +96,7 @@ import type {
   LocalSceneStateSummary,
   PrewarmSourceSummary,
   PreviouslyOnBriefSummary,
+  CaptureVaultActionResult,
   ProfileDataActionResult,
   ProfileDataPruneResult,
   SceneLedgerFactSummary,
@@ -232,6 +233,8 @@ interface RendererElements {
   settingsPathLine: HTMLElement;
   settingsSecretStorageLine: HTMLElement;
   settingsDataStatusList: HTMLElement;
+  settingsCaptureVaultEnabledInput: HTMLInputElement;
+  settingsUnlockCaptureVaultButton: HTMLButtonElement;
   settingsOpenProfileButton: HTMLButtonElement;
   settingsPruneDataButton: HTMLButtonElement;
   settingsClearSessionButton: HTMLButtonElement;
@@ -395,6 +398,8 @@ interface RendererApi {
   pruneProfileData(): Promise<ProfileDataPruneResult>;
   clearSavedSession(): Promise<ProfileDataActionResult>;
   clearCache(): Promise<ProfileDataActionResult>;
+  setCaptureVaultEnabled(input: { enabled: boolean }): Promise<CaptureVaultActionResult>;
+  unlockCaptureVault(): Promise<CaptureVaultActionResult>;
   openProfileFolder(): Promise<string>;
   getBrowserIntegrationStatus(): Promise<BrowserIntegrationStatus>;
   saveBrowserIntegrationSettings(input: BrowserIntegrationSettings): Promise<BrowserIntegrationStatus>;
@@ -608,6 +613,8 @@ const elements: RendererElements = {
   settingsPathLine: query<HTMLElement>("#settingsPathLine"),
   settingsSecretStorageLine: query<HTMLElement>("#settingsSecretStorageLine"),
   settingsDataStatusList: query<HTMLElement>("#settingsDataStatusList"),
+  settingsCaptureVaultEnabledInput: query<HTMLInputElement>("#settingsCaptureVaultEnabledInput"),
+  settingsUnlockCaptureVaultButton: query<HTMLButtonElement>("#settingsUnlockCaptureVaultButton"),
   settingsOpenProfileButton: query<HTMLButtonElement>("#settingsOpenProfileButton"),
   settingsPruneDataButton: query<HTMLButtonElement>("#settingsPruneDataButton"),
   settingsClearSessionButton: query<HTMLButtonElement>("#settingsClearSessionButton"),

@@ -3,6 +3,7 @@ import type {
   AppConfigView,
   AppSettingsFormValue,
   AppSettingsResult,
+  CaptureVaultActionResult,
   KinagentApi,
   ProfileDataActionResult,
   ProfileDataPruneResult,
@@ -36,6 +37,8 @@ export interface AppSettingsElements {
   settingsPathLine: HTMLElement;
   settingsSecretStorageLine: HTMLElement;
   settingsDataStatusList: HTMLElement;
+  settingsCaptureVaultEnabledInput: HTMLInputElement;
+  settingsUnlockCaptureVaultButton: HTMLButtonElement;
   settingsOpenProfileButton: HTMLButtonElement;
   settingsPruneDataButton: HTMLButtonElement;
   settingsClearSessionButton: HTMLButtonElement;
@@ -69,7 +72,13 @@ export interface AppSettingsContext {
   elements: AppSettingsElements;
   api: Pick<
     KinagentApi,
-    "saveSettings" | "pruneProfileData" | "clearSavedSession" | "clearCache" | "openProfileFolder"
+    | "saveSettings"
+    | "pruneProfileData"
+    | "clearSavedSession"
+    | "clearCache"
+    | "setCaptureVaultEnabled"
+    | "unlockCaptureVault"
+    | "openProfileFolder"
   >;
   renderActivity: () => void;
   renderDetailEmpty: (message: string) => void;
@@ -190,6 +199,12 @@ function wireDataButtons(context: AppSettingsContext): void {
   elements.settingsOpenProfileButton.onclick = () => {
     void openProfileFolder(context);
   };
+  elements.settingsCaptureVaultEnabledInput.onchange = () => {
+    void setCaptureVaultEnabled(context, elements.settingsCaptureVaultEnabledInput.checked);
+  };
+  elements.settingsUnlockCaptureVaultButton.onclick = () => {
+    void unlockCaptureVault(context);
+  };
   elements.settingsPruneDataButton.onclick = () => {
     void pruneProfileData(context);
   };
@@ -206,6 +221,7 @@ function renderProfileData(context: AppSettingsContext): void {
   const report = state.appSettings?.dataReport;
   const secureSecrets = state.appSettings?.secureSecrets;
   const browserSession = state.appSettings?.browserSessionEncryption;
+  const captureVault = state.appSettings?.captureVault;
   const apiKeyStatus = secureSecrets?.available
     ? `API keys are stored with OS account encryption. ${secureSecrets.storedKeys.length} secret fields are in secure storage.`
     : "OS secure storage is unavailable; API keys remain in the desktop config file.";
@@ -215,6 +231,9 @@ function renderProfileData(context: AppSettingsContext): void {
       : "Saved Kindroid session will be encrypted the next time it is saved."
     : "Saved Kindroid session uses plaintext storage because OS secure storage is unavailable.";
   elements.settingsSecretStorageLine.textContent = `${apiKeyStatus} ${sessionStatus}`;
+  elements.settingsCaptureVaultEnabledInput.checked = Boolean(captureVault?.enabled);
+  elements.settingsCaptureVaultEnabledInput.disabled = !captureVault?.available;
+  elements.settingsUnlockCaptureVaultButton.disabled = !captureVault?.locked;
   elements.settingsDataStatusList.replaceChildren();
   if (!report) {
     appendDataStatus(elements.settingsDataStatusList, "Profile", "Unavailable");
@@ -232,6 +251,52 @@ function renderProfileData(context: AppSettingsContext): void {
       category.label,
       category.exists ? `${formatBytes(category.bytes)} across ${category.files} files` : "Not present"
     );
+  }
+  if (captureVault) {
+    appendDataStatus(
+      elements.settingsDataStatusList,
+      "Capture vault",
+      captureVault.locked ? "Locked" : captureVault.unlocked ? "Unlocked" : "No captured history"
+    );
+    appendDataStatus(
+      elements.settingsDataStatusList,
+      "Capture vault storage",
+      captureVault.available ? captureVault.vaultDir : "OS secure storage unavailable"
+    );
+    if (captureVault.lastError) {
+      appendDataStatus(elements.settingsDataStatusList, "Capture vault error", captureVault.lastError);
+    }
+  }
+}
+
+async function setCaptureVaultEnabled(context: AppSettingsContext, enabled: boolean): Promise<void> {
+  const { state, elements, api, renderActivity } = context;
+  elements.appSettingsStatusLine.textContent = enabled
+    ? "Capture history will lock when Kinagent closes."
+    : "Capture history vault disabled.";
+  try {
+    const result = (await api.setCaptureVaultEnabled({ enabled })) as CaptureVaultActionResult;
+    updateCaptureVaultStatus(state.appSettings, result.status);
+  } catch (error) {
+    state.appSettingsError = errorMessage(error);
+  } finally {
+    renderActivity();
+  }
+}
+
+async function unlockCaptureVault(context: AppSettingsContext): Promise<void> {
+  const { state, elements, api, renderActivity } = context;
+  elements.appSettingsStatusLine.textContent = "Unlocking capture history.";
+  try {
+    const result = (await api.unlockCaptureVault()) as CaptureVaultActionResult;
+    updateCaptureVaultStatus(state.appSettings, result.status);
+    elements.appSettingsStatusLine.textContent = result.changed
+      ? "Capture history unlocked."
+      : "Capture history is already unlocked.";
+  } catch (error) {
+    state.appSettingsError = errorMessage(error);
+  } finally {
+    renderActivity();
   }
 }
 
@@ -302,6 +367,15 @@ async function openProfileFolder(context: AppSettingsContext): Promise<void> {
 function updateProfileReport(settings: AppSettingsResult | null, report: ProfileDataReport | undefined): void {
   if (settings && report) {
     settings.dataReport = report;
+  }
+}
+
+function updateCaptureVaultStatus(
+  settings: AppSettingsResult | null,
+  status: CaptureVaultActionResult["status"]
+): void {
+  if (settings && status) {
+    settings.captureVault = status;
   }
 }
 
