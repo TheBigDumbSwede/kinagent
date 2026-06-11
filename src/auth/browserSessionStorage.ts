@@ -32,6 +32,14 @@ class PlaintextBrowserSessionStorage implements BrowserSessionStorage {
   private assertExists(sessionDir: string): string {
     const statePath = this.storageStatePath(sessionDir);
     if (!fs.existsSync(statePath)) {
+      const encryptedStatePath = path.join(sessionDir, "storage-state.json.enc");
+      if (fs.existsSync(encryptedStatePath)) {
+        throw new Error(
+          `No CLI-readable Kindroid browser session found at ${statePath}. ` +
+            `A desktop-encrypted session exists at ${encryptedStatePath}, but headless CLI commands cannot decrypt Electron safeStorage files. ` +
+            `Run "npm run login" to create a plaintext CLI session, or use the desktop app.`
+        );
+      }
       throw new Error(`No Kindroid browser session found at ${statePath}. Run "npm run login" first.`);
     }
 

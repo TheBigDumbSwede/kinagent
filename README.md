@@ -50,6 +50,7 @@ That layer vocabulary is intentionally separate from lifecycle states such as pe
 Kindroid browser login
   -> Playwright visible Chromium
   -> ./data/browser-session/storage-state.json
+     or desktop-only ./data/browser-session/storage-state.json.enc
   -> Firebase auth extraction
   -> Firestore listener: Users/{uid}/AIs/{ai_id}/ChatMessages
   -> decrypted chat event
@@ -144,6 +145,9 @@ Kindroid browser session data, cookies, Firebase ID tokens, refresh tokens, and 
 - Do not paste tokens into issues, logs, or chat.
 - This project redacts common token/cookie fields from logs, but the safest path is still to avoid logging raw session objects.
 - `.env.example` and `config.example.yaml` contain placeholders only.
+- The desktop app stores its saved Kindroid browser session as `./data/browser-session/storage-state.json.enc` when OS secure storage is available. This uses Electron `safeStorage`, which is bound to the local OS user account.
+- Headless CLI commands such as `npm run daemon`, `npm run listen`, `npm run monitor-live`, and `npm run probe-chat` cannot decrypt the desktop `safeStorage` session. For CLI workflows, run `npm run login` from the CLI to create a plaintext `./data/browser-session/storage-state.json`, or use the desktop app instead.
+- Desktop session encryption removes the plaintext file when saving an encrypted session, but normal filesystem deletion is unlink-only. Previous plaintext bytes may remain recoverable from disk, backups, or SSD wear-leveling until overwritten by the system.
 
 ## Kindroid API Boundary
 
@@ -208,7 +212,7 @@ npm run desktop
 In the desktop app:
 
 - `Open Login` opens a visible Kindroid browser.
-- `Save Session` stores the browser session after login.
+- `Save Session` stores the browser session after login. On the desktop app this uses OS secure storage when available and writes `./data/browser-session/storage-state.json.enc`; this desktop-encrypted session is not readable by headless CLI commands.
 - The background supervisor discovers available Kins and subscribes to all enabled Kins automatically.
 - The background supervisor also discovers available groups and subscribes to group chat messages automatically.
 - `Manage` expands per-Kin subscription toggles for users who want desktop control.
@@ -235,6 +239,8 @@ Log in and save local browser state:
 ```powershell
 npm run login
 ```
+
+This CLI login writes a plaintext Playwright storage file at `./data/browser-session/storage-state.json` for headless commands. It is separate from the desktop app's encrypted `storage-state.json.enc` session.
 
 Run an instrumented login/app-load capture that records token-safe crypto and network metadata:
 

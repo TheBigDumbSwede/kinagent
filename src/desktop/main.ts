@@ -121,7 +121,6 @@ function initializeDesktopConfig(): void {
   config = migrateConfigSecretsToSecureStore(config, desktopConfigPath, secureSecretStore);
   encryptedBrowserSessionStorage = new EncryptedBrowserSessionStorage();
   setBrowserSessionStorageForProcess(encryptedBrowserSessionStorage);
-  encryptedBrowserSessionStorage.migrate(config.bridge.sessionDir);
   logger = createLogger(config.bridge.logLevel, { logPath: config.bridge.logPath });
 }
 
