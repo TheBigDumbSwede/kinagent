@@ -89,6 +89,11 @@ Local scene state is backstage Kinagent metadata. It is stored per direct Kin or
 future local features can inspect the current place, activity, mood, tension, privacy, palette, or ambience without
 writing to Kindroid-visible state.
 
+`LocalSceneStateStore` remains the compact current snapshot used by the Scene tab and prewarm paths. The separate scene
+ledger store records bounded per-source scene facts with provenance, confidence, review status, and lifecycle status for
+future continuity reasoning. The ledger is local metadata only and must not be automatically promoted to Kindroid memory,
+journals, `current_scene`, or chat text.
+
 Direct Kin request:
 
 ```json
