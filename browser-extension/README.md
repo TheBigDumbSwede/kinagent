@@ -22,4 +22,7 @@ For local Chromium development or unpacked-extension testing:
    published ID, then register the native host.
 6. Open `https://kindroid.ai/`, then use the Browser panel's connection test buttons.
 
-The content script is limited to `https://kindroid.ai/*`. It receives only local Kinagent bridge commands and does not read or transmit page content.
+The extension performs a versioned local handshake with the Kinagent native host
+before it can receive commands. The content script is limited to
+`https://kindroid.ai/*`. It receives only local Kinagent bridge commands and does
+not read or transmit page content.

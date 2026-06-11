@@ -169,6 +169,18 @@ export function browserIntegrationValidationErrors(settings: BrowserIntegrationS
     : [];
 }
 
+export function browserIntegrationAllowedExtensionIds(settings: BrowserIntegrationSettings): string[] {
+  const extensionIds: string[] = [];
+  if (settings.targets.some((target) => target === "chrome" || target === "edge")) {
+    extensionIds.push(...settings.chromiumExtensionIds);
+  }
+  if (settings.targets.includes("firefox")) {
+    extensionIds.push(...settings.firefoxExtensionIds);
+  }
+
+  return Array.from(new Set(extensionIds));
+}
+
 async function browserIntegrationStatus(
   paths: BrowserIntegrationRegistrationPaths,
   settings: BrowserIntegrationSettings

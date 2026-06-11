@@ -3,11 +3,17 @@ import { describe, expect, it } from "vitest";
 import {
   BROWSER_BRIDGE_COMMAND_TYPES,
   BROWSER_BRIDGE_INBOUND_MESSAGE_TYPES,
+  BROWSER_BRIDGE_PROTOCOL_VERSION,
   BrowserBridgeServer,
   handleBrowserBridgeMessage,
-  nativeMessagingPipePath
+  nativeMessagingPipePath,
+  signBrowserBridgeHandshake
 } from "../src/browserIntegration/browserBridgeServer.js";
 import type { Logger } from "../src/util/logger.js";
+
+const authSecret = "test-browser-bridge-secret-with-enough-entropy";
+const extensionId = "cggbaonfbomoejmmmomapjmejacmbpon";
+const nativeHostOrigin = `chrome-extension://${extensionId}/`;
 
 const silentLogger: Logger = {
   debug: () => undefined,
@@ -17,87 +23,197 @@ const silentLogger: Logger = {
 };
 
 describe("browser bridge server", () => {
-  it("pins the unauthenticated bridge to non-sensitive outbound commands", () => {
+  it("pins the bridge to non-sensitive outbound commands", () => {
     expect([...BROWSER_BRIDGE_COMMAND_TYPES].sort()).toEqual(["reload-kindroid", "show-notice"].sort());
   });
 
-  it("pins unauthenticated inbound messages to non-mutating bridge requests", () => {
-    expect([...BROWSER_BRIDGE_INBOUND_MESSAGE_TYPES].sort()).toEqual(["browser-ready", "ping", "poll"].sort());
+  it("pins inbound messages to the versioned browser bridge protocol", () => {
+    expect([...BROWSER_BRIDGE_INBOUND_MESSAGE_TYPES].sort()).toEqual(
+      ["browser-ready", "command-ack", "hello", "ping", "poll"].sort()
+    );
   });
 
-  it("handles native messaging bridge pings", () => {
+  it("handles native messaging bridge pings without a session", () => {
     expect(handleBrowserBridgeMessage({ id: "ping-1", type: "ping" })).toEqual({
       id: "ping-1",
       type: "pong",
-      ok: true
-    });
-  });
-
-  it("acknowledges extension readiness without mutating application state", () => {
-    expect(handleBrowserBridgeMessage({ id: "ready-1", type: "browser-ready" })).toEqual({
-      id: "ready-1",
-      type: "ack",
-      ok: true
-    });
-  });
-
-  it("returns queued browser commands only when the extension polls", () => {
-    const commands = [
-      {
-        id: "command-1",
-        type: "show-notice" as const,
-        createdAt: "2026-06-08T00:00:00.000Z",
-        text: "Kinagent is connected."
-      }
-    ];
-
-    expect(handleBrowserBridgeMessage({ id: "poll-1", type: "poll" }, { commands })).toEqual({
-      id: "poll-1",
-      type: "commands",
       ok: true,
-      commands
+      protocolVersion: BROWSER_BRIDGE_PROTOCOL_VERSION
     });
   });
 
-  it("tracks extension activity and drains queued commands", async () => {
+  it("rejects readiness, polling, and command acknowledgements before authentication", () => {
+    expect(handleBrowserBridgeMessage({ id: "ready-1", type: "browser-ready" })).toMatchObject({
+      id: "ready-1",
+      type: "error",
+      ok: false,
+      code: "auth_required"
+    });
+    expect(handleBrowserBridgeMessage({ id: "poll-1", type: "poll" })).toMatchObject({
+      id: "poll-1",
+      type: "error",
+      ok: false,
+      code: "auth_required"
+    });
+    expect(handleBrowserBridgeMessage({ id: "ack-1", type: "command-ack", commandIds: ["command-1"] })).toMatchObject({
+      id: "ack-1",
+      type: "error",
+      ok: false,
+      code: "auth_required"
+    });
+  });
+
+  it("returns queued browser commands only to authenticated sessions", async () => {
     if (process.platform !== "win32") {
       return;
     }
 
     const pipeName = `kinagent-browser-bridge-test-${process.pid}-${Date.now()}`;
-    const server = new BrowserBridgeServer({ logger: silentLogger, pipeName });
+    const server = new BrowserBridgeServer({
+      logger: silentLogger,
+      authSecret,
+      allowedExtensionIds: [extensionId],
+      pipeName
+    });
     await server.start();
 
     try {
-      expect(server.status(new Date()).connected).toBe(false);
       const command = server.queueCommand("reload-kindroid");
-      await expect(sendPipeRequest(pipeName, { id: "ready-1", type: "browser-ready" })).resolves.toEqual({
+      await expect(sendPipeRequest(pipeName, { id: "poll-unauth", type: "poll" })).resolves.toMatchObject({
+        id: "poll-unauth",
+        type: "error",
+        ok: false,
+        code: "auth_required"
+      });
+      expect(server.status(new Date()).queuedCommandCount).toBe(1);
+
+      const hello = await sendPipeRequest(pipeName, signedHello("hello-1"));
+      expect(hello).toMatchObject({
+        id: "hello-1",
+        type: "bridge-ready",
+        ok: true,
+        protocolVersion: BROWSER_BRIDGE_PROTOCOL_VERSION
+      });
+      const sessionId = sessionIdFrom(hello);
+
+      await expect(
+        sendPipeRequest(pipeName, {
+          id: "ready-1",
+          type: "browser-ready",
+          protocolVersion: BROWSER_BRIDGE_PROTOCOL_VERSION,
+          sessionId
+        })
+      ).resolves.toMatchObject({
         id: "ready-1",
         type: "ack",
         ok: true
       });
       expect(server.status(new Date()).connected).toBe(true);
-      await expect(sendPipeRequest(pipeName, { id: "poll-1", type: "poll" })).resolves.toEqual({
+
+      await expect(
+        sendPipeRequest(pipeName, {
+          id: "poll-1",
+          type: "poll",
+          protocolVersion: BROWSER_BRIDGE_PROTOCOL_VERSION,
+          sessionId
+        })
+      ).resolves.toEqual({
         id: "poll-1",
         type: "commands",
         ok: true,
+        protocolVersion: BROWSER_BRIDGE_PROTOCOL_VERSION,
         commands: [command]
       });
       expect(server.status(new Date()).queuedCommandCount).toBe(0);
+
+      await expect(
+        sendPipeRequest(pipeName, {
+          id: "ack-1",
+          type: "command-ack",
+          protocolVersion: BROWSER_BRIDGE_PROTOCOL_VERSION,
+          sessionId,
+          commandIds: [command.id]
+        })
+      ).resolves.toEqual({
+        id: "ack-1",
+        type: "ack",
+        ok: true,
+        protocolVersion: BROWSER_BRIDGE_PROTOCOL_VERSION,
+        ackedCommandIds: [command.id]
+      });
+      expect(server.status(new Date()).lastAckAt).not.toBeNull();
     } finally {
       await server.stop();
     }
   });
 
+  it("rejects unknown extension IDs and bad native host signatures", async () => {
+    if (process.platform !== "win32") {
+      return;
+    }
+
+    const pipeName = `kinagent-browser-bridge-test-${process.pid}-${Date.now()}`;
+    const server = new BrowserBridgeServer({
+      logger: silentLogger,
+      authSecret,
+      allowedExtensionIds: [extensionId],
+      pipeName
+    });
+    await server.start();
+
+    try {
+      await expect(
+        sendPipeRequest(
+          pipeName,
+          signedHello("hello-unknown", {
+            extensionId: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            nativeHostOrigin: "chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/"
+          })
+        )
+      ).resolves.toMatchObject({
+        id: "hello-unknown",
+        type: "error",
+        ok: false,
+        code: "extension_not_allowed"
+      });
+
+      await expect(
+        sendPipeRequest(pipeName, {
+          ...signedHello("hello-bad-signature"),
+          nativeHostSignature: "0".repeat(64)
+        })
+      ).resolves.toMatchObject({
+        id: "hello-bad-signature",
+        type: "error",
+        ok: false,
+        code: "auth_failed"
+      });
+    } finally {
+      await server.stop();
+    }
+  });
+
+  it("expires queued commands before they can be delivered", () => {
+    const server = new BrowserBridgeServer({
+      logger: silentLogger,
+      authSecret,
+      allowedExtensionIds: [extensionId],
+      commandTtlMs: 1
+    });
+    const command = server.queueCommand("show-notice", { text: "Kinagent is connected." });
+    expect(server.status(new Date(Date.parse(command.createdAt))).queuedCommandCount).toBe(1);
+    expect(server.status(new Date(Date.parse(command.createdAt) + 10)).queuedCommandCount).toBe(0);
+  });
+
   it("rejects unsupported or malformed bridge messages", () => {
-    expect(handleBrowserBridgeMessage({ id: "unknown-1", type: "refresh-dom" })).toEqual({
+    expect(handleBrowserBridgeMessage({ id: "unknown-1", type: "refresh-dom" })).toMatchObject({
       id: "unknown-1",
       type: "error",
       ok: false,
       code: "unsupported_message",
       message: "Unsupported browser bridge message type: refresh-dom"
     });
-    expect(handleBrowserBridgeMessage("bad")).toEqual({
+    expect(handleBrowserBridgeMessage("bad")).toMatchObject({
       id: null,
       type: "error",
       ok: false,
@@ -106,26 +222,71 @@ describe("browser bridge server", () => {
     });
   });
 
-  it("responds to JSON line requests over the Windows named pipe", async () => {
+  it("responds to JSON line pings over the Windows named pipe", async () => {
     if (process.platform !== "win32") {
       return;
     }
 
     const pipeName = `kinagent-browser-bridge-test-${process.pid}-${Date.now()}`;
-    const server = new BrowserBridgeServer({ logger: silentLogger, pipeName });
+    const server = new BrowserBridgeServer({
+      logger: silentLogger,
+      authSecret,
+      allowedExtensionIds: [extensionId],
+      pipeName
+    });
     await server.start();
 
     try {
       await expect(sendPipeRequest(pipeName, { id: "pipe-1", type: "ping" })).resolves.toEqual({
         id: "pipe-1",
         type: "pong",
-        ok: true
+        ok: true,
+        protocolVersion: BROWSER_BRIDGE_PROTOCOL_VERSION
       });
     } finally {
       await server.stop();
     }
   });
 });
+
+function signedHello(
+  id: string,
+  input: {
+    extensionId?: string;
+    nativeHostOrigin?: string;
+    nativeHostNonce?: string;
+  } = {}
+): object {
+  const helloExtensionId = input.extensionId ?? extensionId;
+  const helloNativeHostOrigin = input.nativeHostOrigin ?? nativeHostOrigin;
+  const nativeHostNonce = input.nativeHostNonce ?? `nonce-${id}`;
+  return {
+    id,
+    type: "hello",
+    protocolVersion: BROWSER_BRIDGE_PROTOCOL_VERSION,
+    extensionId: helloExtensionId,
+    nativeHostOrigin: helloNativeHostOrigin,
+    nativeHostNonce,
+    nativeHostSignature: signBrowserBridgeHandshake(authSecret, {
+      protocolVersion: BROWSER_BRIDGE_PROTOCOL_VERSION,
+      extensionId: helloExtensionId,
+      nativeHostOrigin: helloNativeHostOrigin,
+      nativeHostNonce
+    })
+  };
+}
+
+function sessionIdFrom(response: unknown): string {
+  if (
+    !response ||
+    typeof response !== "object" ||
+    typeof (response as { sessionId?: unknown }).sessionId !== "string"
+  ) {
+    throw new Error("Expected browser bridge response to include a session ID.");
+  }
+
+  return (response as { sessionId: string }).sessionId;
+}
 
 function sendPipeRequest(pipeName: string, message: object): Promise<unknown> {
   return new Promise((resolve, reject) => {

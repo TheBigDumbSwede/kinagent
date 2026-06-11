@@ -17,8 +17,9 @@ only with the Kinagent desktop application running locally on the same computer.
 
 - **Local native messaging (`nativeMessaging`).** The extension's only data channel
   is a connection to the locally installed Kinagent desktop app via the native
-  messaging host `com.kinagent.bridge`. It sends simple presence/poll messages
-  (`browser-ready`, `poll`) and receives display requests (`show-notice`,
+  messaging host `com.kinagent.bridge`. It sends a local protocol handshake,
+  simple presence/poll messages (`browser-ready`, `poll`), and command
+  acknowledgements. It receives display requests (`show-notice`,
   `reload-kindroid`). This traffic never leaves your computer.
 - **Kindroid tab access (host access to `https://kindroid.ai/*`).** The
   extension locates your open Kindroid tab so it can (a) display a small on-page

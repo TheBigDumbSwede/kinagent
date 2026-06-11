@@ -224,6 +224,12 @@ Optional browser integration:
   extension build.
 - Use the Browser panel's connection test buttons after opening `https://kindroid.ai/`.
 
+The browser bridge is a local refresh helper. It does not read Kindroid page
+content, cookies, tokens, or messages, and it does not send chat messages. The
+native messaging host is registered per user for the saved extension IDs, and
+the local pipe requires a versioned signed handshake before the extension can
+poll for queued refresh/notice commands.
+
 Log in and save local browser state:
 
 ```powershell

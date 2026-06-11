@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  browserIntegrationAllowedExtensionIds,
   browserIntegrationValidationErrors,
   KINAGENT_CHROMIUM_EXTENSION_ID,
   loadBrowserIntegrationSettings,
@@ -68,6 +69,24 @@ describe("browser integration registration helpers", () => {
         targets: ["firefox"],
         chromiumExtensionIds: ["not-a-real-extension-id"],
         firefoxExtensionIds: ["kinagent@example.com", "{12345678-1234-1234-1234-123456789abc}"]
+      })
+    ).toEqual([]);
+  });
+
+  it("flattens registered browser extension ids for bridge authentication", () => {
+    expect(
+      browserIntegrationAllowedExtensionIds({
+        targets: ["chrome", "firefox"],
+        chromiumExtensionIds: [KINAGENT_CHROMIUM_EXTENSION_ID, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
+        firefoxExtensionIds: ["kinagent@example.com", KINAGENT_CHROMIUM_EXTENSION_ID]
+      })
+    ).toEqual([KINAGENT_CHROMIUM_EXTENSION_ID, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "kinagent@example.com"]);
+
+    expect(
+      browserIntegrationAllowedExtensionIds({
+        targets: [],
+        chromiumExtensionIds: [KINAGENT_CHROMIUM_EXTENSION_ID],
+        firefoxExtensionIds: ["kinagent@example.com"]
       })
     ).toEqual([]);
   });

@@ -1,13 +1,16 @@
 using System.Buffers.Binary;
 using System.IO.Pipes;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
 const string PipeName = "kinagent-browser-bridge";
+const int BrowserBridgeProtocolVersion = 1;
 
 var stdin = Console.OpenStandardInput();
 var stdout = Console.OpenStandardOutput();
+var launchContext = NativeHostLaunchContext.FromArgs(args);
 
 try
 {
@@ -22,7 +25,7 @@ try
         JsonObject response;
         try
         {
-            response = await HandleMessageAsync(input, CancellationToken.None);
+            response = await HandleMessageAsync(input, launchContext, CancellationToken.None);
         }
         catch (Exception error)
         {
@@ -42,7 +45,10 @@ catch (Exception error)
     return 1;
 }
 
-static async Task<JsonObject> HandleMessageAsync(JsonObject input, CancellationToken cancellationToken)
+static async Task<JsonObject> HandleMessageAsync(
+    JsonObject input,
+    NativeHostLaunchContext launchContext,
+    CancellationToken cancellationToken)
 {
     var type = GetStringProperty(input, "type");
     if (string.IsNullOrWhiteSpace(type))
@@ -60,7 +66,7 @@ static async Task<JsonObject> HandleMessageAsync(JsonObject input, CancellationT
         };
     }
 
-    return await ForwardToKinagentAsync(input, cancellationToken);
+    return await ForwardToKinagentAsync(input, launchContext, cancellationToken);
 }
 
 static async Task<bool> CanConnectToKinagentAsync(CancellationToken cancellationToken)
@@ -77,12 +83,16 @@ static async Task<bool> CanConnectToKinagentAsync(CancellationToken cancellation
     }
 }
 
-static async Task<JsonObject> ForwardToKinagentAsync(JsonObject input, CancellationToken cancellationToken)
+static async Task<JsonObject> ForwardToKinagentAsync(
+    JsonObject input,
+    NativeHostLaunchContext launchContext,
+    CancellationToken cancellationToken)
 {
     var id = CloneProperty(input, "id");
 
     try
     {
+        var bridgeMessage = PrepareBridgeMessage(input, launchContext);
         using var pipe = new NamedPipeClientStream(".", PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
         await pipe.ConnectAsync(1000, cancellationToken);
 
@@ -92,7 +102,7 @@ static async Task<JsonObject> ForwardToKinagentAsync(JsonObject input, Cancellat
         };
         using var reader = new StreamReader(pipe, Encoding.UTF8, leaveOpen: true);
 
-        await writer.WriteLineAsync(input.ToJsonString());
+        await writer.WriteLineAsync(bridgeMessage.ToJsonString());
         var line = await reader.ReadLineAsync(cancellationToken);
         if (string.IsNullOrWhiteSpace(line))
         {
@@ -121,6 +131,54 @@ static async Task<JsonObject> ForwardToKinagentAsync(JsonObject input, Cancellat
     }
 }
 
+static JsonObject PrepareBridgeMessage(JsonObject input, NativeHostLaunchContext launchContext)
+{
+    var message = input.DeepClone().AsObject();
+    var type = GetStringProperty(input, "type");
+    if (type != "hello")
+    {
+        return message;
+    }
+
+    var protocolVersion = GetIntProperty(input, "protocolVersion") ?? BrowserBridgeProtocolVersion;
+    var extensionId = GetStringProperty(input, "extensionId") ?? "";
+    var nativeHostOrigin = string.IsNullOrWhiteSpace(launchContext.ExtensionOrigin)
+        ? extensionId
+        : launchContext.ExtensionOrigin;
+    var nativeHostNonce = Convert.ToHexString(RandomNumberGenerator.GetBytes(16)).ToLowerInvariant();
+    var secret = BrowserBridgeAuth.LoadSecret();
+
+    message["protocolVersion"] = protocolVersion;
+    message["nativeHostOrigin"] = nativeHostOrigin;
+    message["nativeHostNonce"] = nativeHostNonce;
+    message["nativeHostPid"] = Environment.ProcessId;
+    message["nativeHostSignature"] = SignBrowserBridgeHandshake(
+        secret,
+        protocolVersion,
+        extensionId,
+        nativeHostOrigin,
+        nativeHostNonce);
+
+    return message;
+}
+
+static string SignBrowserBridgeHandshake(
+    string secret,
+    int protocolVersion,
+    string extensionId,
+    string nativeHostOrigin,
+    string nativeHostNonce)
+{
+    var payload = string.Join(
+        "\n",
+        $"protocolVersion={protocolVersion}",
+        $"extensionId={extensionId}",
+        $"nativeHostOrigin={nativeHostOrigin}",
+        $"nativeHostNonce={nativeHostNonce}");
+    using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(secret));
+    return Convert.ToHexString(hmac.ComputeHash(Encoding.UTF8.GetBytes(payload))).ToLowerInvariant();
+}
+
 static JsonObject ErrorResponse(JsonObject input, string code, string message)
 {
     return new JsonObject
@@ -137,9 +195,61 @@ static string? GetStringProperty(JsonObject input, string name)
     return input[name] is JsonValue value && value.TryGetValue<string>(out var text) ? text : null;
 }
 
+static int? GetIntProperty(JsonObject input, string name)
+{
+    return input[name] is JsonValue value && value.TryGetValue<int>(out var number) ? number : null;
+}
+
 static JsonNode? CloneProperty(JsonObject input, string name)
 {
     return input[name]?.DeepClone();
+}
+
+sealed class NativeHostLaunchContext
+{
+    public NativeHostLaunchContext(string? extensionOrigin)
+    {
+        ExtensionOrigin = extensionOrigin;
+    }
+
+    public string? ExtensionOrigin { get; }
+
+    public static NativeHostLaunchContext FromArgs(string[] args)
+    {
+        foreach (var arg in args)
+        {
+            if (arg.StartsWith("chrome-extension://", StringComparison.OrdinalIgnoreCase) ||
+                arg.StartsWith("moz-extension://", StringComparison.OrdinalIgnoreCase))
+            {
+                return new NativeHostLaunchContext(arg);
+            }
+        }
+
+        return new NativeHostLaunchContext(null);
+    }
+}
+
+static class BrowserBridgeAuth
+{
+    public static string LoadSecret()
+    {
+        var authPath = Environment.GetEnvironmentVariable("KINAGENT_BROWSER_BRIDGE_AUTH_PATH");
+        if (string.IsNullOrWhiteSpace(authPath))
+        {
+            var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+            authPath = Path.Combine(appData, "Kinagent", "browser-bridge-auth.json");
+        }
+
+        if (JsonNode.Parse(File.ReadAllText(authPath)) is not JsonObject auth ||
+            auth["secret"] is not JsonValue secretValue ||
+            !secretValue.TryGetValue<string>(out var secret) ||
+            string.IsNullOrWhiteSpace(secret))
+        {
+            throw new InvalidDataException("Kinagent browser bridge auth file does not contain a secret.");
+        }
+
+        return secret;
+    }
 }
 
 static class NativeMessage
