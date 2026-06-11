@@ -47,6 +47,21 @@ describe("CaptureHistoryVault", () => {
     expect(new CaptureHistoryVault({ ...paths, cipher: testCipher }).status().enabled).toBe(true);
   });
 
+  it("locks capture repos containing read-only files", () => {
+    const paths = testPaths();
+    const readOnlyPath = path.join(paths.captureDir, ".git", "objects", "pack", "pack-test.pack");
+    fs.mkdirSync(path.dirname(readOnlyPath), { recursive: true });
+    fs.writeFileSync(readOnlyPath, "pack data", "utf8");
+    fs.chmodSync(readOnlyPath, 0o444);
+
+    const vault = new CaptureHistoryVault({ ...paths, cipher: testCipher });
+    const locked = vault.lock();
+
+    expect(locked.changed).toBe(true);
+    expect(fs.existsSync(paths.captureDir)).toBe(false);
+    expect(fs.existsSync(path.join(paths.vaultDir, "repo.enc"))).toBe(true);
+  });
+
   it("refuses to lock while a capture staging workspace exists", () => {
     const paths = testPaths();
     fs.mkdirSync(path.join(paths.captureDir, ".workspace-next-123"), { recursive: true });

@@ -161,7 +161,7 @@ export class CaptureHistoryVault {
     fs.mkdirSync(this.vaultDir(), { recursive: true });
     atomicWrite(this.archivePath(), encrypted);
     atomicWrite(this.metadataPath(), `${JSON.stringify(metadata, null, 2)}\n`);
-    fs.rmSync(this.captureDir(), { recursive: true, force: true });
+    removeDirectoryRecursive(this.captureDir());
     this.lastError = undefined;
     return {
       ok: true,
@@ -293,6 +293,38 @@ function extractZipSafely(zipBytes: Buffer, targetDir: string): void {
 
     fs.mkdirSync(path.dirname(entryPath), { recursive: true });
     fs.writeFileSync(entryPath, entry.getData());
+  }
+}
+
+function removeDirectoryRecursive(dir: string): void {
+  if (!fs.existsSync(dir)) {
+    return;
+  }
+
+  makeWritableRecursive(dir);
+  fs.rmSync(dir, { recursive: true, force: true, maxRetries: 8, retryDelay: 150 });
+}
+
+function makeWritableRecursive(targetPath: string): void {
+  let stat: fs.Stats;
+  try {
+    stat = fs.lstatSync(targetPath);
+  } catch {
+    return;
+  }
+
+  try {
+    fs.chmodSync(targetPath, stat.isDirectory() ? 0o777 : 0o666);
+  } catch {
+    // Best effort only; the following rm call will surface a real failure.
+  }
+
+  if (!stat.isDirectory() || stat.isSymbolicLink()) {
+    return;
+  }
+
+  for (const entry of fs.readdirSync(targetPath)) {
+    makeWritableRecursive(path.join(targetPath, entry));
   }
 }
 
