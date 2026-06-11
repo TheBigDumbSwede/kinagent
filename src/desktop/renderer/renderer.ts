@@ -95,7 +95,9 @@ import type {
   KinVoicePreferenceResult,
   LocalSceneStateSummary,
   PrewarmSourceSummary,
-  PreviouslyOnBriefSummary
+  PreviouslyOnBriefSummary,
+  SceneLedgerFactSummary,
+  SceneLedgerSummary
 } from "./rendererTypes.js";
 import type { MonitorMessage } from "./monitorMessages.js";
 
@@ -144,6 +146,7 @@ interface RendererState {
   journalSuggestions: JournalSuggestionSummary[];
   groupBackgroundSuggestions: GroupBackgroundSuggestionSummary[];
   localScenes: LocalSceneStateSummary[];
+  sceneLedgers: SceneLedgerSummary[];
   previouslyOnBriefs: PreviouslyOnBriefSummary[];
   prewarmStates: PrewarmSourceSummary[];
   localSceneForceSaving: boolean;
@@ -217,6 +220,7 @@ interface RendererElements {
   detailStats: HTMLElement;
   journalSuggestionPanel: HTMLElement;
   previouslyOnPanel: HTMLElement;
+  directorPanel: HTMLElement;
   fieldContent: HTMLElement;
   localSceneActions: HTMLElement;
   appSettingsForm: HTMLFormElement;
@@ -344,6 +348,7 @@ interface DesktopStatus {
   journalSuggestions?: JournalSuggestionSummary[];
   groupBackgroundSuggestions?: GroupBackgroundSuggestionSummary[];
   localScenes?: LocalSceneStateSummary[];
+  sceneLedgers?: SceneLedgerSummary[];
   previouslyOn?: PreviouslyOnBriefSummary[];
   soundscapes?: ScopedSoundscapeUpdate[];
   prewarmStates?: PrewarmSourceSummary[];
@@ -497,6 +502,7 @@ const state: RendererState = {
   journalSuggestions: [],
   groupBackgroundSuggestions: [],
   localScenes: [],
+  sceneLedgers: [],
   previouslyOnBriefs: [],
   prewarmStates: [],
   localSceneForceSaving: false,
@@ -580,6 +586,7 @@ const elements: RendererElements = {
   detailStats: query<HTMLElement>("#detailStats"),
   journalSuggestionPanel: query<HTMLElement>("#journalSuggestionPanel"),
   previouslyOnPanel: query<HTMLElement>("#previouslyOnPanel"),
+  directorPanel: query<HTMLElement>("#directorPanel"),
   fieldContent: query<HTMLElement>("#fieldContent"),
   localSceneActions: query<HTMLElement>("#localSceneActions"),
   appSettingsForm: query<HTMLFormElement>("#appSettingsForm"),
@@ -1252,6 +1259,7 @@ function renderStatus(status: DesktopStatus): void {
   state.journalSuggestions = status.journalSuggestions || [];
   state.groupBackgroundSuggestions = status.groupBackgroundSuggestions || [];
   state.localScenes = status.localScenes || [];
+  state.sceneLedgers = status.sceneLedgers || [];
   state.previouslyOnBriefs = status.previouslyOn || [];
   state.prewarmStates = status.prewarmStates || [];
   state.soundscapeUpdates = soundscapeUpdatesFromList(status.soundscapes || []);
@@ -1507,6 +1515,8 @@ async function runBrowserIntegrationTest(
 function renderActivity(): void {
   elements.previouslyOnPanel.hidden = true;
   elements.previouslyOnPanel.replaceChildren();
+  elements.directorPanel.hidden = true;
+  elements.directorPanel.replaceChildren();
   elements.localSceneActions.hidden = true;
   elements.localSceneActions.replaceChildren();
   elements.browserIntegrationPanel.hidden = true;
@@ -2046,10 +2056,12 @@ function automationModeLabel(value: string | undefined): string {
 function renderLocalSceneTab(scope: "kin" | "group", selectedEntity: KinSummary | GroupSummary | null): void {
   const scene = currentLocalScene(scope);
   const brief = currentPreviouslyOnBrief(scope);
+  const ledger = currentSceneLedger(scope);
   renderLocalSceneContent(scene ? localSceneContent(scene) : "No local scene metadata has been captured yet.", {
     stats: localSceneStats(scope, selectedEntity, scene)
   });
   renderPreviouslyOnPanel(scope, selectedEntity, brief);
+  renderDirectorPanel(scope, selectedEntity, ledger);
   renderLocalSceneForceButton(scope, selectedEntity);
 }
 
@@ -2095,6 +2107,99 @@ function renderPreviouslyOnPanel(
       void forceSelectedPreviouslyOnPrewarm(scope);
     }
   });
+}
+
+function renderDirectorPanel(
+  scope: "kin" | "group",
+  selectedEntity: KinSummary | GroupSummary | null,
+  ledger: SceneLedgerSummary | null
+): void {
+  if (!selectedEntity) {
+    return;
+  }
+
+  const facts = [...(ledger?.facts || [])].sort((left, right) =>
+    String(right.updatedAt || "").localeCompare(String(left.updatedAt || ""))
+  );
+  const title =
+    `Director ${selectedEntity.name || (scope === "group" ? state.selectedGroupId : state.selectedKinId) || ""}`.trim();
+  const header = document.createElement("header");
+  const heading = document.createElement("h3");
+  heading.textContent = title;
+  const meta = document.createElement("p");
+  meta.className = "director-meta";
+  meta.textContent = ledger
+    ? `${facts.length} fact${facts.length === 1 ? "" : "s"} · Updated ${formatSceneTimestamp(ledger.updatedAt || "")}`
+    : "No ledger yet";
+  header.append(heading, meta);
+
+  elements.directorPanel.append(header);
+  if (!facts.length) {
+    const empty = document.createElement("p");
+    empty.className = "empty-line";
+    empty.textContent = "No Director ledger facts have been captured for this source yet.";
+    elements.directorPanel.append(empty);
+    elements.directorPanel.hidden = false;
+    return;
+  }
+
+  const list = document.createElement("div");
+  list.className = "director-fact-list";
+  for (const fact of facts.slice(0, 12)) {
+    list.append(renderDirectorFact(fact));
+  }
+  elements.directorPanel.append(list);
+
+  if (facts.length > 12) {
+    const overflow = document.createElement("p");
+    overflow.className = "director-meta";
+    overflow.textContent = `${facts.length - 12} additional fact${facts.length - 12 === 1 ? "" : "s"} retained in the ledger.`;
+    elements.directorPanel.append(overflow);
+  }
+
+  elements.directorPanel.hidden = false;
+}
+
+function renderDirectorFact(fact: SceneLedgerFactSummary): HTMLElement {
+  const item = document.createElement("article");
+  item.className = "director-fact";
+
+  const heading = document.createElement("div");
+  heading.className = "director-fact-heading";
+  const kind = document.createElement("span");
+  kind.className = "director-kind";
+  kind.textContent = formatDirectorKind(fact.kind);
+  const value = document.createElement("strong");
+  value.textContent = fact.value || "Unknown fact";
+  heading.append(kind, value);
+
+  const meta = document.createElement("p");
+  meta.className = "director-meta";
+  meta.textContent = [
+    fact.confidence ? `Confidence ${fact.confidence}` : "",
+    fact.reviewStatus ? `Review ${fact.reviewStatus}` : "",
+    fact.status ? `Status ${fact.status}` : "",
+    fact.updatedAt ? `Updated ${formatSceneTimestamp(fact.updatedAt)}` : ""
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  item.append(heading, meta);
+  if (fact.reason) {
+    const reason = document.createElement("p");
+    reason.className = "director-reason";
+    reason.textContent = fact.reason;
+    item.append(reason);
+  }
+  const evidence = fact.provenance?.evidence?.filter((entry): entry is string => typeof entry === "string");
+  if (evidence?.length) {
+    const line = document.createElement("p");
+    line.className = "director-evidence";
+    line.textContent = `Evidence: ${evidence.slice(0, 2).join(" / ")}`;
+    item.append(line);
+  }
+
+  return item;
 }
 
 function renderLocalSceneForceButton(scope: "kin" | "group", selectedEntity: KinSummary | GroupSummary | null): void {
@@ -2540,6 +2645,16 @@ function currentLocalScene(scope: "kin" | "group"): LocalSceneStateSummary | nul
   return state.localScenes.find((scene) => scene.scope === "kin" && scene.kinId === state.selectedKinId) || null;
 }
 
+function currentSceneLedger(scope: "kin" | "group"): SceneLedgerSummary | null {
+  if (scope === "group") {
+    return (
+      state.sceneLedgers.find((ledger) => ledger.scope === "group" && ledger.groupId === state.selectedGroupId) || null
+    );
+  }
+
+  return state.sceneLedgers.find((ledger) => ledger.scope === "kin" && ledger.kinId === state.selectedKinId) || null;
+}
+
 function currentPreviouslyOnBrief(scope: "kin" | "group"): PreviouslyOnBriefSummary | null {
   if (scope === "group") {
     return (
@@ -2637,6 +2752,17 @@ function localSceneStats(
 function formatSceneTimestamp(value: string): string {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+}
+
+function formatDirectorKind(value: string | null | undefined): string {
+  if (!value) {
+    return "Fact";
+  }
+  return value
+    .split("_")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 function isKinTab(tab: string): boolean {

@@ -47,6 +47,7 @@ import { KindroidApiClient, type KindroidGroup, type KindroidKin } from "../kind
 import { groupChatMessagesPath, kinChatMessagesPath } from "../kindroid/client/firestorePaths.js";
 import { KindroidClient } from "../kindroid/kindroidClient.js";
 import { LocalSceneStateStore, type LocalSceneState } from "../localScene/localSceneStore.js";
+import { SceneLedgerStore, type SceneLedgerRecord } from "../localScene/sceneLedgerStore.js";
 import { PreviouslyOnStore, type PreviouslyOnBrief } from "../previouslyOn/previouslyOnStore.js";
 import { SoundscapeStateStore, type StoredSoundscapeUpdate } from "../soundscape/soundscapeStateStore.js";
 import type { Logger } from "../util/logger.js";
@@ -126,6 +127,7 @@ export class BridgeRuntime {
   readonly campaignStates: CampaignStateStore;
   readonly groupGamingPreferences: GroupGamingPreferenceStore;
   readonly game: GameRuntime;
+  readonly sceneLedgers: SceneLedgerStore;
   private readonly prewarmState: PrewarmStateStore;
   private readonly sessionKeepAlive: KindroidSessionKeepAlive;
   private readonly kinSubscriptionSupervisor: KinSubscriptionSupervisor;
@@ -146,6 +148,7 @@ export class BridgeRuntime {
     this.groupBackgroundSuggestions = GroupBackgroundSuggestionStore.fromConfig(options.config);
     this.groupBackgroundPreferences = GroupBackgroundPreferenceStore.fromConfig(options.config);
     this.localScenes = LocalSceneStateStore.fromConfig(options.config);
+    this.sceneLedgers = SceneLedgerStore.fromConfig(options.config);
     this.previouslyOn = PreviouslyOnStore.fromConfig(options.config);
     this.soundscapes = SoundscapeStateStore.fromConfig(options.config);
     this.campaignStates = CampaignStateStore.fromConfig(options.config);
@@ -911,6 +914,7 @@ export class BridgeRuntime {
       journalSuggestions: this.pendingJournalSuggestions(),
       groupBackgroundSuggestions: this.pendingGroupBackgroundSuggestions(),
       localScenes: this.localScenes.list(),
+      sceneLedgers: this.sceneLedgers.list(),
       previouslyOn: this.previouslyOn.list(),
       soundscapes: this.soundscapes.list(),
       prewarmStates: this.prewarmState.list()
@@ -1509,6 +1513,7 @@ export interface BridgeRuntimeStatus {
   journalSuggestions: JournalSuggestion[];
   groupBackgroundSuggestions: GroupBackgroundSuggestion[];
   localScenes: LocalSceneState[];
+  sceneLedgers: SceneLedgerRecord[];
   previouslyOn: PreviouslyOnBrief[];
   soundscapes: StoredSoundscapeUpdate[];
   prewarmStates: PrewarmSourceState[];

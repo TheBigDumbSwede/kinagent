@@ -388,6 +388,38 @@ export interface LocalSceneStateSummary {
   reason?: string | null;
 }
 
+export interface SceneLedgerFactSummary {
+  id?: string | null;
+  layer?: "scene_state" | string;
+  kind?: string | null;
+  value?: string | null;
+  confidence?: string | null;
+  status?: string | null;
+  reviewStatus?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+  firstObservedAt?: string | null;
+  lastObservedAt?: string | null;
+  provenance?: {
+    sourceType?: string | null;
+    sourceDocumentId?: string | null;
+    sourceTimestamp?: string | null;
+    observedAt?: string | null;
+    evidence?: unknown[];
+  } | null;
+  reason?: string | null;
+}
+
+export interface SceneLedgerSummary {
+  sourceKey?: string | null;
+  scope?: "kin" | "group" | string;
+  kinId?: string | null;
+  groupId?: string | null;
+  sceneStartedAt?: string | null;
+  updatedAt?: string | null;
+  facts?: SceneLedgerFactSummary[];
+}
+
 export interface PreviouslyOnBriefSummary {
   scope?: "kin" | "group" | string;
   kinId?: string | null;
