@@ -1,6 +1,5 @@
 import fs from "node:fs";
 import path from "node:path";
-import { safeStorage } from "electron";
 import { saveConfig } from "../config/loadConfig.js";
 import type { AppConfig } from "../config/types.js";
 
@@ -67,7 +66,7 @@ const secretFields: SecretField[] = [
 export class SecureSecretStore {
   constructor(
     private readonly filePath: string,
-    private readonly cipher: SecureSecretCipher = safeStorage
+    private readonly cipher: SecureSecretCipher
   ) {}
 
   available(): boolean {

@@ -2,7 +2,6 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import AdmZip from "adm-zip";
-import { safeStorage } from "electron";
 
 export interface CaptureVaultCipher {
   isEncryptionAvailable(): boolean;
@@ -50,7 +49,7 @@ export class CaptureHistoryVault {
       captureDir: string;
       vaultDir: string;
       settingsPath: string;
-      cipher?: CaptureVaultCipher;
+      cipher: CaptureVaultCipher;
     }
   ) {}
 
@@ -228,7 +227,7 @@ export class CaptureHistoryVault {
   }
 
   private cipher(): CaptureVaultCipher {
-    return this.options.cipher ?? safeStorage;
+    return this.options.cipher;
   }
 }
 

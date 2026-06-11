@@ -3,7 +3,18 @@ import os from "node:os";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, Menu, nativeImage, Notification, shell, Tray, ipcMain, dialog } from "electron";
+import {
+  app,
+  BrowserWindow,
+  Menu,
+  nativeImage,
+  Notification,
+  shell,
+  Tray,
+  ipcMain,
+  dialog,
+  safeStorage
+} from "electron";
 import type { Event as ElectronEvent } from "electron";
 import { chromium, type Browser, type BrowserContext } from "playwright";
 import { setBrowserSessionStorageForProcess } from "../auth/browserSessionStorage.js";
@@ -119,12 +130,12 @@ function initializeDesktopConfig(): void {
     configPath: desktopConfigPath,
     createDefaultConfig: true
   });
-  secureSecretStore = new SecureSecretStore(secureSecretsPath(desktopUserDataDir));
+  secureSecretStore = new SecureSecretStore(secureSecretsPath(desktopUserDataDir), safeStorage);
   config = migrateConfigSecretsToSecureStore(config, desktopConfigPath, secureSecretStore);
   encryptedBrowserSessionStorage = new EncryptedBrowserSessionStorage();
   setBrowserSessionStorageForProcess(encryptedBrowserSessionStorage);
   logger = createLogger(config.bridge.logLevel, { logPath: config.bridge.logPath });
-  captureVault = new CaptureHistoryVault(captureVaultPaths(desktopUserDataDir));
+  captureVault = new CaptureHistoryVault({ ...captureVaultPaths(desktopUserDataDir), cipher: safeStorage });
   const unlockResult = captureVault.unlockIfEnabled();
   if (unlockResult?.changed) {
     logger.info("Unlocked captured Kin history vault.", { archivePath: unlockResult.status.archivePath });
