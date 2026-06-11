@@ -205,9 +205,16 @@ function renderProfileData(context: AppSettingsContext): void {
   const { state, elements } = context;
   const report = state.appSettings?.dataReport;
   const secureSecrets = state.appSettings?.secureSecrets;
-  elements.settingsSecretStorageLine.textContent = secureSecrets?.available
+  const browserSession = state.appSettings?.browserSessionEncryption;
+  const apiKeyStatus = secureSecrets?.available
     ? `API keys are stored with OS account encryption. ${secureSecrets.storedKeys.length} secret fields are in secure storage.`
     : "OS secure storage is unavailable; API keys remain in the desktop config file.";
+  const sessionStatus = browserSession?.available
+    ? browserSession.encrypted
+      ? "Saved Kindroid session is encrypted at rest."
+      : "Saved Kindroid session will be encrypted the next time it is saved."
+    : "Saved Kindroid session uses plaintext storage because OS secure storage is unavailable.";
+  elements.settingsSecretStorageLine.textContent = `${apiKeyStatus} ${sessionStatus}`;
   elements.settingsDataStatusList.replaceChildren();
   if (!report) {
     appendDataStatus(elements.settingsDataStatusList, "Profile", "Unavailable");

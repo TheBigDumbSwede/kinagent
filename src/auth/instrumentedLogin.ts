@@ -3,7 +3,9 @@ import path from "node:path";
 import { chromium, type BrowserContext, type Page } from "playwright";
 import type { AppConfig } from "../config/types.js";
 import type { Logger } from "../util/logger.js";
-import { ensureSessionDir, storageStatePath } from "./tokenStore.js";
+import { currentBrowserSessionStorage } from "./browserSessionStorage.js";
+import type { BrowserStorageState } from "./firebaseSession.js";
+import { ensureSessionDir } from "./tokenStore.js";
 
 interface InstrumentedLoginOptions {
   durationSeconds: number;
@@ -25,7 +27,6 @@ export async function runInstrumentedKindroidLogin(
   options: InstrumentedLoginOptions
 ): Promise<string> {
   ensureSessionDir(config.bridge.sessionDir);
-  const statePath = storageStatePath(config.bridge.sessionDir);
   const reportPath = path.join(
     config.bridge.sessionDir,
     `instrumentation-${new Date().toISOString().replace(/[:.]/g, "-")}.json`
@@ -63,7 +64,8 @@ export async function runInstrumentedKindroidLogin(
   );
 
   await page.waitForTimeout(options.durationSeconds * 1000);
-  await context.storageState({ path: statePath, indexedDB: true });
+  const storageState = (await context.storageState({ indexedDB: true })) as BrowserStorageState;
+  currentBrowserSessionStorage().save(config.bridge.sessionDir, storageState);
   report.storageSummary = await summarizeStorage(page);
   report.finishedAt = new Date().toISOString();
 
@@ -71,7 +73,7 @@ export async function runInstrumentedKindroidLogin(
   await browser.close();
 
   logger.info("Instrumented Kindroid session saved.", {
-    storageStatePath: statePath,
+    storageStatePath: currentBrowserSessionStorage().storageStatePath(config.bridge.sessionDir),
     reportPath
   });
   process.stdout.write(`Instrumentation report saved: ${reportPath}\n`);

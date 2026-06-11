@@ -4,11 +4,12 @@ import { stdin as input, stdout as output } from "node:process";
 import { chromium } from "playwright";
 import type { AppConfig } from "../config/types.js";
 import type { Logger } from "../util/logger.js";
-import { ensureSessionDir, storageStatePath } from "./tokenStore.js";
+import { currentBrowserSessionStorage } from "./browserSessionStorage.js";
+import type { BrowserStorageState } from "./firebaseSession.js";
+import { ensureSessionDir } from "./tokenStore.js";
 
 export async function runKindroidLogin(config: AppConfig, logger: Logger): Promise<void> {
   ensureSessionDir(config.bridge.sessionDir);
-  const statePath = storageStatePath(config.bridge.sessionDir);
 
   logger.info("Opening a visible browser for Kindroid login.");
   const browser = await chromium.launch({ headless: false });
@@ -24,9 +25,12 @@ export async function runKindroidLogin(config: AppConfig, logger: Logger): Promi
     rl.close();
   }
 
-  await context.storageState({ path: statePath, indexedDB: true });
+  const storageState = (await context.storageState({ indexedDB: true })) as BrowserStorageState;
+  currentBrowserSessionStorage().save(config.bridge.sessionDir, storageState);
   await browser.close();
 
-  logger.info("Kindroid browser session saved.", { path: statePath });
+  logger.info("Kindroid browser session saved.", {
+    path: currentBrowserSessionStorage().storageStatePath(config.bridge.sessionDir)
+  });
   process.stdout.write("Session saved. Tokens and cookies were not printed.\n");
 }

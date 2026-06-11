@@ -1,4 +1,4 @@
-import { chromium } from "playwright";
+import { chromium, type BrowserContextOptions } from "playwright";
 import type { AppConfig } from "../config/types.js";
 import {
   applySetCookieHeaders,
@@ -7,7 +7,6 @@ import {
   loadFreshFirebaseAuth,
   saveBrowserStorageState
 } from "../auth/firebaseSession.js";
-import { storageStatePath } from "../auth/tokenStore.js";
 import type { Logger } from "../util/logger.js";
 
 export interface KindroidSessionKeepAliveEvent {
@@ -132,14 +131,19 @@ export class KindroidSessionKeepAlive {
   }
 
   private async warmKindroidBrowserSession(): Promise<void> {
-    const statePath = storageStatePath(this.options.config.bridge.sessionDir);
+    const session = loadBrowserSession(this.options.config.bridge.sessionDir);
     const browser = await chromium.launch({ headless: true });
     try {
-      const context = await browser.newContext({ storageState: statePath });
+      const context = await browser.newContext({
+        storageState: session.storageState as BrowserContextOptions["storageState"]
+      });
       const page = await context.newPage();
       await page.goto("https://kindroid.ai/", { waitUntil: "domcontentloaded", timeout: 60_000 });
       await page.waitForLoadState("networkidle", { timeout: 15_000 }).catch(() => undefined);
-      await context.storageState({ path: statePath, indexedDB: true });
+      saveBrowserStorageState(
+        this.options.config.bridge.sessionDir,
+        (await context.storageState({ indexedDB: true })) as typeof session.storageState
+      );
       this.options.logger.debug("Kindroid browser session warmed.", { url: page.url() });
     } finally {
       await browser.close();

@@ -657,4 +657,8 @@ export interface AppSettingsResult {
     path: string;
     storedKeys: string[];
   } | null;
+  browserSessionEncryption?: {
+    available: boolean;
+    encrypted: boolean;
+  } | null;
 }

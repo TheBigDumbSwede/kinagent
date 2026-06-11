@@ -6,7 +6,9 @@ import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, Menu, nativeImage, Notification, shell, Tray, ipcMain, dialog } from "electron";
 import type { Event as ElectronEvent } from "electron";
 import { chromium, type Browser, type BrowserContext } from "playwright";
-import { ensureSessionDir, storageStatePath } from "../auth/tokenStore.js";
+import { setBrowserSessionStorageForProcess } from "../auth/browserSessionStorage.js";
+import type { BrowserStorageState } from "../auth/firebaseSession.js";
+import { ensureSessionDir } from "../auth/tokenStore.js";
 import { loadConfig, saveConfig } from "../config/loadConfig.js";
 import type { AppConfig, LogLevel, VoiceProvider } from "../config/types.js";
 import { readCapturedGroup, readCapturedKin } from "../capture/captureReader.js";
@@ -46,6 +48,7 @@ import {
   profileDataReport,
   pruneProfileData
 } from "../profile/profileDataMaintenance.js";
+import { EncryptedBrowserSessionStorage } from "./encryptedBrowserSessionStorage.js";
 import {
   loadKinVoicePreference,
   openAiVoiceOptions,
@@ -69,6 +72,7 @@ let loginSession: { browser: Browser; context: BrowserContext } | null = null;
 let runtime: BridgeRuntime | null = null;
 let browserBridgeServer: BrowserBridgeServer | null = null;
 let secureSecretStore: SecureSecretStore | null = null;
+let encryptedBrowserSessionStorage: EncryptedBrowserSessionStorage | null = null;
 let smokeWindowReady = false;
 let smokeRuntimeReady = false;
 
@@ -115,6 +119,9 @@ function initializeDesktopConfig(): void {
   });
   secureSecretStore = new SecureSecretStore(secureSecretsPath(desktopUserDataDir));
   config = migrateConfigSecretsToSecureStore(config, desktopConfigPath, secureSecretStore);
+  encryptedBrowserSessionStorage = new EncryptedBrowserSessionStorage();
+  setBrowserSessionStorageForProcess(encryptedBrowserSessionStorage);
+  encryptedBrowserSessionStorage.migrate(config.bridge.sessionDir);
   logger = createLogger(config.bridge.logLevel, { logPath: config.bridge.logPath });
 }
 
@@ -466,6 +473,12 @@ function getDesktopSettings(input: { saved?: boolean } = {}) {
     userDataDir: desktopUserDataDir,
     dataReport: profileDataReport(config, desktopUserDataDir, desktopConfigPath),
     secureSecrets: secureSecretStore?.status() ?? null,
+    browserSessionEncryption: encryptedBrowserSessionStorage
+      ? {
+          available: encryptedBrowserSessionStorage.encryptionAvailable(),
+          encrypted: encryptedBrowserSessionStorage.encrypted(config.bridge.sessionDir)
+        }
+      : null,
     config
   };
 }
@@ -644,13 +657,13 @@ async function saveLoginSession() {
     throw new Error("No Kindroid login browser is open.");
   }
 
-  const statePath = storageStatePath(config.bridge.sessionDir);
-  await loginSession.context.storageState({ path: statePath, indexedDB: true });
+  const storageState = (await loginSession.context.storageState({ indexedDB: true })) as BrowserStorageState;
+  encryptedBrowserSessionStorage?.save(config.bridge.sessionDir, storageState);
   await closeLoginSession();
   await requireRuntime().refreshKins();
   await requireRuntime().refreshGroups();
   sendRendererEvent("session-updated", await getDesktopStatus());
-  return { ok: true, path: statePath };
+  return { ok: true, path: encryptedBrowserSessionStorage?.storageStatePath(config.bridge.sessionDir) };
 }
 
 async function closeLoginSession() {
