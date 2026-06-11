@@ -1,7 +1,7 @@
 import type { AppConfig } from "../config/types.js";
 import type { NormalizedKindroidMessage } from "../firestore/types.js";
 import { KindroidClient } from "./kindroidClient.js";
-import type { KindroidChatHistoryMessage } from "./types.js";
+import type { GetKindroidChatMessagesResult, KindroidChatHistoryMessage } from "./types.js";
 import type { Logger } from "../util/logger.js";
 
 export type KindroidChatHistoryScope = "kin" | "group";
@@ -179,6 +179,9 @@ function recentWindowResult(
 let chatHistoryRequestChain: Promise<void> = Promise.resolve();
 let nextChatHistoryRequestAt = 0;
 const chatHistoryRequestIntervalMs = process.env.NODE_ENV === "test" ? 0 : 500;
+const chatHistoryRateLimitMaxAttempts = 10;
+const chatHistoryRateLimitBaseDelayMs = process.env.NODE_ENV === "test" ? 0 : 2_000;
+const chatHistoryRateLimitMaxDelayMs = process.env.NODE_ENV === "test" ? 0 : 60_000;
 
 async function pacedGetChatMessages(
   client: KindroidClient,
@@ -196,9 +199,32 @@ async function pacedGetChatMessages(
     if (waitMs > 0) {
       await new Promise((resolve) => setTimeout(resolve, waitMs));
     }
-    return await client.getChatMessages(input);
+    return await getChatMessagesWithRateLimitRetry(client, input);
   } finally {
     nextChatHistoryRequestAt = Date.now() + chatHistoryRequestIntervalMs;
     release();
   }
+}
+
+async function getChatMessagesWithRateLimitRetry(
+  client: KindroidClient,
+  input: Parameters<KindroidClient["getChatMessages"]>[0]
+): Promise<GetKindroidChatMessagesResult> {
+  let result: GetKindroidChatMessagesResult;
+  for (let attempt = 1; ; attempt += 1) {
+    result = await client.getChatMessages(input);
+    if (result.status !== 429 || attempt >= chatHistoryRateLimitMaxAttempts) {
+      return result;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, rateLimitDelayMs(result.retryAfterMs, attempt)));
+  }
+}
+
+function rateLimitDelayMs(retryAfterMs: number | undefined, attempt: number): number {
+  if (typeof retryAfterMs === "number" && Number.isFinite(retryAfterMs) && retryAfterMs >= 0) {
+    return Math.min(retryAfterMs, chatHistoryRateLimitMaxDelayMs);
+  }
+
+  return Math.min(chatHistoryRateLimitBaseDelayMs * 2 ** (attempt - 1), chatHistoryRateLimitMaxDelayMs);
 }

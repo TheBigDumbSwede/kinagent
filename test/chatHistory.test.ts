@@ -169,6 +169,26 @@ describe("Kindroid chat history API normalization", () => {
       "https://api.kindroid.ai/v1/get-chat-messages?group_id=group-1&limit=100&start_after_timestamp=1780000000000"
     );
   });
+
+  it("retries transient rate limits while loading full public API chat history", async () => {
+    const fetchMock = vi
+      .fn(async (_input: string | URL, _init?: RequestInit) => Response.json({ messages: [] }))
+      .mockResolvedValueOnce(new Response("Too many requests.", { status: 429, headers: { "retry-after": "0" } }))
+      .mockResolvedValueOnce(
+        Response.json({
+          messages: [{ id: "message-1", sender_type: "user", timestamp: 1_780_000_000_000, message: "First." }],
+          pagination: { hasMore: false, lastTimestamp: 1_780_000_000_000, limit: 100 }
+        })
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      loadAllKindroidChatHistoryMessages(testConfig(), testLogger, { scope: "kin", id: "kin-1" })
+    ).resolves.toEqual([expect.objectContaining({ id: "message-1", text: "First." })]);
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe(String(fetchMock.mock.calls[1]?.[0]));
+  });
 });
 
 const testLogger: Logger = {

@@ -499,6 +499,26 @@ describe("Kindroid client normalizers", () => {
     );
   });
 
+  it("returns Retry-After timing from rate-limited chat history responses", async () => {
+    const fetchMock = vi.fn(
+      async (_input: string | URL, _init?: RequestInit) =>
+        new Response("Too many requests.", {
+          status: 429,
+          headers: { "retry-after": "2" }
+        })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new KindroidClient(testConfig({ apiKey: "kn_test-token" }), testLogger);
+
+    await expect(client.getChatMessages({ aiId: "kin-1", limit: 100 })).resolves.toMatchObject({
+      ok: false,
+      status: 429,
+      messages: [],
+      responseText: "Too many requests.",
+      retryAfterMs: 2000
+    });
+  });
+
   it("does not trigger a group AI response after group user-message sends by default", async () => {
     const sessionDir = createTestSessionDir(tempDirs);
     const fetchMock = vi.fn(async (_input: string | URL, _init?: RequestInit) => new Response("OK", { status: 200 }));

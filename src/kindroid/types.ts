@@ -165,6 +165,7 @@ export interface GetKindroidChatMessagesResult {
     limit?: number;
   };
   responseText?: string;
+  retryAfterMs?: number;
 }
 
 export interface UpdateKindroidIdentityInput {

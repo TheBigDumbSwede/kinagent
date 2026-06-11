@@ -503,7 +503,8 @@ export class KindroidClient {
         status: response.status,
         ok: false,
         messages: [],
-        responseText: responseText.slice(0, 1000)
+        responseText: responseText.slice(0, 1000),
+        retryAfterMs: parseRetryAfterMs(response.headers.get("retry-after"))
       };
     }
 
@@ -651,4 +652,22 @@ function decryptGroupUpdateState(raw: Record<string, unknown>, uid: string): Rec
 function sanitizeFileName(value: string): string {
   const normalized = value.replace(/[^\w.-]+/g, "-").replace(/^-+|-+$/g, "");
   return normalized || "kinagent-group-background.png";
+}
+
+function parseRetryAfterMs(value: string | null): number | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return Math.round(seconds * 1000);
+  }
+
+  const retryAt = Date.parse(value);
+  if (!Number.isFinite(retryAt)) {
+    return undefined;
+  }
+
+  return Math.max(0, retryAt - Date.now());
 }
