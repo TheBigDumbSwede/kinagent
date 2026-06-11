@@ -35,9 +35,7 @@ function connectNativeHost() {
   bridgeSessionId = null;
   nativePort.onMessage.addListener(handleNativeMessage);
   nativePort.onDisconnect.addListener(() => {
-    nativePort = null;
-    bridgeSessionId = null;
-    stopPolling();
+    clearNativeConnection();
     scheduleReconnect();
   });
 
@@ -68,7 +66,13 @@ function handleNativeMessage(message) {
   }
 
   if (message.type === "error" && !bridgeSessionId) {
-    stopPolling();
+    const port = nativePort;
+    clearNativeConnection();
+    try {
+      port?.disconnect();
+    } catch {
+      // The native port may already be closed by Chrome.
+    }
     scheduleReconnect();
   }
 }
@@ -150,6 +154,12 @@ function stopPolling() {
     clearTimeout(pollTimer);
     pollTimer = null;
   }
+}
+
+function clearNativeConnection() {
+  nativePort = null;
+  bridgeSessionId = null;
+  stopPolling();
 }
 
 function scheduleReconnect() {

@@ -125,7 +125,7 @@ the install link from the project README.
 
 ## Submission checklist
 
-- [ ] Extension `manifest.json` version bumped (currently 1.0.2)
+- [ ] Extension `manifest.json` version bumped (currently 1.0.3)
 - [ ] Zip the _contents_ of `browser-extension/` (manifest at zip root; exclude
       `PRIVACY.md` / `STORE_LISTING.md` / `README.md`)
 - [ ] At least one screenshot (1280×800 or 640×400)
