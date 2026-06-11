@@ -13,7 +13,13 @@ import {
   renderDetailContent as renderCapturedDetailContent,
   renderDetailEmpty as renderCapturedDetailEmpty
 } from "./capturedDetailPanel.js";
-import { exportSelectedChat, renderChatExportProgress } from "./chatExportPanel.js";
+import {
+  exportSelectedChat,
+  generateSelectedStorybook,
+  renderChatExportProgress,
+  renderStorybookExportProgress,
+  saveStorybookPdf
+} from "./chatExportPanel.js";
 import {
   journalSuggestionNotice,
   renderJournalSuggestions,
@@ -100,7 +106,10 @@ import type {
   ProfileDataActionResult,
   ProfileDataPruneResult,
   SceneLedgerFactSummary,
-  SceneLedgerSummary
+  SceneLedgerSummary,
+  StorybookExportProgress,
+  StorybookExportRequest,
+  StorybookExportResult
 } from "./rendererTypes.js";
 import type { MonitorMessage } from "./monitorMessages.js";
 
@@ -199,6 +208,9 @@ interface RendererState {
   kinAnalysisReport: string;
   chatExportSaving: boolean;
   chatExportJobId: string | null;
+  storybookSaving: boolean;
+  storybookJobId: string | null;
+  storybookPreviewPath: string | null;
 }
 
 interface RendererElements {
@@ -320,6 +332,15 @@ interface RendererElements {
   chatExportAllButton: HTMLButtonElement;
   chatExportProgress: HTMLProgressElement;
   chatExportStatusLine: HTMLElement;
+  storybookOrganizationInput: HTMLSelectElement;
+  storybookLengthInput: HTMLSelectElement;
+  storybookStyleInput: HTMLSelectElement;
+  storybookQuoteModeInput: HTMLSelectElement;
+  storybookPrivacyInput: HTMLInputElement;
+  storybookGenerateButton: HTMLButtonElement;
+  storybookSavePdfButton: HTMLButtonElement;
+  storybookProgress: HTMLProgressElement;
+  storybookStatusLine: HTMLElement;
   kinHermesStatusLine: HTMLElement;
   kinHermesSaveButton: HTMLButtonElement;
   voiceEnabledInput: HTMLInputElement;
@@ -451,6 +472,8 @@ interface RendererApi {
   }): Promise<KinAmbientPreferenceResult>;
   exportKinChat(input: ChatExportRequest & { kinId: string }): Promise<ChatExportResult>;
   exportGroupChat(input: ChatExportRequest & { groupId: string }): Promise<ChatExportResult>;
+  generateStorybook(input: StorybookExportRequest): Promise<StorybookExportResult>;
+  saveStorybookPdf(input: { jobId: string }): Promise<StorybookExportResult>;
   analyzeKin(input: { kinId: string }): Promise<KinAnalysisResult>;
   forceLocalScenePrewarm(input: { scope: "kin" | "group"; id: string }): Promise<{ ok: boolean }>;
   forceSoundscapePrewarm(input: { scope: "kin" | "group"; id: string }): Promise<{ ok: boolean }>;
@@ -568,7 +591,10 @@ const state: RendererState = {
   kinAnalysisJobId: null,
   kinAnalysisReport: "",
   chatExportSaving: false,
-  chatExportJobId: null
+  chatExportJobId: null,
+  storybookSaving: false,
+  storybookJobId: null,
+  storybookPreviewPath: null
 };
 
 const captureRequestTimeoutMs = 12_000;
@@ -700,6 +726,15 @@ const elements: RendererElements = {
   chatExportAllButton: query<HTMLButtonElement>("#chatExportAllButton"),
   chatExportProgress: query<HTMLProgressElement>("#chatExportProgress"),
   chatExportStatusLine: query<HTMLElement>("#chatExportStatusLine"),
+  storybookOrganizationInput: query<HTMLSelectElement>("#storybookOrganizationInput"),
+  storybookLengthInput: query<HTMLSelectElement>("#storybookLengthInput"),
+  storybookStyleInput: query<HTMLSelectElement>("#storybookStyleInput"),
+  storybookQuoteModeInput: query<HTMLSelectElement>("#storybookQuoteModeInput"),
+  storybookPrivacyInput: query<HTMLInputElement>("#storybookPrivacyInput"),
+  storybookGenerateButton: query<HTMLButtonElement>("#storybookGenerateButton"),
+  storybookSavePdfButton: query<HTMLButtonElement>("#storybookSavePdfButton"),
+  storybookProgress: query<HTMLProgressElement>("#storybookProgress"),
+  storybookStatusLine: query<HTMLElement>("#storybookStatusLine"),
   kinHermesStatusLine: query<HTMLElement>("#kinHermesStatusLine"),
   kinHermesSaveButton: query<HTMLButtonElement>("#kinHermesSaveButton"),
   voiceEnabledInput: query<HTMLInputElement>("#voiceEnabledInput"),
@@ -1065,6 +1100,15 @@ elements.chatExportRangeButton.addEventListener("click", () => {
 elements.chatExportAllButton.addEventListener("click", () => {
   void exportSelectedChat({ state, elements, api: window.kinagent, renderActivity }, true);
 });
+elements.storybookPrivacyInput.addEventListener("change", () => {
+  renderActivity();
+});
+elements.storybookGenerateButton.addEventListener("click", () => {
+  void generateSelectedStorybook({ state, elements, api: window.kinagent, renderActivity }, false);
+});
+elements.storybookSavePdfButton.addEventListener("click", () => {
+  void saveStorybookPdf({ state, elements, api: window.kinagent, renderActivity });
+});
 document.addEventListener(
   "pointerdown",
   () => {
@@ -1165,6 +1209,11 @@ window.kinagent.onEvent((message) => {
 
   if (message.channel === "chat-export-progress") {
     renderChatExportProgress({ state, elements }, message.payload as ChatExportProgress | undefined);
+    return;
+  }
+
+  if (message.channel === "storybook-export-progress") {
+    renderStorybookExportProgress({ state, elements }, message.payload as StorybookExportProgress | undefined);
     return;
   }
 
@@ -2513,10 +2562,15 @@ function resetKinActionPlaceholders(): void {
   state.kinAnalysisReport = "";
   elements.chatExportProgress.hidden = true;
   elements.chatExportProgress.value = 0;
+  state.storybookJobId = null;
+  state.storybookPreviewPath = null;
+  elements.storybookProgress.hidden = true;
+  elements.storybookProgress.value = 0;
   elements.kinAnalyzeStatusLine.textContent = "";
   elements.kinAnalyzeReport.hidden = true;
   elements.kinAnalyzeReport.replaceChildren();
   elements.chatExportStatusLine.textContent = "";
+  elements.storybookStatusLine.textContent = "";
 }
 
 async function acceptJournalSuggestion(id: string): Promise<void> {

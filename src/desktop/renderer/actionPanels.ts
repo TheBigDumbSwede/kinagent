@@ -7,6 +7,8 @@ export interface ActionPanelState {
   kinAnalysisRunning: boolean;
   kinAnalysisReport: string;
   chatExportSaving: boolean;
+  storybookSaving: boolean;
+  storybookJobId: string | null;
 }
 
 export interface ActionPanelElements {
@@ -27,6 +29,9 @@ export interface ActionPanelElements {
   chatExportDescription: HTMLElement;
   chatExportRangeButton: HTMLButtonElement;
   chatExportAllButton: HTMLButtonElement;
+  storybookPrivacyInput: HTMLInputElement;
+  storybookGenerateButton: HTMLButtonElement;
+  storybookSavePdfButton: HTMLButtonElement;
   timeline: HTMLElement;
   detailStats: HTMLElement;
 }
@@ -51,8 +56,7 @@ export function renderKinExportTab(context: ActionPanelContext, selectedKin: Kin
   showActionPanel(context.elements, "export");
   context.elements.chatExportTitle.textContent = "Export";
   context.elements.chatExportDescription.textContent = "Export decrypted direct chat history for this Kin.";
-  context.elements.chatExportRangeButton.disabled = context.state.chatExportSaving;
-  context.elements.chatExportAllButton.disabled = context.state.chatExportSaving;
+  renderExportButtons(context);
   renderActionStats(context.elements.detailStats, kinActionStats(context.state, selectedKin, "Export", "Pending"));
 }
 
@@ -61,9 +65,16 @@ export function renderGroupExportTab(context: ActionPanelContext, selectedGroup:
   context.elements.chatExportTitle.textContent = "Export Group";
   context.elements.chatExportDescription.textContent =
     "Export decrypted group chat history with Kin names resolved from message AI IDs.";
-  context.elements.chatExportRangeButton.disabled = context.state.chatExportSaving;
-  context.elements.chatExportAllButton.disabled = context.state.chatExportSaving;
+  renderExportButtons(context);
   renderActionStats(context.elements.detailStats, groupActionStats(context.state, selectedGroup, "Export", "Pending"));
+}
+
+function renderExportButtons(context: ActionPanelContext): void {
+  const busy = context.state.chatExportSaving || context.state.storybookSaving;
+  context.elements.chatExportRangeButton.disabled = busy;
+  context.elements.chatExportAllButton.disabled = busy;
+  context.elements.storybookGenerateButton.disabled = busy || !context.elements.storybookPrivacyInput.checked;
+  context.elements.storybookSavePdfButton.disabled = context.state.storybookSaving || !context.state.storybookJobId;
 }
 
 function showActionPanel(elements: ActionPanelElements, panel: "analyze" | "export"): void {

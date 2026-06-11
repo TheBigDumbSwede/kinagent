@@ -890,6 +890,21 @@ h2 {
   width: min(620px, 100%);
 }
 
+.storybook-section {
+  max-width: 620px;
+}
+
+.privacy-checkbox {
+  align-items: flex-start;
+  border-left: 3px solid #b06b2a;
+  background: #fff7ed;
+  padding: 8px 10px;
+}
+
+.privacy-checkbox input {
+  margin-top: 1px;
+}
+
 .export-progress {
   width: 100%;
 }

@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   app,
   BrowserWindow,
@@ -30,6 +30,15 @@ import {
   type KinChatExportResult
 } from "../chatExport/chatExport.js";
 import { analyzeKinDesign, type KinAnalysisProgress } from "../kinAnalysis/kinAnalysis.js";
+import {
+  createStorybookFromTranscript,
+  HttpStorybookHermesClient,
+  loadStorybookTranscriptFromKindroidChat,
+  type StorybookDocument,
+  type StorybookOptions,
+  type StorybookProgress
+} from "../storybook/storybook.js";
+import { renderStorybookHtml } from "../storybook/storybookRender.js";
 import { BridgeRuntime, type BridgeRuntimeEvent, type KinSoundscapePreference } from "../runtime/bridgeRuntime.js";
 import type { JournalSuggestion } from "../journal/journalSuggestionStore.js";
 import { BrowserBridgeServer } from "../browserIntegration/browserBridgeServer.js";
@@ -86,8 +95,15 @@ let browserBridgeServer: BrowserBridgeServer | null = null;
 let secureSecretStore: SecureSecretStore | null = null;
 let encryptedBrowserSessionStorage: EncryptedBrowserSessionStorage | null = null;
 let captureVault: CaptureHistoryVault | null = null;
+const storybookJobs = new Map<string, StorybookArtifactJob>();
 let smokeWindowReady = false;
 let smokeRuntimeReady = false;
+
+interface StorybookArtifactJob {
+  jobId: string;
+  htmlPath: string;
+  document: StorybookDocument;
+}
 
 app.setName("Kinagent");
 
@@ -125,6 +141,7 @@ function initializeDesktopConfig(): void {
   desktopConfigPath = path.join(desktopUserDataDir, "config.yaml");
   fs.mkdirSync(desktopUserDataDir, { recursive: true });
   cleanupChatExportTempFiles();
+  cleanupStorybookTempFiles();
   process.chdir(desktopUserDataDir);
   config = loadConfig({
     configPath: desktopConfigPath,
@@ -157,6 +174,7 @@ app.on("before-quit", () => {
   }
   void browserBridgeServer?.stop();
   cleanupChatExportTempFiles();
+  cleanupStorybookTempFiles();
   void closeLoginSession();
 });
 
@@ -481,6 +499,12 @@ function registerIpcHandlers(): void {
         toDate?: string;
       } = {}
     ) => exportGroupChat(input)
+  );
+  ipcMain.handle("storybook:generate", async (_event, input: StorybookDesktopRequest = {}) =>
+    generateStorybookPreview(input)
+  );
+  ipcMain.handle("storybook:save-pdf", async (_event, input: { jobId?: string } = {}) =>
+    saveStorybookPdf(input.jobId ?? "")
   );
   ipcMain.handle("kin-analyze:run", async (_event, input: { kinId?: string } = {}) => analyzeKin(input.kinId ?? ""));
   ipcMain.handle("soundscape:read-asset", async (_event, input: { path?: string } = {}) =>
@@ -1103,6 +1127,143 @@ async function exportGroupChat(input: { groupId?: string; fromDate?: string; toD
   return saveChatExportResult(result, jobId);
 }
 
+interface StorybookDesktopRequest {
+  kinId?: string;
+  groupId?: string;
+  fromDate?: string;
+  toDate?: string;
+  organizationMode?: StorybookOptions["organizationMode"];
+  length?: StorybookOptions["length"];
+  style?: string;
+  quoteMode?: StorybookOptions["quoteMode"];
+}
+
+async function generateStorybookPreview(input: StorybookDesktopRequest) {
+  const target = storybookTarget(input);
+  const status = requireRuntime().status();
+  const displayName =
+    target.scope === "group"
+      ? status.groupSubscriptions.find((subscription) => subscription.group.groupId === target.id)?.group.name ||
+        target.id
+      : status.subscriptions.find((subscription) => subscription.kin.aiId === target.id)?.kin.name || target.id;
+  const speakerNames =
+    target.scope === "group"
+      ? Object.fromEntries(status.kins.filter((kin) => kin.aiId && kin.name).map((kin) => [kin.aiId, kin.name]))
+      : {};
+  const jobId = randomUUID();
+  const progress = (payload: StorybookProgress) => {
+    sendRendererEvent("storybook-export-progress", { jobId, ...payload });
+  };
+
+  progress({ stage: "chunking", processed: 0, message: "Loading chat history." });
+  const transcript = await loadStorybookTranscriptFromKindroidChat(config, logger, {
+    scope: target.scope,
+    id: target.id,
+    displayName,
+    speakerNames,
+    fromDate: input.fromDate,
+    toDate: input.toDate
+  });
+  if (transcript.messages.length === 0) {
+    throw new Error("No readable chat entries found for the selected source and date range.");
+  }
+
+  const document = await createStorybookFromTranscript({
+    transcript,
+    hermes: new HttpStorybookHermesClient(config),
+    options: {
+      organizationMode: input.organizationMode,
+      length: input.length,
+      style: input.style,
+      quoteMode: input.quoteMode
+    },
+    onProgress: progress
+  });
+  const html = renderStorybookHtml(document);
+  const jobDir = path.join(storybookTempDir(), jobId);
+  fs.mkdirSync(jobDir, { recursive: true });
+  const htmlPath = path.join(jobDir, `${safeArtifactName(document.title)}.html`);
+  fs.writeFileSync(htmlPath, html, "utf8");
+  storybookJobs.set(jobId, { jobId, htmlPath, document });
+
+  const openError = await shell.openPath(htmlPath);
+  if (openError) {
+    logger.warn("Storybook preview could not be opened.", { jobId, htmlPath, error: openError });
+  }
+
+  return {
+    ok: true,
+    jobId,
+    previewPath: htmlPath,
+    title: document.title,
+    chapterCount: document.chapters.length,
+    warningCount: document.warnings.length,
+    opened: !openError,
+    openError: openError || undefined
+  };
+}
+
+async function saveStorybookPdf(jobId: string) {
+  const job = storybookJobs.get(jobId);
+  if (!job) {
+    throw new Error("Generate a Storybook preview before saving PDF.");
+  }
+
+  const saveOptions = {
+    title: "Save storybook PDF",
+    defaultPath: `${safeArtifactName(job.document.title)}.pdf`,
+    filters: [{ name: "PDF", extensions: ["pdf"] }]
+  };
+  const saveResult = mainWindow
+    ? await dialog.showSaveDialog(mainWindow, saveOptions)
+    : await dialog.showSaveDialog(saveOptions);
+  if (saveResult.canceled || !saveResult.filePath) {
+    return {
+      ok: false,
+      canceled: true,
+      jobId
+    };
+  }
+
+  await renderStorybookPdf(job.htmlPath, saveResult.filePath);
+  return {
+    ok: true,
+    jobId,
+    filePath: saveResult.filePath
+  };
+}
+
+function storybookTarget(input: StorybookDesktopRequest): { scope: "kin" | "group"; id: string } {
+  if (input.groupId) {
+    return { scope: "group", id: input.groupId };
+  }
+  if (input.kinId) {
+    return { scope: "kin", id: input.kinId };
+  }
+  throw new Error("Select a Kin or Group before generating a Storybook.");
+}
+
+async function renderStorybookPdf(htmlPath: string, pdfPath: string): Promise<void> {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.goto(pathToFileURL(htmlPath).toString(), { waitUntil: "load" });
+    await page.pdf({
+      path: pdfPath,
+      format: "Letter",
+      printBackground: true,
+      margin: {
+        top: "0.72in",
+        right: "0.72in",
+        bottom: "0.72in",
+        left: "0.72in"
+      }
+    });
+  } finally {
+    await browser.close();
+  }
+}
+
 async function saveChatExportResult(result: KinChatExportResult, jobId: string) {
   const saveOptions = {
     title: "Save chat export",
@@ -1235,6 +1396,10 @@ function chatExportTempDir(): string {
   return path.join(app.getPath("temp"), "kinagent-chat-exports");
 }
 
+function storybookTempDir(): string {
+  return path.join(app.getPath("temp"), "kinagent-storybooks");
+}
+
 function cleanupChatExportTempFiles(): void {
   try {
     fs.rmSync(chatExportTempDir(), { recursive: true, force: true });
@@ -1243,6 +1408,27 @@ function cleanupChatExportTempFiles(): void {
       error: error instanceof Error ? error.message : String(error)
     });
   }
+}
+
+function cleanupStorybookTempFiles(): void {
+  try {
+    storybookJobs.clear();
+    fs.rmSync(storybookTempDir(), { recursive: true, force: true });
+  } catch (error) {
+    logger?.warn("Failed to clean storybook temporary files.", {
+      error: error instanceof Error ? error.message : String(error)
+    });
+  }
+}
+
+function safeArtifactName(value: string): string {
+  const normalized = value
+    .trim()
+    .replace(/[^a-z0-9._-]+/gi, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80)
+    .toLowerCase();
+  return normalized || "storybook";
 }
 
 function sendVoicePlayback(chunk: unknown): void {

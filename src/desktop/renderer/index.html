@@ -662,6 +662,55 @@
                     <progress id="chatExportProgress" class="export-progress" max="100" value="0" hidden></progress>
                     <p id="chatExportStatusLine" class="panel-note"></p>
                   </section>
+                  <section class="settings-section storybook-section">
+                    <h2>Storybook</h2>
+                    <div class="settings-grid two">
+                      <label>
+                        Organization
+                        <select id="storybookOrganizationInput">
+                          <option value="relationship_arc">Relationship Arc</option>
+                          <option value="scene">Scene</option>
+                          <option value="day">Day</option>
+                          <option value="event">Event</option>
+                        </select>
+                      </label>
+                      <label>
+                        Length
+                        <select id="storybookLengthInput">
+                          <option value="compact">Compact</option>
+                          <option value="medium">Medium</option>
+                        </select>
+                      </label>
+                      <label>
+                        Style
+                        <select id="storybookStyleInput">
+                          <option value="literary chronicle">Literary Chronicle</option>
+                          <option value="warm memoir">Warm Memoir</option>
+                          <option value="episode guide">Episode Guide</option>
+                          <option value="dramatic archive">Dramatic Archive</option>
+                        </select>
+                      </label>
+                      <label>
+                        Quotes
+                        <select id="storybookQuoteModeInput">
+                          <option value="paraphrase_only">Paraphrase Only</option>
+                          <option value="direct_quotes">Allow Direct Quotes</option>
+                        </select>
+                      </label>
+                    </div>
+                    <label class="checkbox-label privacy-checkbox">
+                      <input id="storybookPrivacyInput" type="checkbox" />
+                      <span
+                        >Storybook files may include private chat content and should be reviewed before sharing.</span
+                      >
+                    </label>
+                    <div class="button-row action-button-row">
+                      <button id="storybookGenerateButton" type="button" class="secondary">Preview Storybook</button>
+                      <button id="storybookSavePdfButton" type="button" class="secondary">Save PDF</button>
+                    </div>
+                    <progress id="storybookProgress" class="export-progress" max="100" value="0" hidden></progress>
+                    <p id="storybookStatusLine" class="panel-note"></p>
+                  </section>
                 </div>
               </div>
               <aside class="timeline">

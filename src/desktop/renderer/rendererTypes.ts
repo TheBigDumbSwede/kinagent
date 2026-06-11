@@ -32,6 +32,40 @@ export interface ChatExportProgress {
   message?: string;
 }
 
+export type StorybookOrganizationMode = "scene" | "day" | "event" | "relationship_arc";
+export type StorybookLength = "compact" | "medium";
+export type StorybookQuoteMode = "direct_quotes" | "paraphrase_only";
+
+export interface StorybookExportRequest extends ChatExportRequest {
+  kinId?: string;
+  groupId?: string;
+  organizationMode?: StorybookOrganizationMode;
+  length?: StorybookLength;
+  style?: string;
+  quoteMode?: StorybookQuoteMode;
+}
+
+export interface StorybookExportResult {
+  ok?: boolean;
+  canceled?: boolean;
+  jobId?: string;
+  previewPath?: string;
+  filePath?: string;
+  title?: string;
+  chapterCount?: number;
+  warningCount?: number;
+  opened?: boolean;
+  openError?: string;
+}
+
+export interface StorybookExportProgress {
+  jobId?: string;
+  stage?: string;
+  processed?: number;
+  total?: number;
+  message?: string;
+}
+
 export type BrowserIntegrationTarget = "chrome" | "edge" | "firefox";
 
 export interface BrowserIntegrationSettings {
@@ -85,6 +119,8 @@ export interface KinagentApi {
   analyzeKin(input: { kinId: string }): Promise<KinAnalysisResult>;
   exportKinChat(input: ChatExportRequest & { kinId: string }): Promise<ChatExportResult>;
   exportGroupChat(input: ChatExportRequest & { groupId: string }): Promise<ChatExportResult>;
+  generateStorybook(input: StorybookExportRequest): Promise<StorybookExportResult>;
+  saveStorybookPdf(input: { jobId: string }): Promise<StorybookExportResult>;
   listGroupBackgroundSuggestions(): Promise<GroupBackgroundSuggestionSummary[]>;
   dismissGroupBackgroundSuggestion(input: { id: string }): Promise<unknown>;
   generateGroupBackgroundImage(input: { id: string }): Promise<unknown>;
@@ -133,6 +169,9 @@ export interface PanelState {
   kinAnalysisReport: string;
   chatExportSaving: boolean;
   chatExportJobId: string | null;
+  storybookSaving: boolean;
+  storybookJobId: string | null;
+  storybookPreviewPath: string | null;
 }
 
 export interface AnalysisPanelElements {
@@ -146,6 +185,15 @@ export interface ChatExportPanelElements {
   chatExportToInput: HTMLInputElement;
   chatExportProgress: HTMLProgressElement;
   chatExportStatusLine: HTMLElement;
+  storybookOrganizationInput: HTMLSelectElement;
+  storybookLengthInput: HTMLSelectElement;
+  storybookStyleInput: HTMLSelectElement;
+  storybookQuoteModeInput: HTMLSelectElement;
+  storybookPrivacyInput: HTMLInputElement;
+  storybookGenerateButton: HTMLButtonElement;
+  storybookSavePdfButton: HTMLButtonElement;
+  storybookProgress: HTMLProgressElement;
+  storybookStatusLine: HTMLElement;
 }
 
 export interface PanelContext<TElements> {

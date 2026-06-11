@@ -1,5 +1,6 @@
 import type { AppConfig } from "../config/types.js";
 import type { NormalizedKindroidMessage } from "../firestore/types.js";
+import { isMessageInRange, normalizeDateRange } from "../chatExport/chatExport.js";
 import { chatHistoryDisplayName, loadAllKindroidChatHistoryMessages } from "../kindroid/chatHistory.js";
 import type { Logger } from "../util/logger.js";
 
@@ -177,6 +178,8 @@ export interface KindroidStorybookTranscriptOptions {
   id: string;
   displayName: string;
   speakerNames?: Record<string, string>;
+  fromDate?: string;
+  toDate?: string;
 }
 
 interface ChatCompletionResponse {
@@ -203,7 +206,11 @@ export async function loadStorybookTranscriptFromKindroidChat(
     scope: options.scope,
     id: options.id
   });
-  return createStorybookTranscriptFromMessages(messages, options);
+  const range = normalizeDateRange(options.fromDate, options.toDate);
+  return createStorybookTranscriptFromMessages(
+    messages.filter((message) => isMessageInRange(message, range)),
+    options
+  );
 }
 
 export function createStorybookTranscriptFromMessages(
@@ -805,6 +812,7 @@ function chapterInstructions(options: ResolvedStorybookOptions): string[] {
     options.quoteMode === "paraphrase_only"
       ? "Paraphrase the source; do not include direct transcript quotes."
       : "Use direct quotes sparingly and only when source-supported.",
+    "Format body as readable prose paragraphs separated by blank lines.",
     "Do not mention Hermes, prompts, source ids, or implementation details in the chapter body."
   ];
 }
