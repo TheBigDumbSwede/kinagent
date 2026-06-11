@@ -55,8 +55,11 @@ export interface BrowserIntegrationTargetStatus {
 export interface BrowserBridgeStatus {
   connected: boolean;
   queuedCommandCount: number;
+  protocolVersion?: number;
+  authenticatedSessionCount?: number;
   lastReadyAt: string | null;
   lastPollAt: string | null;
+  lastAckAt?: string | null;
 }
 
 export interface BrowserIntegrationStatus {

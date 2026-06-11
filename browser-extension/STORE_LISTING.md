@@ -67,8 +67,9 @@ Kindroid tab on request.
 ```
 The extension's sole function is to communicate with the user's locally installed
 Kinagent desktop application through Chrome native messaging (host
-"com.kinagent.bridge"). It sends presence/poll messages and receives display and
-reload requests. No data is sent to any remote server.
+"com.kinagent.bridge"). It sends a local protocol handshake, presence/poll
+messages, and command acknowledgements, then receives display and reload
+requests. No data is sent to any remote server.
 ```
 
 **Host permission `https://kindroid.ai/*`**
@@ -124,7 +125,7 @@ the install link from the project README.
 
 ## Submission checklist
 
-- [ ] Extension `manifest.json` version bumped (currently 1.0.1)
+- [ ] Extension `manifest.json` version bumped (currently 1.0.2)
 - [ ] Zip the _contents_ of `browser-extension/` (manifest at zip root; exclude
       `PRIVACY.md` / `STORE_LISTING.md` / `README.md`)
 - [ ] At least one screenshot (1280×800 or 640×400)

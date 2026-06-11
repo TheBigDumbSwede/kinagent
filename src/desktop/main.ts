@@ -20,7 +20,9 @@ import { analyzeKinDesign, type KinAnalysisProgress } from "../kinAnalysis/kinAn
 import { BridgeRuntime, type BridgeRuntimeEvent, type KinSoundscapePreference } from "../runtime/bridgeRuntime.js";
 import type { JournalSuggestion } from "../journal/journalSuggestionStore.js";
 import { BrowserBridgeServer } from "../browserIntegration/browserBridgeServer.js";
+import { browserBridgeAuthPath, loadOrCreateBrowserBridgeAuth } from "../browserIntegration/browserBridgeAuth.js";
 import {
+  browserIntegrationAllowedExtensionIds,
   readBrowserIntegrationStatus,
   registerBrowserIntegration,
   saveBrowserIntegrationSettings,
@@ -69,9 +71,11 @@ if (!singleInstanceLock) {
     showMainWindow();
   });
 
-  void app.whenReady().then(() => {
+  void app.whenReady().then(async () => {
     initializeDesktopConfig();
-    browserBridgeServer = new BrowserBridgeServer({ logger });
+    const bridgeAuth = loadOrCreateBrowserBridgeAuth(browserBridgeAuthPath(desktopUserDataDir));
+    browserBridgeServer = new BrowserBridgeServer({ logger, authSecret: bridgeAuth.secret });
+    await refreshBrowserBridgeAllowedExtensionIds();
     void browserBridgeServer.start();
     createMainWindow();
     createTray();
@@ -225,14 +229,17 @@ function registerIpcHandlers(): void {
   ipcMain.handle("browser-integration:get-status", async () => getBrowserIntegrationStatus());
   ipcMain.handle("browser-integration:save-settings", async (_event, input: unknown) => {
     await saveBrowserIntegrationSettings(browserIntegrationPaths().settingsPath, input);
+    await refreshBrowserBridgeAllowedExtensionIds();
     return getBrowserIntegrationStatus();
   });
   ipcMain.handle("browser-integration:register", async (_event, input: unknown) => {
     await registerBrowserIntegration(browserIntegrationPaths(), input);
+    await refreshBrowserBridgeAllowedExtensionIds();
     return getBrowserIntegrationStatus();
   });
   ipcMain.handle("browser-integration:unregister", async () => {
     await unregisterBrowserIntegration(browserIntegrationPaths());
+    await refreshBrowserBridgeAllowedExtensionIds();
     return getBrowserIntegrationStatus();
   });
   ipcMain.handle("browser-integration:test-notice", async () => {
@@ -459,10 +466,18 @@ async function getBrowserIntegrationStatus(): Promise<
     bridge: browserBridgeServer?.status() ?? {
       connected: false,
       queuedCommandCount: 0,
+      protocolVersion: 1,
+      authenticatedSessionCount: 0,
       lastReadyAt: null,
-      lastPollAt: null
+      lastPollAt: null,
+      lastAckAt: null
     }
   };
+}
+
+async function refreshBrowserBridgeAllowedExtensionIds(): Promise<void> {
+  const status = await readBrowserIntegrationStatus(browserIntegrationPaths());
+  browserBridgeServer?.setAllowedExtensionIds(browserIntegrationAllowedExtensionIds(status.settings));
 }
 
 function saveDesktopSettings(input: unknown) {

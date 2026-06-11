@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Kinagent Browser Bridge",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Connects Kindroid browser tabs to the local Kinagent desktop app.",
   "icons": {
     "16": "icons/icon-16.png",

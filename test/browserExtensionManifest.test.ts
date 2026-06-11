@@ -67,6 +67,10 @@ describe("browser extension manifest", () => {
     const background = fs.readFileSync(backgroundPath, "utf8");
     const content = fs.readFileSync(contentPath, "utf8");
 
+    expect(background).toContain('type: "hello"');
+    expect(background).toContain("BRIDGE_PROTOCOL_VERSION");
+    expect(background).toContain("bridgeSessionId");
+    expect(background).toContain('type: "command-ack"');
     expect(background).toContain("chrome.tabs.reload");
     expect(background).toContain(".catch(() => undefined)");
     expect(content).not.toContain("kinagent-reload-kindroid");

@@ -1,9 +1,11 @@
 const NATIVE_HOST_NAME = "com.kinagent.bridge";
 const KINDROID_URL_PATTERN = "https://kindroid.ai/*";
+const BRIDGE_PROTOCOL_VERSION = 1;
 const POLL_INTERVAL_MS = 2000;
 const RECONNECT_INTERVAL_MS = 5000;
 
 let nativePort = null;
+let bridgeSessionId = null;
 let pollTimer = null;
 let reconnectTimer = null;
 let sequence = 0;
@@ -30,24 +32,44 @@ function connectNativeHost() {
     return;
   }
 
+  bridgeSessionId = null;
   nativePort.onMessage.addListener(handleNativeMessage);
   nativePort.onDisconnect.addListener(() => {
     nativePort = null;
+    bridgeSessionId = null;
     stopPolling();
     scheduleReconnect();
   });
 
-  postNativeMessage({ type: "browser-ready" });
-  schedulePoll(500);
+  postNativeMessage({ type: "hello" });
 }
 
 function handleNativeMessage(message) {
-  if (!message || message.type !== "commands" || !Array.isArray(message.commands)) {
+  if (!message || typeof message.type !== "string") {
     return;
   }
 
-  for (const command of message.commands) {
-    dispatchCommand(command);
+  if (message.type === "bridge-ready" && message.protocolVersion === BRIDGE_PROTOCOL_VERSION) {
+    if (typeof message.sessionId !== "string" || message.sessionId.length === 0) {
+      return;
+    }
+
+    bridgeSessionId = message.sessionId;
+    postNativeMessage({ type: "browser-ready" });
+    schedulePoll(500);
+    return;
+  }
+
+  if (message.type === "commands" && Array.isArray(message.commands)) {
+    for (const command of message.commands) {
+      dispatchCommand(command);
+    }
+    return;
+  }
+
+  if (message.type === "error" && !bridgeSessionId) {
+    stopPolling();
+    scheduleReconnect();
   }
 }
 
@@ -55,6 +77,9 @@ function dispatchCommand(command) {
   if (!command || typeof command.type !== "string") {
     return;
   }
+
+  const commandId = typeof command.id === "string" ? command.id : null;
+  let handled = command.type === "show-notice" || command.type === "reload-kindroid";
 
   chrome.tabs.query({ url: KINDROID_URL_PATTERN }, (tabs) => {
     for (const tab of tabs) {
@@ -71,6 +96,14 @@ function dispatchCommand(command) {
         }, 500);
       }
     }
+
+    if (commandId) {
+      postNativeMessage({
+        type: "command-ack",
+        commandIds: [commandId],
+        status: handled ? "accepted" : "unsupported"
+      });
+    }
   });
 }
 
@@ -84,7 +117,7 @@ function sendKindroidNotice(tabId, text) {
 }
 
 function pollNativeHost() {
-  if (!postNativeMessage({ type: "poll" })) {
+  if (!bridgeSessionId || !postNativeMessage({ type: "poll" })) {
     scheduleReconnect();
     return;
   }
@@ -99,6 +132,9 @@ function postNativeMessage(message) {
 
   nativePort.postMessage({
     id: `kinagent-extension-${Date.now()}-${++sequence}`,
+    protocolVersion: BRIDGE_PROTOCOL_VERSION,
+    extensionId: chrome.runtime.id,
+    ...(bridgeSessionId ? { sessionId: bridgeSessionId } : {}),
     ...message
   });
   return true;
