@@ -190,6 +190,7 @@ export class CaptureHistoryVault {
     }
 
     try {
+      this.recoverInvalidUnlockedResidue();
       return this.unlock();
     } catch (error) {
       this.lastError = error instanceof Error ? error.message : String(error);
@@ -229,6 +230,18 @@ export class CaptureHistoryVault {
   private cipher(): CaptureVaultCipher {
     return this.options.cipher;
   }
+
+  private recoverInvalidUnlockedResidue(): void {
+    if (!fs.existsSync(this.archivePath()) || !fs.existsSync(this.captureDir())) {
+      return;
+    }
+
+    if (isValidCaptureGitRepo(this.captureDir())) {
+      return;
+    }
+
+    removeDirectoryRecursive(this.captureDir());
+  }
 }
 
 export function captureVaultPaths(userDataDir: string): { captureDir: string; vaultDir: string; settingsPath: string } {
@@ -248,6 +261,10 @@ function zipDirectory(sourceDir: string): Buffer {
 
 function assertCaptureRepoIdle(captureDir: string): void {
   const entries = fs.readdirSync(captureDir, { withFileTypes: true });
+  if (fs.existsSync(path.join(captureDir, ".capture-active"))) {
+    throw new Error("Captured Kin history capture is still running; it will be locked on a later clean quit.");
+  }
+
   const transient = entries.find(
     (entry) =>
       entry.isDirectory() && (entry.name.startsWith(".workspace-next-") || entry.name.startsWith(".workspace-prev-"))
@@ -259,6 +276,10 @@ function assertCaptureRepoIdle(captureDir: string): void {
   if (fs.existsSync(path.join(captureDir, ".git", "index.lock"))) {
     throw new Error("Captured Kin history Git index is locked; it will be locked on a later clean quit.");
   }
+}
+
+function isValidCaptureGitRepo(captureDir: string): boolean {
+  return fs.existsSync(path.join(captureDir, ".git", "HEAD"));
 }
 
 function addDirectoryToZip(zip: AdmZip, dir: string, relativeDir: string): void {

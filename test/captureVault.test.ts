@@ -62,6 +62,35 @@ describe("CaptureHistoryVault", () => {
     expect(fs.existsSync(path.join(paths.vaultDir, "repo.enc"))).toBe(true);
   });
 
+  it("recovers invalid unlocked residue from the encrypted vault", () => {
+    const paths = testPaths();
+    fs.mkdirSync(path.join(paths.captureDir, ".git"), { recursive: true });
+    fs.writeFileSync(path.join(paths.captureDir, ".git", "HEAD"), "ref: refs/heads/main\n", "utf8");
+    fs.mkdirSync(path.join(paths.captureDir, "workspace"), { recursive: true });
+    fs.writeFileSync(path.join(paths.captureDir, "workspace", "manifest.json"), '{"ok":true}\n', "utf8");
+    const vault = new CaptureHistoryVault({ ...paths, cipher: testCipher });
+    vault.lock();
+    fs.mkdirSync(path.join(paths.captureDir, "workspace"), { recursive: true });
+    fs.writeFileSync(path.join(paths.captureDir, "workspace", "broken.txt"), "broken residue", "utf8");
+    vault.setEnabled(true);
+
+    const unlocked = vault.unlockIfEnabled();
+
+    expect(unlocked?.changed).toBe(true);
+    expect(fs.existsSync(path.join(paths.captureDir, "workspace", "broken.txt"))).toBe(false);
+    expect(fs.readFileSync(path.join(paths.captureDir, ".git", "HEAD"), "utf8")).toBe("ref: refs/heads/main\n");
+    expect(fs.readFileSync(path.join(paths.captureDir, "workspace", "manifest.json"), "utf8")).toBe('{"ok":true}\n');
+  });
+
+  it("refuses to lock while a capture-active marker exists", () => {
+    const paths = testPaths();
+    fs.mkdirSync(paths.captureDir, { recursive: true });
+    fs.writeFileSync(path.join(paths.captureDir, ".capture-active"), "123\n", "utf8");
+    const vault = new CaptureHistoryVault({ ...paths, cipher: testCipher });
+
+    expect(() => vault.lock()).toThrow(/capture is still running/);
+  });
+
   it("refuses to lock while a capture staging workspace exists", () => {
     const paths = testPaths();
     fs.mkdirSync(path.join(paths.captureDir, ".workspace-next-123"), { recursive: true });
