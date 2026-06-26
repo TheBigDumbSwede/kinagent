@@ -71,6 +71,7 @@ import {
 } from "../profile/profileDataMaintenance.js";
 import { EncryptedBrowserSessionStorage } from "./encryptedBrowserSessionStorage.js";
 import { CaptureHistoryVault, captureVaultPaths, type CaptureVaultActionResult } from "./captureVault.js";
+import { TimelineStore } from "../timeline/timelineStore.js";
 import {
   loadKinVoicePreference,
   openAiVoiceOptions,
@@ -93,6 +94,7 @@ let isQuitting = false;
 let loginSession: { browser: Browser; context: BrowserContext } | null = null;
 let runtime: BridgeRuntime | null = null;
 let browserBridgeServer: BrowserBridgeServer | null = null;
+let timelineStore: TimelineStore | null = null;
 let secureSecretStore: SecureSecretStore | null = null;
 let encryptedBrowserSessionStorage: EncryptedBrowserSessionStorage | null = null;
 let captureVault: CaptureHistoryVault | null = null;
@@ -153,6 +155,7 @@ function initializeDesktopConfig(): void {
   encryptedBrowserSessionStorage = new EncryptedBrowserSessionStorage();
   setBrowserSessionStorageForProcess(encryptedBrowserSessionStorage);
   logger = createLogger(config.bridge.logLevel, { logPath: config.bridge.logPath });
+  timelineStore = TimelineStore.fromConfig(config);
   captureVault = new CaptureHistoryVault({ ...captureVaultPaths(desktopUserDataDir), cipher: safeStorage });
   const unlockResult = captureVault.unlockIfEnabled();
   if (unlockResult?.changed) {
@@ -633,6 +636,7 @@ function saveDesktopSettings(input: unknown) {
     config = applyStoredConfigSecrets(config, secureSecretStore);
   }
   logger = createLogger(config.bridge.logLevel, { logPath: config.bridge.logPath });
+  timelineStore = TimelineStore.fromConfig(config);
   logger.info("Saved desktop settings.", { configPath: desktopConfigPath });
 
   return getDesktopSettings({ saved: true });
@@ -1489,6 +1493,19 @@ function queueKindroidUiReload(reason: string, meta: Record<string, unknown> = {
     reason,
     commandId: command.id,
     ...meta
+  });
+  timelineStore?.append({
+    type: "browser_bridge.command.queued",
+    source: {
+      kind: "browser_bridge",
+      id: "local-native-host"
+    },
+    payload: {
+      commandId: command.id,
+      commandType: command.type,
+      reason,
+      ...meta
+    }
   });
 }
 

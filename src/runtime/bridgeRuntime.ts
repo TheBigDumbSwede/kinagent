@@ -50,6 +50,7 @@ import { LocalSceneStateStore, type LocalSceneState } from "../localScene/localS
 import { SceneLedgerStore, type SceneLedgerRecord } from "../localScene/sceneLedgerStore.js";
 import { PreviouslyOnStore, type PreviouslyOnBrief } from "../previouslyOn/previouslyOnStore.js";
 import { SoundscapeStateStore, type StoredSoundscapeUpdate } from "../soundscape/soundscapeStateStore.js";
+import { TimelineStore } from "../timeline/timelineStore.js";
 import type { Logger } from "../util/logger.js";
 import { GroupSubscriptionSupervisor, type GroupSubscriptionStatus } from "./groupSubscriptionSupervisor.js";
 import { GroupBackgroundPrewarmCoordinator } from "./groupBackgroundPrewarmCoordinator.js";
@@ -128,6 +129,7 @@ export class BridgeRuntime {
   readonly groupGamingPreferences: GroupGamingPreferenceStore;
   readonly game: GameRuntime;
   readonly sceneLedgers: SceneLedgerStore;
+  readonly timeline: TimelineStore;
   private readonly prewarmState: PrewarmStateStore;
   private readonly sessionKeepAlive: KindroidSessionKeepAlive;
   private readonly kinSubscriptionSupervisor: KinSubscriptionSupervisor;
@@ -149,6 +151,7 @@ export class BridgeRuntime {
     this.groupBackgroundPreferences = GroupBackgroundPreferenceStore.fromConfig(options.config);
     this.localScenes = LocalSceneStateStore.fromConfig(options.config);
     this.sceneLedgers = SceneLedgerStore.fromConfig(options.config);
+    this.timeline = TimelineStore.fromConfig(options.config);
     this.previouslyOn = PreviouslyOnStore.fromConfig(options.config);
     this.soundscapes = SoundscapeStateStore.fromConfig(options.config);
     this.campaignStates = CampaignStateStore.fromConfig(options.config);
@@ -161,6 +164,27 @@ export class BridgeRuntime {
       dedupeStore,
       onStateUpdated: (state) => {
         this.emit({ channel: "game-campaign-state-updated", payload: state });
+      },
+      onRollResolved: (event) => {
+        this.timeline.append({
+          type: "game.roll.resolved",
+          occurredAt: event.resolvedAt,
+          source: {
+            kind: "group",
+            id: event.groupId,
+            documentId: event.sourceDocumentId
+          },
+          payload: {
+            groupName: event.groupName,
+            automationMode: event.automationMode,
+            moveId: event.request.moveId,
+            actor: event.request.actor ?? null,
+            modifier: event.request.modifier,
+            dice: event.result.dice,
+            total: event.result.total,
+            outcome: event.result.outcome
+          }
+        });
       },
       onPendingDecision: (state) => {
         this.emit({
