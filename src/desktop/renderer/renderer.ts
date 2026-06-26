@@ -55,6 +55,14 @@ import {
   tabLabelFor
 } from "./tabNavigation.js";
 import {
+  copyTimelineEvents,
+  exportTimelineEvents as saveTimelineEvents,
+  loadTimelineEvents,
+  renderTimelinePanel,
+  type TimelinePanelElements,
+  type TimelinePanelState
+} from "./timelinePanel.js";
+import {
   renderKinHermesTab,
   renderVoiceProviderFields,
   renderVoiceTab,
@@ -110,7 +118,10 @@ import type {
   SceneLedgerSummary,
   StorybookExportProgress,
   StorybookExportRequest,
-  StorybookExportResult
+  StorybookExportResult,
+  TimelineExportResult,
+  TimelineListResult,
+  TimelineQueryRequest
 } from "./rendererTypes.js";
 import type { MonitorMessage } from "./monitorMessages.js";
 
@@ -136,7 +147,7 @@ interface RefreshState {
   error?: string;
 }
 
-interface RendererState {
+interface RendererState extends TimelinePanelState {
   kins: KinSummary[];
   subscriptions: KinSubscriptionSummary[];
   groups: GroupSummary[];
@@ -214,7 +225,7 @@ interface RendererState {
   storybookPreviewPath: string | null;
 }
 
-interface RendererElements {
+interface RendererElements extends TimelinePanelElements {
   sessionLine: HTMLElement;
   firebaseStatus: HTMLElement;
   appCheckStatus: HTMLElement;
@@ -230,6 +241,7 @@ interface RendererElements {
   settingTabs: HTMLElement;
   groupSettingTabs: HTMLElement;
   monitorPane: HTMLElement;
+  timelinePane: HTMLElement;
   detailPane: HTMLElement;
   kinDetailEmpty: HTMLElement;
   kinDetailContent: HTMLElement;
@@ -362,6 +374,16 @@ interface RendererElements {
   soundscapeForcePrewarmButton: HTMLButtonElement;
   timelineList: HTMLElement;
   timeline: HTMLElement;
+  timelineTypeInput: HTMLSelectElement;
+  timelineSourceInput: HTMLInputElement;
+  timelineFromInput: HTMLInputElement;
+  timelineToInput: HTMLInputElement;
+  timelineLimitInput: HTMLInputElement;
+  timelineRefreshButton: HTMLButtonElement;
+  timelineCopyButton: HTMLButtonElement;
+  timelineExportButton: HTMLButtonElement;
+  timelineStatusLine: HTMLElement;
+  timelineEventList: HTMLElement;
   monitorLine: HTMLElement;
   messageList: HTMLElement;
   loginStartButton: HTMLButtonElement;
@@ -430,6 +452,8 @@ interface RendererApi {
   unregisterBrowserIntegration(): Promise<BrowserIntegrationStatus>;
   testBrowserIntegrationNotice(): Promise<BrowserIntegrationStatus>;
   testBrowserIntegrationReload(): Promise<BrowserIntegrationStatus>;
+  listTimelineEvents(input: TimelineQueryRequest): Promise<TimelineListResult>;
+  exportTimelineEvents(input: TimelineQueryRequest): Promise<TimelineExportResult>;
   openKindroid(): Promise<unknown>;
   startLogin(): Promise<unknown>;
   saveLogin(): Promise<unknown>;
@@ -597,7 +621,13 @@ const state: RendererState = {
   chatExportJobId: null,
   storybookSaving: false,
   storybookJobId: null,
-  storybookPreviewPath: null
+  storybookPreviewPath: null,
+  timelineEvents: [],
+  timelineLoading: false,
+  timelineLoaded: false,
+  timelineError: null,
+  timelineCopyStatus: null,
+  timelineExportStatus: null
 };
 
 const captureRequestTimeoutMs = 12_000;
@@ -626,6 +656,7 @@ const elements: RendererElements = {
   settingTabs: query<HTMLElement>("#settingTabs"),
   groupSettingTabs: query<HTMLElement>("#groupSettingTabs"),
   monitorPane: query<HTMLElement>("#monitorPane"),
+  timelinePane: query<HTMLElement>("#timelinePane"),
   detailPane: query<HTMLElement>("#detailPane"),
   kinDetailEmpty: query<HTMLElement>("#kinDetailEmpty"),
   kinDetailContent: query<HTMLElement>("#kinDetailContent"),
@@ -758,6 +789,16 @@ const elements: RendererElements = {
   soundscapeForcePrewarmButton: query<HTMLButtonElement>("#soundscapeForcePrewarmButton"),
   timelineList: query<HTMLElement>("#timelineList"),
   timeline: query<HTMLElement>(".timeline"),
+  timelineTypeInput: query<HTMLSelectElement>("#timelineTypeInput"),
+  timelineSourceInput: query<HTMLInputElement>("#timelineSourceInput"),
+  timelineFromInput: query<HTMLInputElement>("#timelineFromInput"),
+  timelineToInput: query<HTMLInputElement>("#timelineToInput"),
+  timelineLimitInput: query<HTMLInputElement>("#timelineLimitInput"),
+  timelineRefreshButton: query<HTMLButtonElement>("#timelineRefreshButton"),
+  timelineCopyButton: query<HTMLButtonElement>("#timelineCopyButton"),
+  timelineExportButton: query<HTMLButtonElement>("#timelineExportButton"),
+  timelineStatusLine: query<HTMLElement>("#timelineStatusLine"),
+  timelineEventList: query<HTMLElement>("#timelineEventList"),
   monitorLine: query<HTMLElement>("#monitorLine"),
   messageList: query<HTMLElement>("#messageList"),
   loginStartButton: query<HTMLButtonElement>("#loginStartButton"),
@@ -963,6 +1004,15 @@ function monitorPanelContext() {
   };
 }
 
+function timelinePanelContext() {
+  return {
+    state,
+    elements,
+    api: window.kinagent,
+    renderActivity
+  };
+}
+
 elements.loginStartButton.addEventListener("click", () => {
   void runAction("Opening login", () => window.kinagent.startLogin());
 });
@@ -1003,6 +1053,15 @@ elements.refreshGroupsButton.addEventListener(
 );
 elements.clearButton.addEventListener("click", () => {
   clearVisibleMonitorMessages(monitorPanelContext());
+});
+elements.timelineRefreshButton.addEventListener("click", () => {
+  void loadTimelineEvents(timelinePanelContext());
+});
+elements.timelineCopyButton.addEventListener("click", () => {
+  void copyTimelineEvents(timelinePanelContext());
+});
+elements.timelineExportButton.addEventListener("click", () => {
+  void saveTimelineEvents(timelinePanelContext());
 });
 elements.detailTabs.addEventListener("click", (event) => {
   handleDetailTabsClick(tabNavigationContext(), event);
@@ -1605,6 +1664,7 @@ function renderActivity(): void {
   const activeTab = state.activeTab || "monitor";
   const activeMode = modeForTab(activeTab);
   const isMonitor = activeMode === "monitor";
+  const isTimeline = activeMode === "timeline";
   const isVoice = activeMode === "voice";
   const isLocalScene = activeMode === "local-scene";
   const isGroupLocalScene = activeMode === "group-local-scene";
@@ -1630,6 +1690,16 @@ function renderActivity(): void {
         : "Incoming Messages";
     renderMessageList(monitorPanelContext());
     renderMonitorState(monitorPanelContext());
+    return;
+  }
+
+  if (isTimeline) {
+    elements.activityTitle.textContent = "Timeline";
+    elements.monitorLine.textContent = subtitleForDetailMode(activeMode);
+    renderTimelinePanel(timelinePanelContext());
+    if (!state.timelineLoaded && !state.timelineLoading) {
+      void loadTimelineEvents(timelinePanelContext());
+    }
     return;
   }
 

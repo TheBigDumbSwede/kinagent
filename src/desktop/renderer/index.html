@@ -81,6 +81,9 @@
           <button class="detail-tab active" type="button" data-mode="monitor" role="tab" aria-selected="true">
             Monitor
           </button>
+          <button class="detail-tab" type="button" data-mode="timeline" role="tab" aria-selected="false">
+            Timeline
+          </button>
           <button
             id="entityDetailTab"
             class="detail-tab"
@@ -201,6 +204,59 @@
         <div class="activity-body">
           <div id="monitorPane" class="activity-pane">
             <div id="messageList" class="message-list"></div>
+          </div>
+          <div id="timelinePane" class="activity-pane timeline-panel" hidden>
+            <div class="timeline-controls">
+              <label>
+                Type
+                <select id="timelineTypeInput">
+                  <option value="">All events</option>
+                  <option value="app.status">App status</option>
+                  <option value="kindroid.message.observed">Kindroid message</option>
+                  <option value="hermes.request">Hermes request</option>
+                  <option value="hermes.response">Hermes response</option>
+                  <option value="journal.suggestion.created">Journal suggestion</option>
+                  <option value="previously_on.generated">Previously On</option>
+                  <option value="soundscape.changed">Soundscape</option>
+                  <option value="game.state.changed">Game state</option>
+                  <option value="game.roll.resolved">Game roll</option>
+                  <option value="game.keeper.sent">Keeper sent</option>
+                  <option value="browser_bridge.command.queued">Browser command</option>
+                  <option value="browser_bridge.status.changed">Browser status</option>
+                  <option value="user.action">User action</option>
+                </select>
+              </label>
+              <label>
+                Source
+                <input
+                  id="timelineSourceInput"
+                  type="text"
+                  autocomplete="off"
+                  placeholder="Kin, group, or document ID"
+                />
+              </label>
+              <label>
+                From
+                <input id="timelineFromInput" type="datetime-local" />
+              </label>
+              <label>
+                To
+                <input id="timelineToInput" type="datetime-local" />
+              </label>
+              <label>
+                Limit
+                <input id="timelineLimitInput" type="number" min="1" max="500" step="1" value="100" />
+              </label>
+            </div>
+            <div class="timeline-actions">
+              <p id="timelineStatusLine" class="panel-note">Timeline has not been loaded yet.</p>
+              <div class="button-row form-action-row">
+                <button id="timelineRefreshButton" type="button">Refresh</button>
+                <button id="timelineCopyButton" class="secondary" type="button">Copy JSON</button>
+                <button id="timelineExportButton" class="secondary" type="button">Export JSON</button>
+              </div>
+            </div>
+            <div id="timelineEventList" class="timeline-event-list"></div>
           </div>
           <div id="detailPane" class="activity-pane detail-pane" hidden>
             <div id="kinDetailEmpty" class="detail-empty">Select Manage on a Kin to inspect captured settings.</div>
