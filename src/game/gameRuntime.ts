@@ -7,7 +7,14 @@ import { loadCampaignPacks, type LoadedCampaignPack } from "./campaignPack.js";
 import { CampaignStateStore, type GameKeeperDecision, type GroupCampaignState } from "./campaignStateStore.js";
 import { parseGameCommand, type GameCommand } from "./gameCommands.js";
 import { parseGameDecisionContent, normalizeGameDecision } from "./gameDecision.js";
-import { genericMysteryMoves, randomDiceRoller, resolvePbtARoll, type DiceRoller } from "./gameMoves.js";
+import {
+  genericMysteryMoves,
+  randomDiceRoller,
+  resolvePbtARoll,
+  type DiceRoller,
+  type RollRequest,
+  type RollResult
+} from "./gameMoves.js";
 import { GroupGamingPreferenceStore, type GamingAutomationMode } from "./groupGamingPreferences.js";
 import { KeeperMessenger, type GameKeeperMessageSentEvent, type GameKindroidClient } from "./keeperMessenger.js";
 import { formatRollResultMessage, rollOutcomeSummary } from "./rollFormatting.js";
@@ -44,7 +51,18 @@ export interface GameRuntimeOptions {
   diceRoller?: DiceRoller;
   onStateUpdated?: (state: GroupCampaignState) => void;
   onKeeperMessageSent?: (event: GameKeeperMessageSentEvent) => void;
+  onRollResolved?: (event: GameRollResolvedEvent) => void;
   onPendingDecision?: (state: GroupCampaignState) => void;
+}
+
+export interface GameRollResolvedEvent {
+  groupId: string;
+  groupName: string;
+  sourceDocumentId: string;
+  automationMode: GamingAutomationMode;
+  resolvedAt: string;
+  request: RollRequest;
+  result: RollResult;
 }
 
 export interface GameGroupChatResult {
@@ -69,6 +87,9 @@ interface KeeperSpeechPacing {
 
 interface RollResolutionResult {
   state: GroupCampaignState;
+  request: RollRequest;
+  result: RollResult;
+  resolvedAt: string;
   keeperMessageAttempted: boolean;
   keeperMessageSent: boolean;
 }
@@ -417,10 +438,23 @@ export class GameRuntime {
       throw new Error("Group campaign state was not available after resolving the roll.");
     }
     this.options.onStateUpdated?.(recorded);
+    const resolvedAt = recorded.rollHistory.at(-1)?.resolvedAt ?? recorded.updatedAt;
+    this.options.onRollResolved?.({
+      groupId: input.group.groupId,
+      groupName: input.group.name,
+      sourceDocumentId: pending.sourceDocumentId,
+      automationMode: pending.automationMode,
+      resolvedAt,
+      request: pending.request,
+      result
+    });
 
     if (input.automationMode === "observe") {
       return {
         state: recorded,
+        request: pending.request,
+        result,
+        resolvedAt,
         keeperMessageAttempted: false,
         keeperMessageSent: false
       };
@@ -448,6 +482,9 @@ export class GameRuntime {
       this.options.onStateUpdated?.(pendingDecision);
       return {
         state: pendingDecision,
+        request: pending.request,
+        result,
+        resolvedAt,
         keeperMessageAttempted: false,
         keeperMessageSent: false
       };
@@ -482,6 +519,9 @@ export class GameRuntime {
     this.options.onStateUpdated?.(updated);
     return {
       state: updated,
+      request: pending.request,
+      result,
+      resolvedAt,
       keeperMessageAttempted: true,
       keeperMessageSent: sendResult.ok
     };
