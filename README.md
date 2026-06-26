@@ -235,7 +235,9 @@ The browser bridge is a local refresh helper. It does not read Kindroid page
 content, cookies, tokens, or messages, and it does not send chat messages. The
 native messaging host is registered per user for the saved extension IDs, and
 the local pipe requires a versioned signed handshake before the extension can
-poll for queued refresh/notice commands.
+poll for queued refresh/notice commands. Authenticated bridge sessions stay
+bound to the extension ID that completed the handshake and are dropped if that
+extension ID is removed from the saved browser integration allowlist.
 
 Log in and save local browser state:
 

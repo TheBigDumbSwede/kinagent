@@ -101,6 +101,7 @@ describe("browser bridge server", () => {
           id: "ready-1",
           type: "browser-ready",
           protocolVersion: BROWSER_BRIDGE_PROTOCOL_VERSION,
+          extensionId,
           sessionId
         })
       ).resolves.toMatchObject({
@@ -115,6 +116,7 @@ describe("browser bridge server", () => {
           id: "poll-1",
           type: "poll",
           protocolVersion: BROWSER_BRIDGE_PROTOCOL_VERSION,
+          extensionId,
           sessionId
         })
       ).resolves.toEqual({
@@ -131,6 +133,7 @@ describe("browser bridge server", () => {
           id: "ack-1",
           type: "command-ack",
           protocolVersion: BROWSER_BRIDGE_PROTOCOL_VERSION,
+          extensionId,
           sessionId,
           commandIds: [command.id]
         })
@@ -142,6 +145,110 @@ describe("browser bridge server", () => {
         ackedCommandIds: [command.id]
       });
       expect(server.status(new Date()).lastAckAt).not.toBeNull();
+    } finally {
+      await server.stop();
+    }
+  });
+
+  it("binds authenticated sessions to the extension ID that completed the handshake", async () => {
+    if (process.platform !== "win32") {
+      return;
+    }
+
+    const pipeName = `kinagent-browser-bridge-test-${process.pid}-${Date.now()}`;
+    const server = new BrowserBridgeServer({
+      logger: silentLogger,
+      authSecret,
+      allowedExtensionIds: [extensionId],
+      pipeName
+    });
+    await server.start();
+
+    try {
+      server.queueCommand("show-notice", { text: "Kinagent is connected." });
+      const hello = await sendPipeRequest(pipeName, signedHello("hello-bound"));
+      const sessionId = sessionIdFrom(hello);
+
+      await expect(
+        sendPipeRequest(pipeName, {
+          id: "poll-missing-extension",
+          type: "poll",
+          protocolVersion: BROWSER_BRIDGE_PROTOCOL_VERSION,
+          sessionId
+        })
+      ).resolves.toMatchObject({
+        id: "poll-missing-extension",
+        type: "error",
+        ok: false,
+        code: "auth_required"
+      });
+
+      await expect(
+        sendPipeRequest(pipeName, {
+          id: "poll-wrong-extension",
+          type: "poll",
+          protocolVersion: BROWSER_BRIDGE_PROTOCOL_VERSION,
+          extensionId: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          sessionId
+        })
+      ).resolves.toMatchObject({
+        id: "poll-wrong-extension",
+        type: "error",
+        ok: false,
+        code: "auth_required"
+      });
+
+      await expect(
+        sendPipeRequest(pipeName, {
+          id: "poll-bound-extension",
+          type: "poll",
+          protocolVersion: BROWSER_BRIDGE_PROTOCOL_VERSION,
+          extensionId,
+          sessionId
+        })
+      ).resolves.toMatchObject({
+        id: "poll-bound-extension",
+        type: "commands",
+        ok: true
+      });
+    } finally {
+      await server.stop();
+    }
+  });
+
+  it("drops authenticated sessions when the extension allowlist changes", async () => {
+    if (process.platform !== "win32") {
+      return;
+    }
+
+    const pipeName = `kinagent-browser-bridge-test-${process.pid}-${Date.now()}`;
+    const server = new BrowserBridgeServer({
+      logger: silentLogger,
+      authSecret,
+      allowedExtensionIds: [extensionId],
+      pipeName
+    });
+    await server.start();
+
+    try {
+      const hello = await sendPipeRequest(pipeName, signedHello("hello-allowlist"));
+      const sessionId = sessionIdFrom(hello);
+      server.setAllowedExtensionIds([]);
+
+      await expect(
+        sendPipeRequest(pipeName, {
+          id: "poll-removed-extension",
+          type: "poll",
+          protocolVersion: BROWSER_BRIDGE_PROTOCOL_VERSION,
+          extensionId,
+          sessionId
+        })
+      ).resolves.toMatchObject({
+        id: "poll-removed-extension",
+        type: "error",
+        ok: false,
+        code: "auth_required"
+      });
     } finally {
       await server.stop();
     }
