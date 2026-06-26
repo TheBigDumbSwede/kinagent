@@ -8,6 +8,10 @@ import {
   type ChatDynamismSuggestion
 } from "../chatDynamism/chatDynamismSuggestionStore.js";
 import type { AppConfig } from "../config/types.js";
+import {
+  ConversationHealthStore,
+  type ConversationHealthSignal
+} from "../conversationHealth/conversationHealthStore.js";
 import { FirestoreRestClient } from "../firestore/firestoreRestClient.js";
 import { KindroidLiveMonitor } from "../firestore/liveMonitor.js";
 import { isRecentOutboundEcho } from "../firestore/messageDedupe.js";
@@ -130,6 +134,7 @@ export class BridgeRuntime {
   readonly game: GameRuntime;
   readonly sceneLedgers: SceneLedgerStore;
   readonly timeline: TimelineStore;
+  readonly conversationHealth: ConversationHealthStore;
   private readonly prewarmState: PrewarmStateStore;
   private readonly sessionKeepAlive: KindroidSessionKeepAlive;
   private readonly kinSubscriptionSupervisor: KinSubscriptionSupervisor;
@@ -152,6 +157,7 @@ export class BridgeRuntime {
     this.localScenes = LocalSceneStateStore.fromConfig(options.config);
     this.sceneLedgers = SceneLedgerStore.fromConfig(options.config);
     this.timeline = TimelineStore.fromConfig(options.config);
+    this.conversationHealth = ConversationHealthStore.fromConfig(options.config);
     this.previouslyOn = PreviouslyOnStore.fromConfig(options.config);
     this.soundscapes = SoundscapeStateStore.fromConfig(options.config);
     this.campaignStates = CampaignStateStore.fromConfig(options.config);
@@ -941,6 +947,7 @@ export class BridgeRuntime {
       sceneLedgers: this.sceneLedgers.list(),
       previouslyOn: this.previouslyOn.list(),
       soundscapes: this.soundscapes.list(),
+      conversationHealthSignals: this.conversationHealth.list("active"),
       prewarmStates: this.prewarmState.list()
     };
   }
@@ -999,6 +1006,20 @@ export class BridgeRuntime {
         const trigger = prewarmTriggerFromNotification(notification);
 
         this.emit({ channel: "monitor-line", payload: { ...message, kinName: kin.name } });
+        this.recordConversationHealthMessage({
+          scope: "kin",
+          sourceId: kin.aiId,
+          sourceName: kin.name,
+          subjectKinId: kin.aiId,
+          subjectName: kin.name,
+          documentId: message.id,
+          timestamp: message.timestamp,
+          text: message.text,
+          sender: message.sender,
+          role: message.role,
+          textEncrypted: message.textEncrypted,
+          textDecrypted: message.textDecrypted
+        });
         this.prewarmCoordinators.prewarmKinActivity(kin, trigger);
         this.voice.enqueue({
           id: message.id,
@@ -1078,6 +1099,20 @@ export class BridgeRuntime {
             source: "firestore"
           }
         });
+        this.recordConversationHealthMessage({
+          scope: "group",
+          sourceId: group.groupId,
+          sourceName: group.name,
+          subjectKinId: aiId,
+          subjectName: kinName,
+          documentId: message.id,
+          timestamp: message.timestamp,
+          text: message.text,
+          sender: message.sender,
+          role: message.role,
+          textEncrypted: message.textEncrypted,
+          textDecrypted: message.textDecrypted
+        });
         const trigger = prewarmTriggerFromNotification(notification);
         this.prewarmCoordinators.prewarmGroupActivity(group, notification, trigger);
         this.voice.enqueue({
@@ -1118,6 +1153,63 @@ export class BridgeRuntime {
       },
       onDocumentDeleted: async (document) => {
         this.handleGroupMessageDeleted(group, document.id, document.readTime ?? null);
+      }
+    });
+  }
+
+  private recordConversationHealthMessage(input: {
+    scope: "kin" | "group";
+    sourceId: string;
+    sourceName?: string;
+    subjectKinId?: string | null;
+    subjectName?: string | null;
+    documentId: string;
+    timestamp: string | null;
+    text: string | null;
+    textEncrypted?: boolean;
+    textDecrypted?: boolean;
+    sender: string | null;
+    role: string | null;
+  }): void {
+    if (!isReadableKinOutput(input)) {
+      return;
+    }
+
+    const signal = this.conversationHealth.recordMessage({
+      scope: input.scope,
+      sourceId: input.sourceId,
+      sourceName: input.sourceName,
+      subjectKinId: input.subjectKinId,
+      subjectName: input.subjectName,
+      documentId: input.documentId,
+      timestamp: input.timestamp,
+      text: input.text
+    });
+    if (!signal) {
+      return;
+    }
+
+    this.emitConversationHealthSignal(signal);
+  }
+
+  private emitConversationHealthSignal(signal: ConversationHealthSignal): void {
+    this.emit({
+      channel: "monitor-line",
+      payload: {
+        type: "kinagent.conversation_health.repetition",
+        id: signal.id,
+        kinId: signal.subjectKinId,
+        kinName: signal.subjectName,
+        groupId: signal.scope === "group" ? signal.sourceId : undefined,
+        groupName: signal.scope === "group" ? signal.sourceName : undefined,
+        timestamp: signal.createdAt,
+        sender: "kinagent",
+        role: "diagnostic",
+        text: signal.summary,
+        source: "conversation-health",
+        severity: signal.severity,
+        evidence: signal.evidence,
+        sourceDocumentIds: signal.sourceDocumentIds
       }
     });
   }
@@ -1518,6 +1610,28 @@ export function shouldSkipGenericHermesGroupHandling(result: GameGroupChatResult
   return result.gameHandled || result.keeperMessageAttempted || result.keeperMessageSent;
 }
 
+function isReadableKinOutput(input: {
+  text: string | null;
+  textEncrypted?: boolean;
+  textDecrypted?: boolean;
+  sender: string | null;
+  role: string | null;
+}): input is {
+  text: string;
+  textEncrypted?: boolean;
+  textDecrypted?: boolean;
+  sender: string | null;
+  role: string | null;
+} {
+  if (!input.text?.trim()) {
+    return false;
+  }
+  if (input.textEncrypted && !input.textDecrypted) {
+    return false;
+  }
+  return input.sender === "ai" || input.role === "assistant";
+}
+
 export interface BridgeRuntimeStatus {
   monitorRunning: boolean;
   config: {
@@ -1540,6 +1654,7 @@ export interface BridgeRuntimeStatus {
   sceneLedgers: SceneLedgerRecord[];
   previouslyOn: PreviouslyOnBrief[];
   soundscapes: StoredSoundscapeUpdate[];
+  conversationHealthSignals: ConversationHealthSignal[];
   prewarmStates: PrewarmSourceState[];
 }
 
