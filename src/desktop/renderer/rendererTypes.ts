@@ -112,6 +112,55 @@ export interface BrowserIntegrationStatus {
   bridge?: BrowserBridgeStatus;
 }
 
+export const timelineEventTypeOptions = [
+  "app.status",
+  "kindroid.message.observed",
+  "hermes.request",
+  "hermes.response",
+  "journal.suggestion.created",
+  "previously_on.generated",
+  "soundscape.changed",
+  "game.state.changed",
+  "game.roll.resolved",
+  "game.keeper.sent",
+  "browser_bridge.command.queued",
+  "browser_bridge.status.changed",
+  "user.action"
+] as const;
+
+export interface TimelineQueryRequest {
+  sourceId?: string;
+  type?: string;
+  from?: string;
+  to?: string;
+  limit?: number;
+}
+
+export interface TimelineEventSummary {
+  id: string;
+  type: string;
+  occurredAt: string;
+  source?: {
+    kind?: string;
+    id?: string;
+    documentId?: string;
+  };
+  payload?: Record<string, unknown>;
+}
+
+export interface TimelineListResult {
+  ok?: boolean;
+  events?: TimelineEventSummary[];
+  total?: number;
+}
+
+export interface TimelineExportResult {
+  ok?: boolean;
+  canceled?: boolean;
+  filePath?: string;
+  exportedCount?: number;
+}
+
 export interface KinagentApi {
   getBrowserIntegrationStatus(): Promise<BrowserIntegrationStatus>;
   saveBrowserIntegrationSettings(input: BrowserIntegrationSettings): Promise<BrowserIntegrationStatus>;
@@ -119,6 +168,8 @@ export interface KinagentApi {
   unregisterBrowserIntegration(): Promise<BrowserIntegrationStatus>;
   testBrowserIntegrationNotice(): Promise<BrowserIntegrationStatus>;
   testBrowserIntegrationReload(): Promise<BrowserIntegrationStatus>;
+  listTimelineEvents(input: TimelineQueryRequest): Promise<TimelineListResult>;
+  exportTimelineEvents(input: TimelineQueryRequest): Promise<TimelineExportResult>;
   analyzeKin(input: { kinId: string }): Promise<KinAnalysisResult>;
   exportKinChat(input: ChatExportRequest & { kinId: string }): Promise<ChatExportResult>;
   exportGroupChat(input: ChatExportRequest & { groupId: string }): Promise<ChatExportResult>;

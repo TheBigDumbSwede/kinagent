@@ -71,7 +71,12 @@ import {
 } from "../profile/profileDataMaintenance.js";
 import { EncryptedBrowserSessionStorage } from "./encryptedBrowserSessionStorage.js";
 import { CaptureHistoryVault, captureVaultPaths, type CaptureVaultActionResult } from "./captureVault.js";
-import { TimelineStore } from "../timeline/timelineStore.js";
+import {
+  TimelineStore,
+  timelineEventTypes,
+  type KinAgentTimelineEventType,
+  type TimelineQuery
+} from "../timeline/timelineStore.js";
 import {
   loadKinVoicePreference,
   openAiVoiceOptions,
@@ -106,6 +111,14 @@ interface StorybookArtifactJob {
   jobId: string;
   htmlPath: string;
   document: StorybookDocument;
+}
+
+interface TimelineDesktopQuery {
+  sourceId?: string;
+  type?: string;
+  from?: string;
+  to?: string;
+  limit?: number;
 }
 
 app.setName("Kinagent");
@@ -331,6 +344,10 @@ function registerIpcHandlers(): void {
     browserBridgeServer?.queueCommand("reload-kindroid");
     return getBrowserIntegrationStatus();
   });
+  ipcMain.handle("timeline:list", async (_event, input: TimelineDesktopQuery = {}) => listTimelineEvents(input));
+  ipcMain.handle("timeline:export-json", async (_event, input: TimelineDesktopQuery = {}) =>
+    exportTimelineEvents(input)
+  );
   ipcMain.handle("app:open-kindroid", async () => {
     await shell.openExternal("https://kindroid.ai/");
     return { ok: true };
@@ -579,6 +596,106 @@ async function refreshBrowserBridgeAllowedExtensionIds(): Promise<void> {
   browserBridgeServer?.setAllowedExtensionIds(browserIntegrationAllowedExtensionIds(status.settings));
 }
 
+function listTimelineEvents(input: unknown) {
+  const query = normalizeTimelineDesktopQuery(input);
+  const events = requireTimelineStore().list(query);
+  return {
+    ok: true,
+    events,
+    total: events.length,
+    filters: query
+  };
+}
+
+async function exportTimelineEvents(input: unknown) {
+  const listed = listTimelineEvents(input);
+  const exportedAt = new Date();
+  const saveOptions = {
+    title: "Save timeline export",
+    defaultPath: `kinagent-timeline-${timestampArtifactSuffix(exportedAt)}.json`,
+    filters: [{ name: "JSON", extensions: ["json"] }]
+  };
+  const saveResult = mainWindow
+    ? await dialog.showSaveDialog(mainWindow, saveOptions)
+    : await dialog.showSaveDialog(saveOptions);
+  if (saveResult.canceled || !saveResult.filePath) {
+    return {
+      ok: false,
+      canceled: true,
+      exportedCount: listed.events.length
+    };
+  }
+
+  fs.writeFileSync(
+    saveResult.filePath,
+    `${JSON.stringify(
+      {
+        exportedAt: exportedAt.toISOString(),
+        filters: listed.filters,
+        events: listed.events
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+  return {
+    ok: true,
+    filePath: saveResult.filePath,
+    exportedCount: listed.events.length
+  };
+}
+
+function normalizeTimelineDesktopQuery(input: unknown): TimelineQuery {
+  const fields = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
+  const type = timelineEventTypeSetting(fields.type);
+  const sourceId = stringSetting(fields.sourceId, "");
+  const from = timelineDateSetting(fields.from, "From");
+  const to = timelineDateSetting(fields.to, "To");
+  const limit = optionalPositiveIntegerSetting(fields.limit, "Limit", 500);
+  return {
+    ...(type ? { type } : {}),
+    ...(sourceId ? { sourceId } : {}),
+    ...(from ? { from } : {}),
+    ...(to ? { to } : {}),
+    ...(limit ? { limit } : {})
+  };
+}
+
+function timelineEventTypeSetting(value: unknown): KinAgentTimelineEventType | undefined {
+  const type = typeof value === "string" ? value.trim() : "";
+  if (!type) {
+    return undefined;
+  }
+  if (timelineEventTypes.includes(type as KinAgentTimelineEventType)) {
+    return type as KinAgentTimelineEventType;
+  }
+  throw new Error(`Timeline event type is not supported: ${type}`);
+}
+
+function timelineDateSetting(value: unknown, label: string): string | undefined {
+  const text = typeof value === "string" ? value.trim() : "";
+  if (!text) {
+    return undefined;
+  }
+  const timestamp = Date.parse(text);
+  if (Number.isNaN(timestamp)) {
+    throw new Error(`${label} date is not valid.`);
+  }
+  return new Date(timestamp).toISOString();
+}
+
+function optionalPositiveIntegerSetting(value: unknown, label: string, max: number): number | undefined {
+  if (value === undefined || value === null || value === "") {
+    return undefined;
+  }
+  const parsed = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error(`${label} must be a positive whole number.`);
+  }
+  return Math.min(parsed, max);
+}
+
 function saveDesktopSettings(input: unknown) {
   const fields = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
   const next = cloneConfig(config);
@@ -716,6 +833,13 @@ function logLevelSetting(value: unknown, fallback: LogLevel): LogLevel {
 
 function voiceProviderSetting(value: unknown, fallback: VoiceProvider): VoiceProvider {
   return value === "none" || value === "openai" || value === "elevenlabs" ? value : fallback;
+}
+
+function requireTimelineStore(): TimelineStore {
+  if (!timelineStore) {
+    timelineStore = TimelineStore.fromConfig(config);
+  }
+  return timelineStore;
 }
 
 async function startLoginSession() {

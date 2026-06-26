@@ -34,6 +34,7 @@ export interface TabNavigationElements {
   settingTabs: HTMLElement;
   groupSettingTabs: HTMLElement;
   monitorPane: HTMLElement;
+  timelinePane: HTMLElement;
   detailPane: HTMLElement;
   clearButton: HTMLElement;
 }
@@ -147,14 +148,20 @@ export function renderTabNavigation(
   }
 
   const isMonitor = activeMode === "monitor";
+  const isTimeline = activeMode === "timeline";
   elements.monitorPane.hidden = !isMonitor;
-  elements.detailPane.hidden = isMonitor;
+  elements.timelinePane.hidden = !isTimeline;
+  elements.detailPane.hidden = isMonitor || isTimeline;
   elements.clearButton.hidden = !isMonitor;
 }
 
 export function tabLabelFor(context: Pick<TabNavigationContext, "state" | "elements">, tab: string): string {
   if (tab === "journal") {
     return "Journal";
+  }
+
+  if (tab === "timeline") {
+    return "Timeline";
   }
 
   if (tab === "local-scene" || tab === "group-local-scene") {
@@ -216,6 +223,10 @@ export function tabForMode(state: TabNavigationState, mode: string | undefined):
     return "browser-integration";
   }
 
+  if (mode === "timeline") {
+    return "timeline";
+  }
+
   if (mode === "settings") {
     return state.selectedGroupId ? currentGroupSettingTab(state) : currentSettingTab(state);
   }
@@ -234,6 +245,10 @@ export function modeForTab(tab: string | undefined): string {
 
   if (tab === "browser-integration") {
     return "browser-integration";
+  }
+
+  if (tab === "timeline") {
+    return "timeline";
   }
 
   if (tab && settingTabKeys.has(tab)) {
@@ -266,6 +281,10 @@ export function subtitleForDetailMode(mode: string): string {
 
   if (mode === "browser-integration") {
     return "Browser extension integration";
+  }
+
+  if (mode === "timeline") {
+    return "Local event recorder";
   }
 
   if (mode === "voice") {
