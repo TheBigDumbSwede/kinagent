@@ -184,6 +184,11 @@ export class BrowserBridgeServer {
 
   setAllowedExtensionIds(extensionIds: string[]): void {
     this.allowedExtensionIds = new Set(extensionIds.map((id) => id.trim()).filter(Boolean));
+    for (const [sessionId, session] of this.sessions) {
+      if (!this.allowedExtensionIds.has(session.extensionId)) {
+        this.sessions.delete(sessionId);
+      }
+    }
   }
 
   async start(): Promise<void> {
@@ -447,6 +452,10 @@ export class BrowserBridgeServer {
 
     const session = this.sessions.get(message.sessionId);
     if (!session) {
+      return null;
+    }
+
+    if (message.extensionId !== session.extensionId) {
       return null;
     }
 
