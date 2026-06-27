@@ -678,6 +678,63 @@
                       automatically.
                     </p>
                   </section>
+                  <section class="settings-section">
+                    <h2>Screen Context</h2>
+                    <div class="button-row form-action-row">
+                      <button id="screenContextAnalyzeButton" class="secondary" type="button">
+                        Analyze Current Screen
+                      </button>
+                    </div>
+                    <div class="settings-grid two">
+                      <label>
+                        Detail level
+                        <select id="screenContextDetailLevelInput">
+                          <option value="brief">Brief</option>
+                          <option value="detailed">Detailed</option>
+                          <option value="text-heavy">Text-heavy</option>
+                        </select>
+                      </label>
+                      <label class="checkbox-label">
+                        <input id="screenContextAutoSendInput" type="checkbox" />
+                        <span>Auto-send safe results for this Kin</span>
+                      </label>
+                      <label>
+                        Global shortcut
+                        <input
+                          id="screenContextShortcutInput"
+                          type="text"
+                          autocomplete="off"
+                          placeholder="CommandOrControl+Alt+K"
+                        />
+                      </label>
+                      <label class="button-label">
+                        Settings
+                        <button id="screenContextShortcutSaveButton" class="secondary" type="button">
+                          Save Screen Context
+                        </button>
+                      </label>
+                    </div>
+                    <p id="screenContextStatusLine" class="panel-note"></p>
+                    <div id="screenContextReviewPanel" class="screen-context-review" hidden>
+                      <dl id="screenContextReviewSummary" class="status-list compact-status"></dl>
+                      <label>
+                        Ambient message
+                        <textarea id="screenContextReviewAmbient" rows="2" readonly></textarea>
+                      </label>
+                      <label>
+                        Hidden context
+                        <textarea id="screenContextReviewContext" rows="7" readonly></textarea>
+                      </label>
+                      <label id="screenContextReviewVisibleTextLabel">
+                        Visible text
+                        <textarea id="screenContextReviewVisibleText" rows="6" readonly></textarea>
+                      </label>
+                      <div class="button-row form-action-row">
+                        <button id="screenContextSendButton" type="button">Send Context</button>
+                        <button id="screenContextDiscardButton" class="secondary" type="button">Discard</button>
+                      </div>
+                    </div>
+                  </section>
                   <p id="kinHermesStatusLine" class="panel-note"></p>
                   <div class="button-row narrow">
                     <button id="kinHermesSaveButton" type="submit">Save Hermes</button>

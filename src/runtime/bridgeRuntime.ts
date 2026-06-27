@@ -49,6 +49,11 @@ import {
 import { JournalSuggestionStore, type JournalSuggestion } from "../journal/journalSuggestionStore.js";
 import { KindroidApiClient, type KindroidGroup, type KindroidKin } from "../kindroid/client/index.js";
 import { groupChatMessagesPath, kinChatMessagesPath } from "../kindroid/client/firestorePaths.js";
+import {
+  buildAmbientHermesContextTurn,
+  type AmbientContextTone,
+  type AmbientContextTurn
+} from "../kindroid/ambientContext.js";
 import { KindroidClient } from "../kindroid/kindroidClient.js";
 import { LocalSceneStateStore, type LocalSceneState } from "../localScene/localSceneStore.js";
 import { SceneLedgerStore, type SceneLedgerRecord } from "../localScene/sceneLedgerStore.js";
@@ -78,6 +83,7 @@ import { VoiceRuntime, voiceProviderConfigured } from "../voice/voiceRuntime.js"
 import type { VoicePlaybackChunk } from "../voice/types.js";
 import type { DedupeStore } from "../state/dedupeStore.js";
 import { createDedupeStore } from "../state/sqliteStore.js";
+import { newRequestId } from "../util/ids.js";
 
 export type BridgeRuntimeEvent =
   | { channel: "session-keepalive"; payload: KindroidSessionKeepAliveEvent }
@@ -117,6 +123,17 @@ export interface BridgeRuntimeOptions {
   shouldSkipSessionWarm?: () => boolean;
   onVoicePlayback?: (chunk: VoicePlaybackChunk) => void;
   onEvent?: (event: BridgeRuntimeEvent) => void;
+}
+
+export interface ReviewedAmbientContextInput {
+  kinId: string;
+  ambientMessage: string;
+  fallbackAmbientMessage?: string;
+  context: string;
+  suggestedUse?: string;
+  tone?: AmbientContextTone;
+  source?: string;
+  reason?: string;
 }
 
 export class BridgeRuntime {
@@ -511,6 +528,74 @@ export class BridgeRuntime {
     return {
       ok: true,
       enabled: this.kinSubscriptionSupervisor.isKinAmbientContextEnabled(kinId)
+    };
+  }
+
+  async sendReviewedAmbientContext(input: ReviewedAmbientContextInput): Promise<{
+    ok: boolean;
+    status: number;
+    requestId: string;
+    idempotencyKey: string;
+  }> {
+    const kin = this.resolveKin(input.kinId);
+    if (!this.kinSubscriptionSupervisor.isKinAmbientContextEnabled(kin.aiId)) {
+      throw new Error("Ambient context is disabled for this Kin.");
+    }
+
+    const turn = buildReviewedAmbientContextTurn(input, this.options.logger);
+    const requestId = newRequestId();
+    const idempotencyKey = newRequestId();
+
+    this.options.logger.info("Reviewed ambient context requested.", {
+      aiId: kin.aiId,
+      source: input.source || "screen_context",
+      reason: input.reason,
+      ambientMessageLength: turn.visibleMessage.length,
+      contextLength: input.context.length
+    });
+
+    await this.dedupeStore.recordOutbound({
+      kinId: kin.aiId,
+      text: turn.visibleMessage,
+      requestId,
+      idempotencyKey
+    });
+
+    this.emit({
+      channel: "monitor-line",
+      payload: {
+        type: "kindroid.hermes_context",
+        id: `hermes-${requestId}`,
+        kinId: kin.aiId,
+        kinName: kin.name,
+        timestamp: new Date().toISOString(),
+        sender: "hermes",
+        senderLabel: "Hermes",
+        role: null,
+        text: turn.internetResponse,
+        textDecrypted: true,
+        textEncrypted: false,
+        visibleMessage: turn.visibleMessage,
+        source: input.source || "screen_context",
+        reason: input.reason,
+        requestId,
+        idempotencyKey
+      }
+    });
+
+    const result = await new KindroidClient(this.options.config, this.options.logger).sendMessage({
+      aiId: kin.aiId,
+      message: turn.visibleMessage,
+      requestId,
+      idempotencyKey,
+      internetResponse: turn.internetResponse
+    });
+
+    return {
+      ok: result.ok,
+      status: result.status,
+      requestId: result.requestId,
+      idempotencyKey: result.idempotencyKey
     };
   }
 
@@ -1604,6 +1689,42 @@ export class BridgeRuntime {
   private emit(event: BridgeRuntimeEvent): void {
     this.options.onEvent?.(event);
   }
+}
+
+export function buildReviewedAmbientContextTurn(
+  input: Omit<ReviewedAmbientContextInput, "kinId">,
+  logger?: Logger
+): AmbientContextTurn {
+  const turnInput = {
+    tone: input.tone,
+    ambientMessage: input.ambientMessage,
+    hermesResult: input.context,
+    suggestedUse: input.suggestedUse,
+    confidence: "high",
+    source: input.source || "screen_context"
+  };
+  try {
+    return buildAmbientHermesContextTurn(turnInput);
+  } catch (error) {
+    if (!input.fallbackAmbientMessage || !isAmbientMessageValidationError(error)) {
+      throw error;
+    }
+    logger?.warn("Reviewed ambient visible message rejected; using fallback.", {
+      source: input.source || "screen_context",
+      error: error instanceof Error ? error.message : String(error)
+    });
+    return buildAmbientHermesContextTurn({
+      ...turnInput,
+      ambientMessage: input.fallbackAmbientMessage
+    });
+  }
+}
+
+function isAmbientMessageValidationError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  return error.message.startsWith("Ambient message ");
 }
 
 export function shouldSkipGenericHermesGroupHandling(result: GameGroupChatResult): boolean {
