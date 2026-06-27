@@ -6,14 +6,17 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   app,
   BrowserWindow,
+  desktopCapturer,
   Menu,
   nativeImage,
   Notification,
   shell,
   Tray,
+  globalShortcut,
   ipcMain,
   dialog,
-  safeStorage
+  safeStorage,
+  screen
 } from "electron";
 import type { Event as ElectronEvent } from "electron";
 import { chromium, type Browser, type BrowserContext } from "playwright";
@@ -84,6 +87,12 @@ import {
   voiceProvidersConfigured,
   type KinVoicePreference
 } from "../voice/voicePreferences.js";
+import {
+  analyzeScreenContextWithHermes,
+  type ScreenContextAnalysisResult,
+  type ScreenContextCaptureMetadata,
+  type ScreenContextDetailLevel
+} from "../screenContext/screenContextAnalysis.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -104,13 +113,56 @@ let secureSecretStore: SecureSecretStore | null = null;
 let encryptedBrowserSessionStorage: EncryptedBrowserSessionStorage | null = null;
 let captureVault: CaptureHistoryVault | null = null;
 const storybookJobs = new Map<string, StorybookArtifactJob>();
+const screenContextReviews = new Map<string, ScreenContextReview>();
 let smokeWindowReady = false;
 let smokeRuntimeReady = false;
+let selectedScreenContextKinId: string | null = null;
+let registeredScreenContextShortcut: string | null = null;
+let screenContextShortcutRegistrationError: string | null = null;
 
 interface StorybookArtifactJob {
   jobId: string;
   htmlPath: string;
   document: StorybookDocument;
+}
+
+interface ScreenContextReview {
+  id: string;
+  kinId: string;
+  kinName: string;
+  detailLevel: ScreenContextDetailLevel;
+  capture: ScreenContextCaptureMetadata;
+  analysis: ScreenContextAnalysisResult;
+  status: "pending" | "sent" | "discarded";
+  createdAt: string;
+}
+
+interface ScreenContextSettings {
+  globalShortcut: string;
+  autoSendSafe: boolean;
+  detailLevel: ScreenContextDetailLevel;
+  privacyAccepted: boolean;
+}
+
+interface ScreenContextSettingsInput {
+  globalShortcut?: string;
+  autoSendSafe?: boolean;
+  detailLevel?: ScreenContextDetailLevel;
+  privacyAccepted?: boolean;
+}
+
+interface ScreenContextAnalyzeResult {
+  ok: boolean;
+  review?: ReturnType<typeof toScreenContextReviewSummary>;
+  autoSent?: boolean;
+  autoSendBlockedReason?: string;
+  autoSendError?: string;
+  sendResult?: {
+    ok: boolean;
+    status: number;
+    requestId: string;
+    idempotencyKey: string;
+  };
 }
 
 interface TimelineDesktopQuery {
@@ -137,6 +189,7 @@ if (!singleInstanceLock) {
 
   void app.whenReady().then(async () => {
     initializeDesktopConfig();
+    cleanupScreenContextTempFiles();
     const bridgeAuth = loadOrCreateBrowserBridgeAuth(browserBridgeAuthPath(desktopUserDataDir));
     browserBridgeServer = new BrowserBridgeServer({ logger, authSecret: bridgeAuth.secret });
     await refreshBrowserBridgeAllowedExtensionIds();
@@ -144,6 +197,7 @@ if (!singleInstanceLock) {
     createMainWindow();
     createTray();
     registerIpcHandlers();
+    registerScreenContextShortcut(readScreenContextSettings().globalShortcut);
     void startRuntime();
 
     app.on("activate", () => {
@@ -190,6 +244,8 @@ app.on("before-quit", () => {
     logger?.warn("Captured Kin history vault lock failed.", { error: captureVault.status().lastError });
   }
   void browserBridgeServer?.stop();
+  unregisterScreenContextShortcut();
+  cleanupScreenContextTempFiles();
   cleanupChatExportTempFiles();
   cleanupStorybookTempFiles();
   void closeLoginSession();
@@ -293,6 +349,8 @@ function createTray(): void {
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: "Show Kinagent", click: showMainWindow },
+      { type: "separator" },
+      { label: "Analyze Screen for Current Kin", click: () => void analyzeScreenContextFromShortcut("tray") },
       { type: "separator" },
       { label: "Refresh Kins", click: () => void requireRuntime().refreshKins() },
       { label: "Refresh Groups", click: () => void requireRuntime().refreshGroups() },
@@ -498,6 +556,23 @@ function registerIpcHandlers(): void {
         chatDynamism?: { enabled?: boolean; min?: number; max?: number };
       } = {}
     ) => setKinAmbientPreference(input.kinId ?? "", input.enabled, input.chatDynamism)
+  );
+  ipcMain.handle("screen-context:get-settings", async () => getScreenContextSettings());
+  ipcMain.handle("screen-context:save-settings", async (_event, input: ScreenContextSettingsInput = {}) =>
+    saveScreenContextSettings(input)
+  );
+  ipcMain.handle("screen-context:set-current-kin", async (_event, input: { kinId?: string | null } = {}) => {
+    selectedScreenContextKinId = input.kinId?.trim() || null;
+    return { ok: true };
+  });
+  ipcMain.handle("screen-context:analyze", async (_event, input: { kinId?: string } = {}) =>
+    analyzeScreenContextForKin(input.kinId ?? "", "button")
+  );
+  ipcMain.handle("screen-context:send", async (_event, input: { id?: string } = {}) =>
+    sendScreenContextReview(input.id ?? "")
+  );
+  ipcMain.handle("screen-context:discard", async (_event, input: { id?: string } = {}) =>
+    discardScreenContextReview(input.id ?? "")
   );
   ipcMain.handle(
     "chat-export:kin",
@@ -1165,6 +1240,426 @@ function setKinAmbientPreference(
   };
 }
 
+function getScreenContextSettings() {
+  return {
+    ok: true,
+    settings: readScreenContextSettings(),
+    shortcutRegistered: Boolean(registeredScreenContextShortcut),
+    registeredShortcut: registeredScreenContextShortcut,
+    shortcutRegistrationError: screenContextShortcutRegistrationError
+  };
+}
+
+function saveScreenContextSettings(input: ScreenContextSettingsInput) {
+  const settings = readScreenContextSettings();
+  if (input.globalShortcut !== undefined) {
+    settings.globalShortcut = normalizeShortcut(input.globalShortcut);
+  }
+  if (input.autoSendSafe !== undefined) {
+    settings.autoSendSafe = Boolean(input.autoSendSafe);
+  }
+  if (input.detailLevel !== undefined) {
+    settings.detailLevel = screenContextDetailLevel(input.detailLevel, settings.detailLevel);
+  }
+  if (input.privacyAccepted !== undefined) {
+    settings.privacyAccepted = Boolean(input.privacyAccepted);
+  }
+  fs.writeFileSync(screenContextSettingsPath(), `${JSON.stringify(settings, null, 2)}\n`, "utf8");
+  registerScreenContextShortcut(settings.globalShortcut);
+  logger.info("Saved screen context settings.", {
+    globalShortcutConfigured: Boolean(settings.globalShortcut),
+    shortcutRegistered: Boolean(registeredScreenContextShortcut),
+    shortcutRegistrationError: screenContextShortcutRegistrationError,
+    autoSendSafe: settings.autoSendSafe,
+    detailLevel: settings.detailLevel,
+    privacyAccepted: settings.privacyAccepted
+  });
+  return getScreenContextSettings();
+}
+
+async function analyzeScreenContextFromShortcut(trigger: "tray" | "shortcut"): Promise<void> {
+  const wasVisible = Boolean(mainWindow?.isVisible());
+  const kinId = resolveCurrentScreenContextKinId();
+  logger.info("Screen context trigger requested.", {
+    trigger,
+    windowVisible: wasVisible,
+    kinIdResolved: Boolean(kinId)
+  });
+  if (!kinId) {
+    const error = "Select or start a Kin before analyzing the screen.";
+    if (wasVisible) {
+      sendRendererEvent("screen-context-error", { error });
+    } else {
+      showScreenContextNotification({ title: "Screen context unavailable", body: error });
+    }
+    return;
+  }
+
+  try {
+    const result = await analyzeScreenContextForKin(kinId, trigger);
+    if (wasVisible) {
+      sendRendererEvent("screen-context-review-created", result);
+    } else {
+      showScreenContextResultNotification(result);
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (wasVisible) {
+      sendRendererEvent("screen-context-error", { error: message });
+    } else {
+      showScreenContextNotification({ title: "Screen context failed", body: message });
+    }
+  }
+}
+
+function resolveCurrentScreenContextKinId(): string | null {
+  try {
+    const status = requireRuntime().status();
+    const selectedKin = selectedScreenContextKinId
+      ? status.kins.find((kin) => kin.aiId === selectedScreenContextKinId)
+      : null;
+    if (selectedKin) {
+      return selectedKin.aiId;
+    }
+
+    const runningSubscriptions = status.subscriptions.filter((subscription) => subscription.running);
+    const currentRunning = runningSubscriptions.find((subscription) => subscription.kin.current);
+    const fallbackKin = currentRunning?.kin ?? runningSubscriptions[0]?.kin ?? null;
+    selectedScreenContextKinId = fallbackKin?.aiId ?? null;
+    return selectedScreenContextKinId;
+  } catch {
+    return selectedScreenContextKinId;
+  }
+}
+
+async function analyzeScreenContextForKin(
+  kinId: string,
+  trigger: "button" | "tray" | "shortcut"
+): Promise<ScreenContextAnalyzeResult> {
+  if (!kinId) {
+    throw new Error("Select a Kin before analyzing the screen.");
+  }
+
+  const kin = requireRuntime()
+    .status()
+    .kins.find((item) => item.aiId === kinId);
+  if (!kin) {
+    throw new Error("Selected Kin is not available.");
+  }
+  selectedScreenContextKinId = kinId;
+
+  const settings = readScreenContextSettings();
+  if (!settings.privacyAccepted) {
+    throw new Error("Acknowledge Screen Context privacy before analyzing the screen.");
+  }
+  const captured = await captureCurrentDisplayPng();
+  try {
+    const analysis = await analyzeScreenContextWithHermes(config, logger, {
+      kinId,
+      kinName: kin.name,
+      imageMimeType: "image/png",
+      imageBase64: captured.buffer.toString("base64"),
+      capture: captured.capture,
+      detailLevel: settings.detailLevel
+    });
+    const review: ScreenContextReview = {
+      id: randomUUID(),
+      kinId,
+      kinName: kin.name || kinId,
+      detailLevel: settings.detailLevel,
+      capture: captured.capture,
+      analysis,
+      status: "pending",
+      createdAt: new Date().toISOString()
+    };
+    screenContextReviews.set(review.id, review);
+    logger.info("Created screen context review.", {
+      reviewId: review.id,
+      kinId,
+      trigger,
+      displayId: captured.capture.displayId,
+      width: captured.capture.width,
+      height: captured.capture.height,
+      sensitivityFlags: analysis.sensitivityFlags
+    });
+    const autoSendBlockedReason = screenContextAutoSendBlockedReason(settings, analysis);
+    if (!autoSendBlockedReason) {
+      const pendingSummary = toScreenContextReviewSummary(review);
+      try {
+        const sent = await sendScreenContextReview(review.id);
+        return {
+          ok: sent.ok,
+          review: { ...pendingSummary, status: "sent" },
+          autoSent: true,
+          sendResult: sent.result
+        };
+      } catch (error) {
+        logger.warn("Automatic screen context send failed; keeping review pending.", {
+          reviewId: review.id,
+          kinId,
+          error: error instanceof Error ? error.message : String(error)
+        });
+        return {
+          ok: true,
+          review: pendingSummary,
+          autoSent: false,
+          autoSendError: error instanceof Error ? error.message : String(error)
+        };
+      }
+    }
+    return {
+      ok: true,
+      review: toScreenContextReviewSummary(review),
+      ...(settings.autoSendSafe && autoSendBlockedReason ? { autoSendBlockedReason } : {})
+    };
+  } finally {
+    captured.buffer.fill(0);
+  }
+}
+
+async function sendScreenContextReview(id: string) {
+  const review = screenContextReviews.get(id);
+  if (!review || review.status !== "pending") {
+    throw new Error("Screen context review is no longer pending.");
+  }
+
+  const result = await requireRuntime().sendReviewedAmbientContext({
+    kinId: review.kinId,
+    ambientMessage: review.analysis.ambientMessage,
+    fallbackAmbientMessage: "A low tone sounds.",
+    context: screenContextHiddenContext(review.analysis),
+    suggestedUse: review.analysis.suggestedUse,
+    tone: review.analysis.tone,
+    source: "screen_context",
+    reason: "user-reviewed desktop screenshot analysis"
+  });
+  review.status = "sent";
+  screenContextReviews.delete(id);
+  logger.info("Sent screen context review.", {
+    reviewId: id,
+    kinId: review.kinId,
+    ok: result.ok,
+    status: result.status,
+    requestId: result.requestId,
+    idempotencyKey: result.idempotencyKey
+  });
+  return { ok: result.ok, result };
+}
+
+function discardScreenContextReview(id: string) {
+  const review = screenContextReviews.get(id);
+  if (review) {
+    review.status = "discarded";
+    screenContextReviews.delete(id);
+  }
+  return { ok: true };
+}
+
+async function captureCurrentDisplayPng(): Promise<{ buffer: Buffer; capture: ScreenContextCaptureMetadata }> {
+  const targetDisplay = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+  const captureSize = screenContextThumbnailSize(
+    targetDisplay.bounds.width,
+    targetDisplay.bounds.height,
+    targetDisplay.scaleFactor
+  );
+  const wasVisible = Boolean(mainWindow?.isVisible());
+  if (wasVisible) {
+    mainWindow?.hide();
+    await delay(300);
+  }
+
+  try {
+    const sources = await desktopCapturer.getSources({
+      types: ["screen"],
+      thumbnailSize: captureSize,
+      fetchWindowIcons: false
+    });
+    const source =
+      sources.find((item) => item.display_id === String(targetDisplay.id)) ??
+      sources.find((item) => item.name === targetDisplay.label) ??
+      sources[0];
+    if (!source || source.thumbnail.isEmpty()) {
+      throw new Error("Desktop screenshot capture returned an empty image.");
+    }
+
+    const size = source.thumbnail.getSize();
+    return {
+      buffer: source.thumbnail.toPNG(),
+      capture: {
+        mode: "screen",
+        displayId: source.display_id || String(targetDisplay.id),
+        displayName: source.name || targetDisplay.label,
+        width: size.width,
+        height: size.height,
+        capturedAt: new Date().toISOString()
+      }
+    };
+  } finally {
+    if (wasVisible) {
+      restoreMainWindowWithoutFocus();
+      await delay(100);
+    }
+  }
+}
+
+function screenContextThumbnailSize(
+  width: number,
+  height: number,
+  scaleFactor: number
+): { width: number; height: number } {
+  const maxEdge = 1_600;
+  const pixelWidth = Math.max(1, Math.round(width * scaleFactor));
+  const pixelHeight = Math.max(1, Math.round(height * scaleFactor));
+  const scale = Math.min(1, maxEdge / Math.max(pixelWidth, pixelHeight));
+  return {
+    width: Math.max(1, Math.round(pixelWidth * scale)),
+    height: Math.max(1, Math.round(pixelHeight * scale))
+  };
+}
+
+function toScreenContextReviewSummary(review: ScreenContextReview) {
+  return {
+    id: review.id,
+    kinId: review.kinId,
+    kinName: review.kinName,
+    detailLevel: review.detailLevel,
+    capture: review.capture,
+    analysis: review.analysis,
+    status: review.status,
+    createdAt: review.createdAt
+  };
+}
+
+function readScreenContextSettings(): ScreenContextSettings {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(screenContextSettingsPath(), "utf8")) as Partial<ScreenContextSettings>;
+    return normalizeScreenContextSettings(parsed);
+  } catch {
+    return normalizeScreenContextSettings({});
+  }
+}
+
+function normalizeScreenContextSettings(
+  input: Partial<ScreenContextSettings> & { kinPreferences?: unknown }
+): ScreenContextSettings {
+  const legacyPreference = firstLegacyScreenContextPreference(input.kinPreferences);
+  return {
+    globalShortcut: normalizeShortcut(input.globalShortcut ?? ""),
+    autoSendSafe:
+      typeof input.autoSendSafe === "boolean" ? input.autoSendSafe : Boolean(legacyPreference?.autoSendSafe ?? false),
+    detailLevel: screenContextDetailLevel(
+      input.detailLevel,
+      screenContextDetailLevel(legacyPreference?.detailLevel, "detailed")
+    ),
+    privacyAccepted: input.privacyAccepted === true
+  };
+}
+
+function firstLegacyScreenContextPreference(value: unknown): { autoSendSafe?: unknown; detailLevel?: unknown } | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const preferences = Object.values(value as Record<string, unknown>).filter(
+    (item): item is { autoSendSafe?: unknown; detailLevel?: unknown } => Boolean(item && typeof item === "object")
+  );
+  return (
+    preferences.find((preference) => preference.autoSendSafe === true) ??
+    preferences.find((preference) => preference.detailLevel !== undefined) ??
+    preferences[0] ??
+    null
+  );
+}
+
+function screenContextDetailLevel(value: unknown, fallback: ScreenContextDetailLevel): ScreenContextDetailLevel {
+  return value === "brief" || value === "detailed" || value === "text-heavy" ? value : fallback;
+}
+
+function screenContextAutoSendBlockedReason(
+  settings: ScreenContextSettings,
+  analysis: ScreenContextAnalysisResult
+): string | null {
+  if (!settings.autoSendSafe) {
+    return "Auto-send is off.";
+  }
+  if (settings.detailLevel === "text-heavy") {
+    return "Text-heavy screen context requires review.";
+  }
+  if (analysis.sensitivityFlags.length > 0) {
+    return `Sensitive content flagged: ${analysis.sensitivityFlags.join(", ")}.`;
+  }
+  return null;
+}
+
+function screenContextHiddenContext(analysis: ScreenContextAnalysisResult): string {
+  const parts = [analysis.context.trim()];
+  if (analysis.visibleText?.trim()) {
+    parts.push(`Visible text extracted from the screenshot:\n${analysis.visibleText.trim()}`);
+  }
+  return parts.join("\n\n");
+}
+
+function registerScreenContextShortcut(accelerator: string): void {
+  unregisterScreenContextShortcut();
+  const normalized = normalizeShortcut(accelerator);
+  screenContextShortcutRegistrationError = null;
+  if (!normalized) {
+    return;
+  }
+  const registered = globalShortcut.register(normalized, () => {
+    void analyzeScreenContextFromShortcut("shortcut");
+  });
+  if (!registered) {
+    screenContextShortcutRegistrationError = `Could not register shortcut: ${normalized}`;
+    logger?.warn("Screen context global shortcut could not be registered.", { accelerator: normalized });
+    return;
+  }
+  registeredScreenContextShortcut = normalized;
+  logger.info("Screen context global shortcut registered.", { accelerator: normalized });
+}
+
+function unregisterScreenContextShortcut(): void {
+  if (registeredScreenContextShortcut) {
+    globalShortcut.unregister(registeredScreenContextShortcut);
+    registeredScreenContextShortcut = null;
+  }
+}
+
+function normalizeShortcut(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+
+  return trimmed
+    .split("+")
+    .map((part) => normalizeShortcutPart(part.trim()))
+    .filter(Boolean)
+    .join("+");
+}
+
+function normalizeShortcutPart(value: string): string {
+  const normalized = value.toLowerCase();
+  if (normalized === "ctrl" || normalized === "control") {
+    return "Control";
+  }
+  if (normalized === "cmdorctrl" || normalized === "commandorcontrol" || normalized === "commandcontrol") {
+    return "CommandOrControl";
+  }
+  if (normalized === "cmd" || normalized === "command" || normalized === "meta" || normalized === "super") {
+    return "Command";
+  }
+  if (normalized === "alt" || normalized === "option") {
+    return "Alt";
+  }
+  if (normalized === "shift") {
+    return "Shift";
+  }
+  if (normalized === "win" || normalized === "windows") {
+    return "Super";
+  }
+  return value.length === 1 ? value.toUpperCase() : value;
+}
+
 async function analyzeKin(kinId: string) {
   if (!kinId) {
     throw new Error("Select a Kin before running analysis.");
@@ -1642,6 +2137,13 @@ function showMainWindow(): void {
   mainWindow?.focus();
 }
 
+function restoreMainWindowWithoutFocus(): void {
+  if (!mainWindow) {
+    return;
+  }
+  mainWindow.showInactive();
+}
+
 function sendRendererEvent(channel: string, payload: unknown): void {
   mainWindow?.webContents.send("app:event", { channel, payload });
 }
@@ -1662,6 +2164,14 @@ function chatExportTempDir(): string {
 
 function storybookTempDir(): string {
   return path.join(app.getPath("temp"), "kinagent-storybooks");
+}
+
+function screenContextTempDir(): string {
+  return path.join(app.getPath("temp"), "kinagent-screen-context");
+}
+
+function screenContextSettingsPath(): string {
+  return path.join(desktopUserDataDir, "screen-context.json");
 }
 
 function cleanupChatExportTempFiles(): void {
@@ -1685,6 +2195,17 @@ function cleanupStorybookTempFiles(): void {
   }
 }
 
+function cleanupScreenContextTempFiles(): void {
+  try {
+    screenContextReviews.clear();
+    fs.rmSync(screenContextTempDir(), { recursive: true, force: true });
+  } catch (error) {
+    logger?.warn("Failed to clean screen context temporary files.", {
+      error: error instanceof Error ? error.message : String(error)
+    });
+  }
+}
+
 function safeArtifactName(value: string): string {
   const normalized = value
     .trim()
@@ -1702,6 +2223,10 @@ function timestampArtifactSuffix(value: Date): string {
     .replace(/[-:]/g, "")
     .replace("T", "-")
     .replace("Z", "");
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function sendVoicePlayback(chunk: unknown): void {
@@ -1758,6 +2283,54 @@ function showJournalSuggestionNotification(suggestion: JournalSuggestion): void 
     showMainWindow();
     sendRendererEvent("journal-suggestion-focus", suggestion);
   });
+  notification.show();
+}
+
+function showScreenContextResultNotification(result: ScreenContextAnalyzeResult): void {
+  if (result.autoSent) {
+    return;
+  }
+
+  if (result.review) {
+    const reason = result.autoSendBlockedReason
+      ? result.autoSendBlockedReason
+      : result.autoSendError
+        ? `Auto-send failed: ${result.autoSendError}`
+        : "Auto-send is off.";
+    showScreenContextNotification({
+      title: "Screen context ready for review",
+      body: reason,
+      onClick: () => {
+        showMainWindow();
+        sendRendererEvent("screen-context-review-created", result);
+      }
+    });
+    return;
+  }
+
+  showScreenContextNotification({
+    title: "Screen context ready",
+    body: "Screen context analysis completed."
+  });
+}
+
+function showScreenContextNotification(input: { title: string; body: string; onClick?: () => void }): void {
+  if (!Notification.isSupported()) {
+    logger.info("Screen context notification skipped because notifications are unsupported.", {
+      title: input.title,
+      body: input.body
+    });
+    return;
+  }
+
+  const notification = new Notification({
+    title: input.title,
+    body: input.body,
+    icon: desktopIconPath("icon.png")
+  });
+  if (input.onClick) {
+    notification.on("click", input.onClick);
+  }
   notification.show();
 }
 

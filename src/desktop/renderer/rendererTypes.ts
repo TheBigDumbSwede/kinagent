@@ -214,6 +214,17 @@ export interface KinagentApi {
     enabled: boolean;
     chatDynamism: KinChatDynamismPreference;
   }): Promise<KinAmbientPreferenceResult>;
+  getScreenContextSettings(): Promise<ScreenContextSettingsResult>;
+  saveScreenContextSettings(input: {
+    globalShortcut: string;
+    autoSendSafe: boolean;
+    detailLevel: ScreenContextDetailLevel;
+    privacyAccepted: boolean;
+  }): Promise<ScreenContextSettingsResult>;
+  setCurrentScreenContextKin(input: { kinId: string | null }): Promise<{ ok?: boolean }>;
+  analyzeScreenContext(input: { kinId: string }): Promise<ScreenContextReviewResult>;
+  sendScreenContext(input: { id: string }): Promise<{ ok?: boolean }>;
+  discardScreenContext(input: { id: string }): Promise<{ ok?: boolean }>;
 }
 
 export interface PanelState {
@@ -651,6 +662,61 @@ export interface KinVoicePreferenceResult {
   openAiVoiceOptions?: string[];
   preference?: KinVoicePreference;
   soundscape?: KinSoundscapePreference;
+}
+
+export interface ScreenContextSettings {
+  globalShortcut: string;
+  autoSendSafe: boolean;
+  detailLevel: ScreenContextDetailLevel;
+  privacyAccepted: boolean;
+}
+
+export type ScreenContextDetailLevel = "brief" | "detailed" | "text-heavy";
+
+export interface ScreenContextSettingsResult {
+  ok?: boolean;
+  settings?: ScreenContextSettings;
+  shortcutRegistered?: boolean;
+  registeredShortcut?: string | null;
+  shortcutRegistrationError?: string | null;
+}
+
+export interface ScreenContextCaptureSummary {
+  mode: "screen";
+  displayId?: string;
+  displayName?: string;
+  width: number;
+  height: number;
+  capturedAt: string;
+}
+
+export interface ScreenContextAnalysisSummary {
+  ambientMessage: string;
+  context: string;
+  suggestedUse?: string;
+  tone?: string;
+  sensitivityFlags: string[];
+  summary?: string;
+  visibleText?: string;
+}
+
+export interface ScreenContextReviewSummary {
+  id: string;
+  kinId: string;
+  kinName: string;
+  detailLevel: ScreenContextDetailLevel;
+  capture: ScreenContextCaptureSummary;
+  analysis: ScreenContextAnalysisSummary;
+  status: "pending" | "sent" | "discarded";
+  createdAt: string;
+}
+
+export interface ScreenContextReviewResult {
+  ok?: boolean;
+  review?: ScreenContextReviewSummary;
+  autoSent?: boolean;
+  autoSendBlockedReason?: string;
+  autoSendError?: string;
 }
 
 export interface AppSettingsFormValue {

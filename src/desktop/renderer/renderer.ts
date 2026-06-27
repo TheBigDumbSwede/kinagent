@@ -116,6 +116,9 @@ import type {
   ProfileDataPruneResult,
   SceneLedgerFactSummary,
   SceneLedgerSummary,
+  ScreenContextDetailLevel,
+  ScreenContextReviewSummary,
+  ScreenContextSettingsResult,
   StorybookExportProgress,
   StorybookExportRequest,
   StorybookExportResult,
@@ -201,6 +204,16 @@ interface RendererState extends TimelinePanelState {
   ambientLoading: boolean;
   ambientError: string | null;
   ambientSaving: boolean;
+  screenContextSettings: ScreenContextSettingsResult | null;
+  screenContextReview: ScreenContextReviewSummary | null;
+  screenContextAnalyzing: boolean;
+  screenContextSending: boolean;
+  screenContextSavingSettings: boolean;
+  screenContextError: string | null;
+  screenContextShortcutDraft: string | null;
+  screenContextAutoSendDraft: boolean | null;
+  screenContextDetailLevelDraft: ScreenContextDetailLevel | null;
+  screenContextPrivacyAcceptedDraft: boolean | null;
   activeTab: string;
   selectedHistoryHash: string | null;
   monitorMessages: MonitorMessage[];
@@ -331,6 +344,21 @@ interface RendererElements extends TimelinePanelElements {
   chatDynamismMaxInput: HTMLInputElement;
   chatDynamismMinValue: HTMLElement;
   chatDynamismMaxValue: HTMLElement;
+  screenContextAnalyzeButton: HTMLButtonElement;
+  screenContextPrivacyAcceptedInput: HTMLInputElement;
+  screenContextAutoSendInput: HTMLInputElement;
+  screenContextDetailLevelInput: HTMLSelectElement;
+  screenContextShortcutInput: HTMLInputElement;
+  screenContextShortcutSaveButton: HTMLButtonElement;
+  screenContextStatusLine: HTMLElement;
+  screenContextReviewPanel: HTMLElement;
+  screenContextReviewSummary: HTMLElement;
+  screenContextReviewContext: HTMLTextAreaElement;
+  screenContextReviewAmbient: HTMLTextAreaElement;
+  screenContextReviewVisibleTextLabel: HTMLElement;
+  screenContextReviewVisibleText: HTMLTextAreaElement;
+  screenContextSendButton: HTMLButtonElement;
+  screenContextDiscardButton: HTMLButtonElement;
   kinAnalyzePanel: HTMLElement;
   kinAnalyzeButton: HTMLButtonElement;
   kinAnalyzeProgress: HTMLProgressElement;
@@ -496,6 +524,23 @@ interface RendererApi {
     enabled: boolean;
     chatDynamism: KinChatDynamismPreference;
   }): Promise<KinAmbientPreferenceResult>;
+  getScreenContextSettings(): Promise<ScreenContextSettingsResult>;
+  saveScreenContextSettings(input: {
+    globalShortcut: string;
+    autoSendSafe: boolean;
+    detailLevel: ScreenContextDetailLevel;
+    privacyAccepted: boolean;
+  }): Promise<ScreenContextSettingsResult>;
+  setCurrentScreenContextKin(input: { kinId: string | null }): Promise<{ ok?: boolean }>;
+  analyzeScreenContext(input: { kinId: string }): Promise<{
+    ok?: boolean;
+    review?: ScreenContextReviewSummary;
+    autoSent?: boolean;
+    autoSendBlockedReason?: string;
+    autoSendError?: string;
+  }>;
+  sendScreenContext(input: { id: string }): Promise<{ ok?: boolean }>;
+  discardScreenContext(input: { id: string }): Promise<{ ok?: boolean }>;
   exportKinChat(input: ChatExportRequest & { kinId: string }): Promise<ChatExportResult>;
   exportGroupChat(input: ChatExportRequest & { groupId: string }): Promise<ChatExportResult>;
   generateStorybook(input: StorybookExportRequest): Promise<StorybookExportResult>;
@@ -600,6 +645,16 @@ const state: RendererState = {
   ambientLoading: false,
   ambientError: null,
   ambientSaving: false,
+  screenContextSettings: null,
+  screenContextReview: null,
+  screenContextAnalyzing: false,
+  screenContextSending: false,
+  screenContextSavingSettings: false,
+  screenContextError: null,
+  screenContextShortcutDraft: null,
+  screenContextAutoSendDraft: null,
+  screenContextDetailLevelDraft: null,
+  screenContextPrivacyAcceptedDraft: null,
   activeTab: "monitor",
   selectedHistoryHash: null,
   monitorMessages: [],
@@ -746,6 +801,21 @@ const elements: RendererElements = {
   chatDynamismMaxInput: query<HTMLInputElement>("#chatDynamismMaxInput"),
   chatDynamismMinValue: query<HTMLElement>("#chatDynamismMinValue"),
   chatDynamismMaxValue: query<HTMLElement>("#chatDynamismMaxValue"),
+  screenContextAnalyzeButton: query<HTMLButtonElement>("#screenContextAnalyzeButton"),
+  screenContextPrivacyAcceptedInput: query<HTMLInputElement>("#screenContextPrivacyAcceptedInput"),
+  screenContextAutoSendInput: query<HTMLInputElement>("#screenContextAutoSendInput"),
+  screenContextDetailLevelInput: query<HTMLSelectElement>("#screenContextDetailLevelInput"),
+  screenContextShortcutInput: query<HTMLInputElement>("#screenContextShortcutInput"),
+  screenContextShortcutSaveButton: query<HTMLButtonElement>("#screenContextShortcutSaveButton"),
+  screenContextStatusLine: query<HTMLElement>("#screenContextStatusLine"),
+  screenContextReviewPanel: query<HTMLElement>("#screenContextReviewPanel"),
+  screenContextReviewSummary: query<HTMLElement>("#screenContextReviewSummary"),
+  screenContextReviewContext: query<HTMLTextAreaElement>("#screenContextReviewContext"),
+  screenContextReviewAmbient: query<HTMLTextAreaElement>("#screenContextReviewAmbient"),
+  screenContextReviewVisibleTextLabel: query<HTMLElement>("#screenContextReviewVisibleTextLabel"),
+  screenContextReviewVisibleText: query<HTMLTextAreaElement>("#screenContextReviewVisibleText"),
+  screenContextSendButton: query<HTMLButtonElement>("#screenContextSendButton"),
+  screenContextDiscardButton: query<HTMLButtonElement>("#screenContextDiscardButton"),
   kinAnalyzePanel: query<HTMLElement>("#kinAnalyzePanel"),
   kinAnalyzeButton: query<HTMLButtonElement>("#kinAnalyzeButton"),
   kinAnalyzeProgress: query<HTMLProgressElement>("#kinAnalyzeProgress"),
@@ -1146,7 +1216,55 @@ elements.groupSoundscapeForcePrewarmButton.addEventListener("click", () => {
 });
 elements.kinHermesForm.addEventListener("submit", (event) => {
   event.preventDefault();
-  void saveSelectedKinAmbient(voiceHermesContext());
+  void saveSelectedKinHermesSettings();
+});
+elements.screenContextAnalyzeButton.addEventListener("click", () => {
+  void analyzeScreenContext();
+});
+elements.screenContextShortcutInput.addEventListener("input", () => {
+  state.screenContextShortcutDraft = elements.screenContextShortcutInput.value;
+});
+elements.screenContextShortcutInput.addEventListener("keydown", (event) => {
+  const hasModifier = event.ctrlKey || event.metaKey || event.altKey || event.shiftKey;
+  if (!hasModifier && event.key === "Tab") {
+    return;
+  }
+  if (!hasModifier && isClearShortcutKey(event.key)) {
+    event.preventDefault();
+    elements.screenContextShortcutInput.value = "";
+    state.screenContextShortcutDraft = "";
+    return;
+  }
+  if (!hasModifier && !/^F\d{1,2}$/i.test(event.key)) {
+    return;
+  }
+  const accelerator = acceleratorFromKeyboardEvent(event);
+  if (!accelerator) {
+    return;
+  }
+  event.preventDefault();
+  elements.screenContextShortcutInput.value = accelerator;
+  state.screenContextShortcutDraft = accelerator;
+});
+elements.screenContextAutoSendInput.addEventListener("change", () => {
+  state.screenContextAutoSendDraft = elements.screenContextAutoSendInput.checked;
+});
+elements.screenContextPrivacyAcceptedInput.addEventListener("change", () => {
+  state.screenContextPrivacyAcceptedDraft = elements.screenContextPrivacyAcceptedInput.checked;
+  renderActivity();
+});
+elements.screenContextDetailLevelInput.addEventListener("change", () => {
+  state.screenContextDetailLevelDraft = screenContextDetailLevel(elements.screenContextDetailLevelInput.value);
+  renderActivity();
+});
+elements.screenContextShortcutSaveButton.addEventListener("click", () => {
+  void saveScreenContextSettingsFromForm();
+});
+elements.screenContextSendButton.addEventListener("click", () => {
+  void sendScreenContextReview();
+});
+elements.screenContextDiscardButton.addEventListener("click", () => {
+  void discardScreenContextReview();
 });
 elements.chatDynamismMinInput.addEventListener("input", () => {
   syncChatDynamismRangeLabels(voiceHermesContext());
@@ -1288,6 +1406,44 @@ window.kinagent.onEvent((message) => {
     return;
   }
 
+  if (message.channel === "screen-context-review-created") {
+    const result = message.payload as
+      | {
+          review?: ScreenContextReviewSummary;
+          autoSent?: boolean;
+          autoSendBlockedReason?: string;
+          autoSendError?: string;
+        }
+      | undefined;
+    if (result?.review) {
+      state.screenContextReview = result.autoSent ? null : result.review;
+      state.screenContextError = null;
+      state.selectedKinId = result.review.kinId;
+      state.selectedGroupId = null;
+      state.activeTab = "app-settings";
+      state.selectedKinAmbient = null;
+      state.ambientLoading = true;
+      elements.monitorLine.textContent = result.autoSent
+        ? "Screen context sent automatically."
+        : result.autoSendBlockedReason
+          ? `Screen context ready for review. ${result.autoSendBlockedReason}`
+          : result.autoSendError
+            ? `Screen context ready for review. Auto-send failed: ${result.autoSendError}`
+            : "Screen context ready for review.";
+      void window.kinagent.setCurrentScreenContextKin({ kinId: result.review.kinId });
+      void loadKinAmbient(result.review.kinId);
+      renderActivity();
+    }
+    return;
+  }
+
+  if (message.channel === "screen-context-error") {
+    state.screenContextError = message.payload?.error || "Screen context failed.";
+    elements.monitorLine.textContent = state.screenContextError;
+    renderActivity();
+    return;
+  }
+
   if (message.channel === "monitor-started") {
     activateSoundscapeFromPayload(message.payload);
     markKinSubscriptionRunning(subscriptionListContext(), message.payload?.kinId, true);
@@ -1382,6 +1538,8 @@ window.kinagent.onEvent((message) => {
   }
 });
 
+void loadScreenContextSettings();
+
 refreshStatus().catch((error: unknown) => {
   elements.sessionLine.textContent = errorMessage(error);
 });
@@ -1455,10 +1613,13 @@ async function selectKin(kinId: string): Promise<void> {
   state.journalError = null;
   state.voiceError = null;
   state.ambientError = null;
+  state.screenContextReview = state.screenContextReview?.kinId === kinId ? state.screenContextReview : null;
+  state.screenContextError = null;
   resetKinActionPlaceholders();
   renderKinSubscriptions(subscriptionListContext());
   renderGroupSubscriptions(subscriptionListContext());
   renderActivity();
+  void window.kinagent.setCurrentScreenContextKin({ kinId });
   void loadKinVoice(kinId);
   void loadKinAmbient(kinId);
 
@@ -1498,6 +1659,8 @@ function selectGroup(groupId: string): void {
   state.groupBackgroundError = null;
   state.groupGamingError = null;
   state.ambientError = null;
+  state.screenContextReview = null;
+  state.screenContextError = null;
   state.voiceLoading = false;
   state.groupSoundscapeLoading = false;
   state.groupBackgroundLoading = false;
@@ -1508,6 +1671,7 @@ function selectGroup(groupId: string): void {
   renderGroupSubscriptions(subscriptionListContext());
   renderMonitorState(monitorPanelContext());
   renderActivity();
+  void window.kinagent.setCurrentScreenContextKin({ kinId: null });
   void loadGroupSoundscape(groupId);
   void loadGroupGaming(groupId);
   void loadGroupBackground(groupId);
@@ -1599,6 +1763,320 @@ async function loadKinAmbient(kinId: string): Promise<void> {
     state.ambientError = errorMessage(error);
   } finally {
     state.ambientLoading = false;
+    renderActivity();
+  }
+}
+
+async function loadScreenContextSettings(): Promise<void> {
+  try {
+    state.screenContextSettings = await window.kinagent.getScreenContextSettings();
+    if (state.screenContextShortcutDraft === null) {
+      state.screenContextShortcutDraft = state.screenContextSettings.settings?.globalShortcut ?? "";
+    }
+    if (state.screenContextAutoSendDraft === null) {
+      state.screenContextAutoSendDraft = Boolean(state.screenContextSettings.settings?.autoSendSafe);
+    }
+    if (state.screenContextDetailLevelDraft === null) {
+      state.screenContextDetailLevelDraft = screenContextDetailLevel(state.screenContextSettings.settings?.detailLevel);
+    }
+    if (state.screenContextPrivacyAcceptedDraft === null) {
+      state.screenContextPrivacyAcceptedDraft = Boolean(state.screenContextSettings.settings?.privacyAccepted);
+    }
+  } catch (error) {
+    state.screenContextError = errorMessage(error);
+  } finally {
+    renderActivity();
+  }
+}
+
+function renderScreenContextControls(): void {
+  const settings = state.screenContextSettings?.settings;
+  const privacyAccepted = state.screenContextPrivacyAcceptedDraft ?? Boolean(settings?.privacyAccepted);
+  const privacySaved = Boolean(settings?.privacyAccepted);
+  elements.screenContextShortcutInput.value = state.screenContextShortcutDraft ?? settings?.globalShortcut ?? "";
+  elements.screenContextAutoSendInput.checked = state.screenContextAutoSendDraft ?? Boolean(settings?.autoSendSafe);
+  elements.screenContextPrivacyAcceptedInput.checked = privacyAccepted;
+  elements.screenContextDetailLevelInput.value =
+    state.screenContextDetailLevelDraft ?? screenContextDetailLevel(settings?.detailLevel);
+  elements.screenContextAnalyzeButton.disabled =
+    !state.selectedKinId ||
+    !privacyAccepted ||
+    !privacySaved ||
+    state.screenContextAnalyzing ||
+    state.screenContextSending ||
+    state.selectedKinAmbient?.enabled === false;
+  elements.screenContextShortcutSaveButton.disabled = state.screenContextSavingSettings;
+  elements.screenContextSendButton.disabled = state.screenContextSending || !state.screenContextReview;
+  elements.screenContextDiscardButton.disabled = state.screenContextSending || !state.screenContextReview;
+
+  const statusParts: string[] = [];
+  if (!privacyAccepted) {
+    statusParts.push("Acknowledge the Screen Context privacy boundary before analyzing.");
+  } else if (!privacySaved) {
+    statusParts.push("Save Screen Context before analyzing.");
+  } else if (state.selectedKinAmbient?.enabled === false) {
+    statusParts.push("Ambient context is disabled for this Kin.");
+  } else if (state.screenContextAnalyzing) {
+    statusParts.push("Capturing and analyzing the current screen.");
+  } else if (state.screenContextSending) {
+    statusParts.push("Sending reviewed screen context.");
+  } else if (state.screenContextReview) {
+    statusParts.push("Screen context is ready for review.");
+  } else {
+    statusParts.push(
+      state.selectedKinId
+        ? "Analyze sends the screenshot to Hermes; reviewed context targets the selected Kin."
+        : "Select a Kin before analyzing the screen."
+    );
+  }
+  const draftAutoSend = state.screenContextAutoSendDraft ?? Boolean(settings?.autoSendSafe);
+  const draftDetailLevel = state.screenContextDetailLevelDraft ?? screenContextDetailLevel(settings?.detailLevel);
+  if (draftAutoSend) {
+    statusParts.push(
+      draftDetailLevel === "text-heavy"
+        ? "Auto-send is blocked for text-heavy captures."
+        : "Safe results will send automatically."
+    );
+  }
+  if (state.screenContextSettings?.settings?.globalShortcut) {
+    statusParts.push(
+      state.screenContextSettings.shortcutRegistered
+        ? `Shortcut registered: ${state.screenContextSettings.registeredShortcut}.`
+        : state.screenContextSettings.shortcutRegistrationError || "Shortcut could not be registered."
+    );
+  }
+  if (state.screenContextError) {
+    statusParts.push(state.screenContextError);
+  }
+  elements.screenContextStatusLine.textContent = statusParts.join(" ");
+
+  const review = state.screenContextReview;
+  elements.screenContextReviewPanel.hidden = !review;
+  if (!review) {
+    elements.screenContextReviewSummary.replaceChildren();
+    elements.screenContextReviewAmbient.value = "";
+    elements.screenContextReviewContext.value = "";
+    elements.screenContextReviewVisibleText.value = "";
+    elements.screenContextReviewVisibleTextLabel.hidden = true;
+    return;
+  }
+
+  renderScreenContextSummary(review);
+  elements.screenContextReviewAmbient.value = review.analysis.ambientMessage;
+  elements.screenContextReviewContext.value = review.analysis.context;
+  elements.screenContextReviewVisibleText.value = review.analysis.visibleText || "";
+  elements.screenContextReviewVisibleTextLabel.hidden = !review.analysis.visibleText;
+}
+
+function renderScreenContextSummary(review: ScreenContextReviewSummary): void {
+  elements.screenContextReviewSummary.replaceChildren();
+  appendReviewStatus("Kin", review.kinName || review.kinId);
+  appendReviewStatus("Detail", screenContextDetailLevelLabel(review.detailLevel));
+  appendReviewStatus(
+    "Capture",
+    `${review.capture.displayName || "Display"} (${review.capture.width}x${review.capture.height})`
+  );
+  appendReviewStatus(
+    "Sensitivity",
+    review.analysis.sensitivityFlags.length ? review.analysis.sensitivityFlags.join(", ") : "None flagged"
+  );
+  if (review.analysis.summary) {
+    appendReviewStatus("Summary", review.analysis.summary);
+  }
+}
+
+function screenContextDetailLevel(value: unknown): ScreenContextDetailLevel {
+  return value === "brief" || value === "text-heavy" ? value : "detailed";
+}
+
+function screenContextDetailLevelLabel(value: ScreenContextDetailLevel): string {
+  if (value === "brief") {
+    return "Brief";
+  }
+  if (value === "text-heavy") {
+    return "Text-heavy";
+  }
+  return "Detailed";
+}
+
+function isClearShortcutKey(key: string): boolean {
+  return key === "Backspace" || key === "Delete";
+}
+
+function acceleratorFromKeyboardEvent(event: KeyboardEvent): string | null {
+  const key = acceleratorKeyFromEventKey(event.key);
+  if (!key) {
+    return null;
+  }
+
+  const parts: string[] = [];
+  if (event.ctrlKey || event.metaKey) {
+    parts.push("CommandOrControl");
+  }
+  if (event.altKey) {
+    parts.push("Alt");
+  }
+  if (event.shiftKey) {
+    parts.push("Shift");
+  }
+  parts.push(key);
+  return parts.join("+");
+}
+
+function acceleratorKeyFromEventKey(key: string): string | null {
+  if (key === "Control" || key === "Shift" || key === "Alt" || key === "Meta") {
+    return null;
+  }
+  if (/^F\d{1,2}$/i.test(key)) {
+    return key.toUpperCase();
+  }
+  if (/^[a-z]$/i.test(key)) {
+    return key.toUpperCase();
+  }
+  if (/^\d$/.test(key)) {
+    return key;
+  }
+
+  const namedKeys: Record<string, string> = {
+    " ": "Space",
+    ArrowDown: "Down",
+    ArrowLeft: "Left",
+    ArrowRight: "Right",
+    ArrowUp: "Up",
+    Backspace: "Backspace",
+    Delete: "Delete",
+    End: "End",
+    Enter: "Enter",
+    Escape: "Esc",
+    Home: "Home",
+    Insert: "Insert",
+    PageDown: "PageDown",
+    PageUp: "PageUp",
+    Spacebar: "Space",
+    Tab: "Tab"
+  };
+  return namedKeys[key] ?? null;
+}
+
+function appendReviewStatus(labelText: string, valueText: string): void {
+  const row = document.createElement("div");
+  const label = document.createElement("dt");
+  label.textContent = labelText;
+  const value = document.createElement("dd");
+  value.textContent = valueText;
+  row.append(label, value);
+  elements.screenContextReviewSummary.append(row);
+}
+
+async function analyzeScreenContext(): Promise<void> {
+  if (!state.selectedKinId || state.screenContextAnalyzing) {
+    return;
+  }
+
+  state.screenContextAnalyzing = true;
+  state.screenContextError = null;
+  state.screenContextReview = null;
+  renderActivity();
+  try {
+    const result = await window.kinagent.analyzeScreenContext({ kinId: state.selectedKinId });
+    state.screenContextReview = result.autoSent ? null : result.review || null;
+    if (result.autoSent) {
+      elements.monitorLine.textContent = "Screen context sent automatically.";
+    } else if (state.screenContextReview) {
+      elements.monitorLine.textContent = result.autoSendBlockedReason
+        ? `Screen context ready for review. ${result.autoSendBlockedReason}`
+        : result.autoSendError
+          ? `Screen context ready for review. Auto-send failed: ${result.autoSendError}`
+          : "Screen context ready for review.";
+    } else {
+      elements.monitorLine.textContent = "Screen context analysis did not return a review.";
+    }
+  } catch (error) {
+    state.screenContextError = errorMessage(error);
+  } finally {
+    state.screenContextAnalyzing = false;
+    renderActivity();
+  }
+}
+
+async function saveSelectedKinHermesSettings(): Promise<void> {
+  await saveSelectedKinAmbient(voiceHermesContext());
+}
+
+async function saveScreenContextSettingsFromForm(options: { quiet?: boolean } = {}): Promise<void> {
+  if (state.screenContextSavingSettings) {
+    return;
+  }
+
+  const globalShortcut = elements.screenContextShortcutInput.value;
+  const autoSendSafe = elements.screenContextAutoSendInput.checked;
+  const detailLevel = screenContextDetailLevel(elements.screenContextDetailLevelInput.value);
+  const privacyAccepted = elements.screenContextPrivacyAcceptedInput.checked;
+  state.screenContextSavingSettings = true;
+  state.screenContextError = null;
+  renderActivity();
+  try {
+    state.screenContextSettings = await window.kinagent.saveScreenContextSettings({
+      globalShortcut,
+      autoSendSafe,
+      detailLevel,
+      privacyAccepted
+    });
+    state.screenContextShortcutDraft = state.screenContextSettings.settings?.globalShortcut ?? "";
+    state.screenContextAutoSendDraft = Boolean(state.screenContextSettings.settings?.autoSendSafe);
+    state.screenContextDetailLevelDraft = screenContextDetailLevel(state.screenContextSettings.settings?.detailLevel);
+    state.screenContextPrivacyAcceptedDraft = Boolean(state.screenContextSettings.settings?.privacyAccepted);
+    if (!options.quiet) {
+      const shortcut = state.screenContextSettings.settings?.globalShortcut;
+      elements.monitorLine.textContent =
+        shortcut && !state.screenContextSettings.shortcutRegistered
+          ? state.screenContextSettings.shortcutRegistrationError ||
+            "Screen context settings saved, but the shortcut could not be registered."
+          : "Screen context settings saved.";
+    }
+  } catch (error) {
+    state.screenContextError = errorMessage(error);
+  } finally {
+    state.screenContextSavingSettings = false;
+    renderActivity();
+  }
+}
+
+async function sendScreenContextReview(): Promise<void> {
+  const review = state.screenContextReview;
+  if (!review || state.screenContextSending) {
+    return;
+  }
+
+  state.screenContextSending = true;
+  state.screenContextError = null;
+  renderActivity();
+  try {
+    await window.kinagent.sendScreenContext({ id: review.id });
+    state.screenContextReview = null;
+    elements.monitorLine.textContent = "Screen context sent.";
+  } catch (error) {
+    state.screenContextError = errorMessage(error);
+    elements.monitorLine.textContent = `Screen context send failed: ${state.screenContextError}`;
+  } finally {
+    state.screenContextSending = false;
+    renderActivity();
+  }
+}
+
+async function discardScreenContextReview(): Promise<void> {
+  const review = state.screenContextReview;
+  if (!review) {
+    return;
+  }
+
+  try {
+    await window.kinagent.discardScreenContext({ id: review.id });
+  } catch (error) {
+    state.screenContextError = errorMessage(error);
+  } finally {
+    state.screenContextReview = null;
+    elements.monitorLine.textContent = "Screen context discarded.";
     renderActivity();
   }
 }
@@ -1707,6 +2185,7 @@ function renderActivity(): void {
     elements.activityTitle.textContent = "Settings";
     elements.monitorLine.textContent = "Application configuration";
     renderAppSettingsTab(appSettingsContext());
+    renderScreenContextControls();
     return;
   }
 
@@ -2975,9 +3454,12 @@ function clearMissingSelectedKin(): void {
     state.captureError = null;
     state.voiceError = null;
     state.ambientError = null;
+    state.screenContextReview = null;
+    state.screenContextError = null;
     state.captureLoading = false;
     state.voiceLoading = false;
     state.ambientLoading = false;
+    void window.kinagent.setCurrentScreenContextKin({ kinId: null });
     resetKinActionPlaceholders();
     state.activeTab = "monitor";
     state.selectedHistoryHash = null;

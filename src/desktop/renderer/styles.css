@@ -951,6 +951,20 @@ h2 {
   font-size: 12px;
 }
 
+.screen-context-review {
+  display: grid;
+  gap: 12px;
+}
+
+.screen-context-review textarea {
+  min-height: 0;
+  resize: vertical;
+}
+
+.button-label {
+  align-content: end;
+}
+
 .game-help-panel {
   display: grid;
   gap: 6px;
