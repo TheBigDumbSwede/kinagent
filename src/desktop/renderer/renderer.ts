@@ -117,7 +117,6 @@ import type {
   SceneLedgerFactSummary,
   SceneLedgerSummary,
   ScreenContextDetailLevel,
-  ScreenContextKinPreference,
   ScreenContextReviewSummary,
   ScreenContextSettingsResult,
   StorybookExportProgress,
@@ -526,8 +525,8 @@ interface RendererApi {
   getScreenContextSettings(): Promise<ScreenContextSettingsResult>;
   saveScreenContextSettings(input: {
     globalShortcut: string;
-    kinId?: string;
-    preference?: Partial<ScreenContextKinPreference>;
+    autoSendSafe: boolean;
+    detailLevel: ScreenContextDetailLevel;
   }): Promise<ScreenContextSettingsResult>;
   setCurrentScreenContextKin(input: { kinId: string | null }): Promise<{ ok?: boolean }>;
   analyzeScreenContext(input: { kinId: string }): Promise<{
@@ -1412,7 +1411,7 @@ window.kinagent.onEvent((message) => {
       state.screenContextError = null;
       state.selectedKinId = result.review.kinId;
       state.selectedGroupId = null;
-      state.activeTab = "hermes";
+      state.activeTab = "app-settings";
       state.selectedKinAmbient = null;
       state.ambientLoading = true;
       elements.monitorLine.textContent = result.autoSent
@@ -1607,8 +1606,6 @@ async function selectKin(kinId: string): Promise<void> {
   state.ambientError = null;
   state.screenContextReview = state.screenContextReview?.kinId === kinId ? state.screenContextReview : null;
   state.screenContextError = null;
-  state.screenContextAutoSendDraft = null;
-  state.screenContextDetailLevelDraft = null;
   resetKinActionPlaceholders();
   renderKinSubscriptions(subscriptionListContext());
   renderGroupSubscriptions(subscriptionListContext());
@@ -1655,8 +1652,6 @@ function selectGroup(groupId: string): void {
   state.ambientError = null;
   state.screenContextReview = null;
   state.screenContextError = null;
-  state.screenContextAutoSendDraft = null;
-  state.screenContextDetailLevelDraft = null;
   state.voiceLoading = false;
   state.groupSoundscapeLoading = false;
   state.groupBackgroundLoading = false;
@@ -1769,8 +1764,12 @@ async function loadScreenContextSettings(): Promise<void> {
     if (state.screenContextShortcutDraft === null) {
       state.screenContextShortcutDraft = state.screenContextSettings.settings?.globalShortcut ?? "";
     }
-    state.screenContextAutoSendDraft = null;
-    state.screenContextDetailLevelDraft = null;
+    if (state.screenContextAutoSendDraft === null) {
+      state.screenContextAutoSendDraft = Boolean(state.screenContextSettings.settings?.autoSendSafe);
+    }
+    if (state.screenContextDetailLevelDraft === null) {
+      state.screenContextDetailLevelDraft = screenContextDetailLevel(state.screenContextSettings.settings?.detailLevel);
+    }
   } catch (error) {
     state.screenContextError = errorMessage(error);
   } finally {
@@ -1780,12 +1779,15 @@ async function loadScreenContextSettings(): Promise<void> {
 
 function renderScreenContextControls(): void {
   const settings = state.screenContextSettings?.settings;
-  const preference = currentScreenContextPreference();
   elements.screenContextShortcutInput.value = state.screenContextShortcutDraft ?? settings?.globalShortcut ?? "";
-  elements.screenContextAutoSendInput.checked = state.screenContextAutoSendDraft ?? preference.autoSendSafe;
-  elements.screenContextDetailLevelInput.value = state.screenContextDetailLevelDraft ?? preference.detailLevel;
+  elements.screenContextAutoSendInput.checked = state.screenContextAutoSendDraft ?? Boolean(settings?.autoSendSafe);
+  elements.screenContextDetailLevelInput.value =
+    state.screenContextDetailLevelDraft ?? screenContextDetailLevel(settings?.detailLevel);
   elements.screenContextAnalyzeButton.disabled =
-    state.screenContextAnalyzing || state.screenContextSending || state.selectedKinAmbient?.enabled === false;
+    !state.selectedKinId ||
+    state.screenContextAnalyzing ||
+    state.screenContextSending ||
+    state.selectedKinAmbient?.enabled === false;
   elements.screenContextShortcutSaveButton.disabled = state.screenContextSavingSettings;
   elements.screenContextSendButton.disabled = state.screenContextSending || !state.screenContextReview;
   elements.screenContextDiscardButton.disabled = state.screenContextSending || !state.screenContextReview;
@@ -1800,15 +1802,19 @@ function renderScreenContextControls(): void {
   } else if (state.screenContextReview) {
     statusParts.push("Screen context is ready for review.");
   } else {
-    statusParts.push("Current-display capture is available for the selected Kin.");
+    statusParts.push(
+      state.selectedKinId
+        ? "Current-display capture will send to the selected Kin."
+        : "Select a Kin before analyzing the screen."
+    );
   }
-  const draftAutoSend = state.screenContextAutoSendDraft ?? preference.autoSendSafe;
-  const draftDetailLevel = state.screenContextDetailLevelDraft ?? preference.detailLevel;
+  const draftAutoSend = state.screenContextAutoSendDraft ?? Boolean(settings?.autoSendSafe);
+  const draftDetailLevel = state.screenContextDetailLevelDraft ?? screenContextDetailLevel(settings?.detailLevel);
   if (draftAutoSend) {
     statusParts.push(
       draftDetailLevel === "text-heavy"
         ? "Auto-send is blocked for text-heavy captures."
-        : "Safe results will send automatically for this Kin."
+        : "Safe results will send automatically."
     );
   }
   if (state.screenContextSettings?.settings?.globalShortcut) {
@@ -1856,15 +1862,6 @@ function renderScreenContextSummary(review: ScreenContextReviewSummary): void {
   if (review.analysis.summary) {
     appendReviewStatus("Summary", review.analysis.summary);
   }
-}
-
-function currentScreenContextPreference(): ScreenContextKinPreference {
-  const kinId = state.selectedKinId || "";
-  const stored = kinId ? state.screenContextSettings?.settings?.kinPreferences?.[kinId] : undefined;
-  return {
-    autoSendSafe: Boolean(stored?.autoSendSafe),
-    detailLevel: screenContextDetailLevel(stored?.detailLevel)
-  };
 }
 
 function screenContextDetailLevel(value: unknown): ScreenContextDetailLevel {
@@ -1982,7 +1979,6 @@ async function analyzeScreenContext(): Promise<void> {
 }
 
 async function saveSelectedKinHermesSettings(): Promise<void> {
-  await saveScreenContextSettingsFromForm({ quiet: true });
   await saveSelectedKinAmbient(voiceHermesContext());
 }
 
@@ -1992,25 +1988,20 @@ async function saveScreenContextSettingsFromForm(options: { quiet?: boolean } = 
   }
 
   const globalShortcut = elements.screenContextShortcutInput.value;
-  const kinId = state.selectedKinId || undefined;
-  const preference = kinId
-    ? {
-        autoSendSafe: elements.screenContextAutoSendInput.checked,
-        detailLevel: screenContextDetailLevel(elements.screenContextDetailLevelInput.value)
-      }
-    : undefined;
+  const autoSendSafe = elements.screenContextAutoSendInput.checked;
+  const detailLevel = screenContextDetailLevel(elements.screenContextDetailLevelInput.value);
   state.screenContextSavingSettings = true;
   state.screenContextError = null;
   renderActivity();
   try {
     state.screenContextSettings = await window.kinagent.saveScreenContextSettings({
       globalShortcut,
-      kinId,
-      preference
+      autoSendSafe,
+      detailLevel
     });
     state.screenContextShortcutDraft = state.screenContextSettings.settings?.globalShortcut ?? "";
-    state.screenContextAutoSendDraft = null;
-    state.screenContextDetailLevelDraft = null;
+    state.screenContextAutoSendDraft = Boolean(state.screenContextSettings.settings?.autoSendSafe);
+    state.screenContextDetailLevelDraft = screenContextDetailLevel(state.screenContextSettings.settings?.detailLevel);
     if (!options.quiet) {
       const shortcut = state.screenContextSettings.settings?.globalShortcut;
       elements.monitorLine.textContent =
@@ -2170,6 +2161,7 @@ function renderActivity(): void {
     elements.activityTitle.textContent = "Settings";
     elements.monitorLine.textContent = "Application configuration";
     renderAppSettingsTab(appSettingsContext());
+    renderScreenContextControls();
     return;
   }
 
@@ -2248,7 +2240,6 @@ function renderActivity(): void {
 
   if (isHermes) {
     renderKinHermesTab(voiceHermesContext(), selectedKin);
-    renderScreenContextControls();
     return;
   }
 

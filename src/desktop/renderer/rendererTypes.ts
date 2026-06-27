@@ -217,8 +217,8 @@ export interface KinagentApi {
   getScreenContextSettings(): Promise<ScreenContextSettingsResult>;
   saveScreenContextSettings(input: {
     globalShortcut: string;
-    kinId?: string;
-    preference?: Partial<ScreenContextKinPreference>;
+    autoSendSafe: boolean;
+    detailLevel: ScreenContextDetailLevel;
   }): Promise<ScreenContextSettingsResult>;
   setCurrentScreenContextKin(input: { kinId: string | null }): Promise<{ ok?: boolean }>;
   analyzeScreenContext(input: { kinId: string }): Promise<ScreenContextReviewResult>;
@@ -665,15 +665,11 @@ export interface KinVoicePreferenceResult {
 
 export interface ScreenContextSettings {
   globalShortcut: string;
-  kinPreferences: Record<string, ScreenContextKinPreference>;
-}
-
-export type ScreenContextDetailLevel = "brief" | "detailed" | "text-heavy";
-
-export interface ScreenContextKinPreference {
   autoSendSafe: boolean;
   detailLevel: ScreenContextDetailLevel;
 }
+
+export type ScreenContextDetailLevel = "brief" | "detailed" | "text-heavy";
 
 export interface ScreenContextSettingsResult {
   ok?: boolean;

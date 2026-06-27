@@ -139,18 +139,28 @@ interface ScreenContextReview {
 
 interface ScreenContextSettings {
   globalShortcut: string;
-  kinPreferences: Record<string, ScreenContextKinPreference>;
-}
-
-interface ScreenContextKinPreference {
   autoSendSafe: boolean;
   detailLevel: ScreenContextDetailLevel;
 }
 
 interface ScreenContextSettingsInput {
   globalShortcut?: string;
-  kinId?: string;
-  preference?: Partial<ScreenContextKinPreference>;
+  autoSendSafe?: boolean;
+  detailLevel?: ScreenContextDetailLevel;
+}
+
+interface ScreenContextAnalyzeResult {
+  ok: boolean;
+  review?: ReturnType<typeof toScreenContextReviewSummary>;
+  autoSent?: boolean;
+  autoSendBlockedReason?: string;
+  autoSendError?: string;
+  sendResult?: {
+    ok: boolean;
+    status: number;
+    requestId: string;
+    idempotencyKey: string;
+  };
 }
 
 interface TimelineDesktopQuery {
@@ -1243,12 +1253,11 @@ function saveScreenContextSettings(input: ScreenContextSettingsInput) {
   if (input.globalShortcut !== undefined) {
     settings.globalShortcut = normalizeShortcut(input.globalShortcut);
   }
-  const kinId = input.kinId?.trim();
-  if (kinId) {
-    settings.kinPreferences[kinId] = normalizeScreenContextKinPreference(
-      input.preference,
-      settings.kinPreferences[kinId]
-    );
+  if (input.autoSendSafe !== undefined) {
+    settings.autoSendSafe = Boolean(input.autoSendSafe);
+  }
+  if (input.detailLevel !== undefined) {
+    settings.detailLevel = screenContextDetailLevel(input.detailLevel, settings.detailLevel);
   }
   fs.writeFileSync(screenContextSettingsPath(), `${JSON.stringify(settings, null, 2)}\n`, "utf8");
   registerScreenContextShortcut(settings.globalShortcut);
@@ -1256,32 +1265,71 @@ function saveScreenContextSettings(input: ScreenContextSettingsInput) {
     globalShortcutConfigured: Boolean(settings.globalShortcut),
     shortcutRegistered: Boolean(registeredScreenContextShortcut),
     shortcutRegistrationError: screenContextShortcutRegistrationError,
-    kinId,
-    autoSendSafe: kinId ? settings.kinPreferences[kinId]?.autoSendSafe : undefined,
-    detailLevel: kinId ? settings.kinPreferences[kinId]?.detailLevel : undefined
+    autoSendSafe: settings.autoSendSafe,
+    detailLevel: settings.detailLevel
   });
   return getScreenContextSettings();
 }
 
 async function analyzeScreenContextFromShortcut(trigger: "tray" | "shortcut"): Promise<void> {
-  const kinId = selectedScreenContextKinId;
+  const wasVisible = Boolean(mainWindow?.isVisible());
+  const kinId = resolveCurrentScreenContextKinId();
+  logger.info("Screen context trigger requested.", {
+    trigger,
+    windowVisible: wasVisible,
+    kinIdResolved: Boolean(kinId)
+  });
   if (!kinId) {
-    showMainWindow();
-    sendRendererEvent("screen-context-error", { error: "Select a Kin before analyzing the screen." });
+    const error = "Select or start a Kin before analyzing the screen.";
+    if (wasVisible) {
+      sendRendererEvent("screen-context-error", { error });
+    } else {
+      showScreenContextNotification({ title: "Screen context unavailable", body: error });
+    }
     return;
   }
 
   try {
-    const review = await analyzeScreenContextForKin(kinId, trigger);
-    showMainWindow();
-    sendRendererEvent("screen-context-review-created", review);
+    const result = await analyzeScreenContextForKin(kinId, trigger);
+    if (wasVisible) {
+      sendRendererEvent("screen-context-review-created", result);
+    } else {
+      showScreenContextResultNotification(result);
+    }
   } catch (error) {
-    showMainWindow();
-    sendRendererEvent("screen-context-error", { error: error instanceof Error ? error.message : String(error) });
+    const message = error instanceof Error ? error.message : String(error);
+    if (wasVisible) {
+      sendRendererEvent("screen-context-error", { error: message });
+    } else {
+      showScreenContextNotification({ title: "Screen context failed", body: message });
+    }
   }
 }
 
-async function analyzeScreenContextForKin(kinId: string, trigger: "button" | "tray" | "shortcut") {
+function resolveCurrentScreenContextKinId(): string | null {
+  try {
+    const status = requireRuntime().status();
+    const selectedKin = selectedScreenContextKinId
+      ? status.kins.find((kin) => kin.aiId === selectedScreenContextKinId)
+      : null;
+    if (selectedKin) {
+      return selectedKin.aiId;
+    }
+
+    const runningSubscriptions = status.subscriptions.filter((subscription) => subscription.running);
+    const currentRunning = runningSubscriptions.find((subscription) => subscription.kin.current);
+    const fallbackKin = currentRunning?.kin ?? runningSubscriptions[0]?.kin ?? null;
+    selectedScreenContextKinId = fallbackKin?.aiId ?? null;
+    return selectedScreenContextKinId;
+  } catch {
+    return selectedScreenContextKinId;
+  }
+}
+
+async function analyzeScreenContextForKin(
+  kinId: string,
+  trigger: "button" | "tray" | "shortcut"
+): Promise<ScreenContextAnalyzeResult> {
   if (!kinId) {
     throw new Error("Select a Kin before analyzing the screen.");
   }
@@ -1295,7 +1343,6 @@ async function analyzeScreenContextForKin(kinId: string, trigger: "button" | "tr
   selectedScreenContextKinId = kinId;
 
   const settings = readScreenContextSettings();
-  const preference = screenContextKinPreference(settings, kinId);
   const captured = await captureCurrentDisplayPng();
   try {
     const analysis = await analyzeScreenContextWithHermes(config, logger, {
@@ -1304,13 +1351,13 @@ async function analyzeScreenContextForKin(kinId: string, trigger: "button" | "tr
       imageMimeType: "image/png",
       imageBase64: captured.buffer.toString("base64"),
       capture: captured.capture,
-      detailLevel: preference.detailLevel
+      detailLevel: settings.detailLevel
     });
     const review: ScreenContextReview = {
       id: randomUUID(),
       kinId,
       kinName: kin.name || kinId,
-      detailLevel: preference.detailLevel,
+      detailLevel: settings.detailLevel,
       capture: captured.capture,
       analysis,
       status: "pending",
@@ -1326,7 +1373,7 @@ async function analyzeScreenContextForKin(kinId: string, trigger: "button" | "tr
       height: captured.capture.height,
       sensitivityFlags: analysis.sensitivityFlags
     });
-    const autoSendBlockedReason = screenContextAutoSendBlockedReason(preference, analysis);
+    const autoSendBlockedReason = screenContextAutoSendBlockedReason(settings, analysis);
     if (!autoSendBlockedReason) {
       const pendingSummary = toScreenContextReviewSummary(review);
       try {
@@ -1354,7 +1401,7 @@ async function analyzeScreenContextForKin(kinId: string, trigger: "button" | "tr
     return {
       ok: true,
       review: toScreenContextReviewSummary(review),
-      ...(preference.autoSendSafe && autoSendBlockedReason ? { autoSendBlockedReason } : {})
+      ...(settings.autoSendSafe && autoSendBlockedReason ? { autoSendBlockedReason } : {})
     };
   } finally {
     captured.buffer.fill(0);
@@ -1440,7 +1487,7 @@ async function captureCurrentDisplayPng(): Promise<{ buffer: Buffer; capture: Sc
     };
   } finally {
     if (wasVisible) {
-      showMainWindow();
+      restoreMainWindowWithoutFocus();
       await delay(100);
     }
   }
@@ -1483,33 +1530,34 @@ function readScreenContextSettings(): ScreenContextSettings {
   }
 }
 
-function normalizeScreenContextSettings(input: Partial<ScreenContextSettings>): ScreenContextSettings {
-  const kinPreferences = input.kinPreferences && typeof input.kinPreferences === "object" ? input.kinPreferences : {};
+function normalizeScreenContextSettings(
+  input: Partial<ScreenContextSettings> & { kinPreferences?: unknown }
+): ScreenContextSettings {
+  const legacyPreference = firstLegacyScreenContextPreference(input.kinPreferences);
   return {
     globalShortcut: normalizeShortcut(input.globalShortcut ?? ""),
-    kinPreferences: Object.fromEntries(
-      Object.entries(kinPreferences).map(([kinId, preference]) => [
-        kinId,
-        normalizeScreenContextKinPreference(preference)
-      ])
+    autoSendSafe:
+      typeof input.autoSendSafe === "boolean" ? input.autoSendSafe : Boolean(legacyPreference?.autoSendSafe ?? false),
+    detailLevel: screenContextDetailLevel(
+      input.detailLevel,
+      screenContextDetailLevel(legacyPreference?.detailLevel, "detailed")
     )
   };
 }
 
-function normalizeScreenContextKinPreference(
-  input: Partial<ScreenContextKinPreference> | undefined,
-  previous?: ScreenContextKinPreference
-): ScreenContextKinPreference {
-  const fields = input && typeof input === "object" ? input : {};
-  return {
-    autoSendSafe:
-      typeof fields.autoSendSafe === "boolean" ? fields.autoSendSafe : Boolean(previous?.autoSendSafe ?? false),
-    detailLevel: screenContextDetailLevel(fields.detailLevel, previous?.detailLevel ?? "detailed")
-  };
-}
-
-function screenContextKinPreference(settings: ScreenContextSettings, kinId: string): ScreenContextKinPreference {
-  return normalizeScreenContextKinPreference(settings.kinPreferences[kinId]);
+function firstLegacyScreenContextPreference(value: unknown): { autoSendSafe?: unknown; detailLevel?: unknown } | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const preferences = Object.values(value as Record<string, unknown>).filter(
+    (item): item is { autoSendSafe?: unknown; detailLevel?: unknown } => Boolean(item && typeof item === "object")
+  );
+  return (
+    preferences.find((preference) => preference.autoSendSafe === true) ??
+    preferences.find((preference) => preference.detailLevel !== undefined) ??
+    preferences[0] ??
+    null
+  );
 }
 
 function screenContextDetailLevel(value: unknown, fallback: ScreenContextDetailLevel): ScreenContextDetailLevel {
@@ -1517,13 +1565,13 @@ function screenContextDetailLevel(value: unknown, fallback: ScreenContextDetailL
 }
 
 function screenContextAutoSendBlockedReason(
-  preference: ScreenContextKinPreference,
+  settings: ScreenContextSettings,
   analysis: ScreenContextAnalysisResult
 ): string | null {
-  if (!preference.autoSendSafe) {
+  if (!settings.autoSendSafe) {
     return "Auto-send is off.";
   }
-  if (preference.detailLevel === "text-heavy") {
+  if (settings.detailLevel === "text-heavy") {
     return "Text-heavy screen context requires review.";
   }
   if (analysis.sensitivityFlags.length > 0) {
@@ -2079,6 +2127,13 @@ function showMainWindow(): void {
   mainWindow?.focus();
 }
 
+function restoreMainWindowWithoutFocus(): void {
+  if (!mainWindow) {
+    return;
+  }
+  mainWindow.showInactive();
+}
+
 function sendRendererEvent(channel: string, payload: unknown): void {
   mainWindow?.webContents.send("app:event", { channel, payload });
 }
@@ -2218,6 +2273,54 @@ function showJournalSuggestionNotification(suggestion: JournalSuggestion): void 
     showMainWindow();
     sendRendererEvent("journal-suggestion-focus", suggestion);
   });
+  notification.show();
+}
+
+function showScreenContextResultNotification(result: ScreenContextAnalyzeResult): void {
+  if (result.autoSent) {
+    return;
+  }
+
+  if (result.review) {
+    const reason = result.autoSendBlockedReason
+      ? result.autoSendBlockedReason
+      : result.autoSendError
+        ? `Auto-send failed: ${result.autoSendError}`
+        : "Auto-send is off.";
+    showScreenContextNotification({
+      title: "Screen context ready for review",
+      body: reason,
+      onClick: () => {
+        showMainWindow();
+        sendRendererEvent("screen-context-review-created", result);
+      }
+    });
+    return;
+  }
+
+  showScreenContextNotification({
+    title: "Screen context ready",
+    body: "Screen context analysis completed."
+  });
+}
+
+function showScreenContextNotification(input: { title: string; body: string; onClick?: () => void }): void {
+  if (!Notification.isSupported()) {
+    logger.info("Screen context notification skipped because notifications are unsupported.", {
+      title: input.title,
+      body: input.body
+    });
+    return;
+  }
+
+  const notification = new Notification({
+    title: input.title,
+    body: input.body,
+    icon: desktopIconPath("icon.png")
+  });
+  if (input.onClick) {
+    notification.on("click", input.onClick);
+  }
   notification.show();
 }
 
