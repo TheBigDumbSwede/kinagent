@@ -213,6 +213,7 @@ interface RendererState extends TimelinePanelState {
   screenContextShortcutDraft: string | null;
   screenContextAutoSendDraft: boolean | null;
   screenContextDetailLevelDraft: ScreenContextDetailLevel | null;
+  screenContextPrivacyAcceptedDraft: boolean | null;
   activeTab: string;
   selectedHistoryHash: string | null;
   monitorMessages: MonitorMessage[];
@@ -344,6 +345,7 @@ interface RendererElements extends TimelinePanelElements {
   chatDynamismMinValue: HTMLElement;
   chatDynamismMaxValue: HTMLElement;
   screenContextAnalyzeButton: HTMLButtonElement;
+  screenContextPrivacyAcceptedInput: HTMLInputElement;
   screenContextAutoSendInput: HTMLInputElement;
   screenContextDetailLevelInput: HTMLSelectElement;
   screenContextShortcutInput: HTMLInputElement;
@@ -527,6 +529,7 @@ interface RendererApi {
     globalShortcut: string;
     autoSendSafe: boolean;
     detailLevel: ScreenContextDetailLevel;
+    privacyAccepted: boolean;
   }): Promise<ScreenContextSettingsResult>;
   setCurrentScreenContextKin(input: { kinId: string | null }): Promise<{ ok?: boolean }>;
   analyzeScreenContext(input: { kinId: string }): Promise<{
@@ -651,6 +654,7 @@ const state: RendererState = {
   screenContextShortcutDraft: null,
   screenContextAutoSendDraft: null,
   screenContextDetailLevelDraft: null,
+  screenContextPrivacyAcceptedDraft: null,
   activeTab: "monitor",
   selectedHistoryHash: null,
   monitorMessages: [],
@@ -798,6 +802,7 @@ const elements: RendererElements = {
   chatDynamismMinValue: query<HTMLElement>("#chatDynamismMinValue"),
   chatDynamismMaxValue: query<HTMLElement>("#chatDynamismMaxValue"),
   screenContextAnalyzeButton: query<HTMLButtonElement>("#screenContextAnalyzeButton"),
+  screenContextPrivacyAcceptedInput: query<HTMLInputElement>("#screenContextPrivacyAcceptedInput"),
   screenContextAutoSendInput: query<HTMLInputElement>("#screenContextAutoSendInput"),
   screenContextDetailLevelInput: query<HTMLSelectElement>("#screenContextDetailLevelInput"),
   screenContextShortcutInput: query<HTMLInputElement>("#screenContextShortcutInput"),
@@ -1243,6 +1248,10 @@ elements.screenContextShortcutInput.addEventListener("keydown", (event) => {
 });
 elements.screenContextAutoSendInput.addEventListener("change", () => {
   state.screenContextAutoSendDraft = elements.screenContextAutoSendInput.checked;
+});
+elements.screenContextPrivacyAcceptedInput.addEventListener("change", () => {
+  state.screenContextPrivacyAcceptedDraft = elements.screenContextPrivacyAcceptedInput.checked;
+  renderActivity();
 });
 elements.screenContextDetailLevelInput.addEventListener("change", () => {
   state.screenContextDetailLevelDraft = screenContextDetailLevel(elements.screenContextDetailLevelInput.value);
@@ -1770,6 +1779,9 @@ async function loadScreenContextSettings(): Promise<void> {
     if (state.screenContextDetailLevelDraft === null) {
       state.screenContextDetailLevelDraft = screenContextDetailLevel(state.screenContextSettings.settings?.detailLevel);
     }
+    if (state.screenContextPrivacyAcceptedDraft === null) {
+      state.screenContextPrivacyAcceptedDraft = Boolean(state.screenContextSettings.settings?.privacyAccepted);
+    }
   } catch (error) {
     state.screenContextError = errorMessage(error);
   } finally {
@@ -1779,12 +1791,17 @@ async function loadScreenContextSettings(): Promise<void> {
 
 function renderScreenContextControls(): void {
   const settings = state.screenContextSettings?.settings;
+  const privacyAccepted = state.screenContextPrivacyAcceptedDraft ?? Boolean(settings?.privacyAccepted);
+  const privacySaved = Boolean(settings?.privacyAccepted);
   elements.screenContextShortcutInput.value = state.screenContextShortcutDraft ?? settings?.globalShortcut ?? "";
   elements.screenContextAutoSendInput.checked = state.screenContextAutoSendDraft ?? Boolean(settings?.autoSendSafe);
+  elements.screenContextPrivacyAcceptedInput.checked = privacyAccepted;
   elements.screenContextDetailLevelInput.value =
     state.screenContextDetailLevelDraft ?? screenContextDetailLevel(settings?.detailLevel);
   elements.screenContextAnalyzeButton.disabled =
     !state.selectedKinId ||
+    !privacyAccepted ||
+    !privacySaved ||
     state.screenContextAnalyzing ||
     state.screenContextSending ||
     state.selectedKinAmbient?.enabled === false;
@@ -1793,7 +1810,11 @@ function renderScreenContextControls(): void {
   elements.screenContextDiscardButton.disabled = state.screenContextSending || !state.screenContextReview;
 
   const statusParts: string[] = [];
-  if (state.selectedKinAmbient?.enabled === false) {
+  if (!privacyAccepted) {
+    statusParts.push("Acknowledge the Screen Context privacy boundary before analyzing.");
+  } else if (!privacySaved) {
+    statusParts.push("Save Screen Context before analyzing.");
+  } else if (state.selectedKinAmbient?.enabled === false) {
     statusParts.push("Ambient context is disabled for this Kin.");
   } else if (state.screenContextAnalyzing) {
     statusParts.push("Capturing and analyzing the current screen.");
@@ -1804,7 +1825,7 @@ function renderScreenContextControls(): void {
   } else {
     statusParts.push(
       state.selectedKinId
-        ? "Current-display capture will send to the selected Kin."
+        ? "Analyze sends the screenshot to Hermes; reviewed context targets the selected Kin."
         : "Select a Kin before analyzing the screen."
     );
   }
@@ -1990,6 +2011,7 @@ async function saveScreenContextSettingsFromForm(options: { quiet?: boolean } = 
   const globalShortcut = elements.screenContextShortcutInput.value;
   const autoSendSafe = elements.screenContextAutoSendInput.checked;
   const detailLevel = screenContextDetailLevel(elements.screenContextDetailLevelInput.value);
+  const privacyAccepted = elements.screenContextPrivacyAcceptedInput.checked;
   state.screenContextSavingSettings = true;
   state.screenContextError = null;
   renderActivity();
@@ -1997,11 +2019,13 @@ async function saveScreenContextSettingsFromForm(options: { quiet?: boolean } = 
     state.screenContextSettings = await window.kinagent.saveScreenContextSettings({
       globalShortcut,
       autoSendSafe,
-      detailLevel
+      detailLevel,
+      privacyAccepted
     });
     state.screenContextShortcutDraft = state.screenContextSettings.settings?.globalShortcut ?? "";
     state.screenContextAutoSendDraft = Boolean(state.screenContextSettings.settings?.autoSendSafe);
     state.screenContextDetailLevelDraft = screenContextDetailLevel(state.screenContextSettings.settings?.detailLevel);
+    state.screenContextPrivacyAcceptedDraft = Boolean(state.screenContextSettings.settings?.privacyAccepted);
     if (!options.quiet) {
       const shortcut = state.screenContextSettings.settings?.globalShortcut;
       elements.monitorLine.textContent =

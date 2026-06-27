@@ -219,6 +219,7 @@ export interface KinagentApi {
     globalShortcut: string;
     autoSendSafe: boolean;
     detailLevel: ScreenContextDetailLevel;
+    privacyAccepted: boolean;
   }): Promise<ScreenContextSettingsResult>;
   setCurrentScreenContextKin(input: { kinId: string | null }): Promise<{ ok?: boolean }>;
   analyzeScreenContext(input: { kinId: string }): Promise<ScreenContextReviewResult>;
@@ -667,6 +668,7 @@ export interface ScreenContextSettings {
   globalShortcut: string;
   autoSendSafe: boolean;
   detailLevel: ScreenContextDetailLevel;
+  privacyAccepted: boolean;
 }
 
 export type ScreenContextDetailLevel = "brief" | "detailed" | "text-heavy";

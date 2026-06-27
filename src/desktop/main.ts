@@ -141,12 +141,14 @@ interface ScreenContextSettings {
   globalShortcut: string;
   autoSendSafe: boolean;
   detailLevel: ScreenContextDetailLevel;
+  privacyAccepted: boolean;
 }
 
 interface ScreenContextSettingsInput {
   globalShortcut?: string;
   autoSendSafe?: boolean;
   detailLevel?: ScreenContextDetailLevel;
+  privacyAccepted?: boolean;
 }
 
 interface ScreenContextAnalyzeResult {
@@ -1259,6 +1261,9 @@ function saveScreenContextSettings(input: ScreenContextSettingsInput) {
   if (input.detailLevel !== undefined) {
     settings.detailLevel = screenContextDetailLevel(input.detailLevel, settings.detailLevel);
   }
+  if (input.privacyAccepted !== undefined) {
+    settings.privacyAccepted = Boolean(input.privacyAccepted);
+  }
   fs.writeFileSync(screenContextSettingsPath(), `${JSON.stringify(settings, null, 2)}\n`, "utf8");
   registerScreenContextShortcut(settings.globalShortcut);
   logger.info("Saved screen context settings.", {
@@ -1266,7 +1271,8 @@ function saveScreenContextSettings(input: ScreenContextSettingsInput) {
     shortcutRegistered: Boolean(registeredScreenContextShortcut),
     shortcutRegistrationError: screenContextShortcutRegistrationError,
     autoSendSafe: settings.autoSendSafe,
-    detailLevel: settings.detailLevel
+    detailLevel: settings.detailLevel,
+    privacyAccepted: settings.privacyAccepted
   });
   return getScreenContextSettings();
 }
@@ -1343,6 +1349,9 @@ async function analyzeScreenContextForKin(
   selectedScreenContextKinId = kinId;
 
   const settings = readScreenContextSettings();
+  if (!settings.privacyAccepted) {
+    throw new Error("Acknowledge Screen Context privacy before analyzing the screen.");
+  }
   const captured = await captureCurrentDisplayPng();
   try {
     const analysis = await analyzeScreenContextWithHermes(config, logger, {
@@ -1541,7 +1550,8 @@ function normalizeScreenContextSettings(
     detailLevel: screenContextDetailLevel(
       input.detailLevel,
       screenContextDetailLevel(legacyPreference?.detailLevel, "detailed")
-    )
+    ),
+    privacyAccepted: input.privacyAccepted === true
   };
 }
 

@@ -151,6 +151,21 @@ Kindroid browser session data, cookies, Firebase ID tokens, refresh tokens, and 
 - The desktop app can optionally vault captured Kin history on clean quit. While Kinagent is open, `./data/kin-source-control` remains a normal Git repository for diffs, history browsing, journal context, and analysis. On quit, the desktop can encrypt that repository into `./data/kin-source-control.vault/repo.enc` using a random archive key wrapped by Electron `safeStorage`, then remove the unlocked repository directory.
 - Capture history vaulting is a desktop feature. Headless CLI commands do not unlock Electron `safeStorage` vaults, and a crash or forced kill may leave the capture repository unlocked until the next clean desktop quit.
 
+### Screen Context Privacy
+
+Screen Context is disabled until the user explicitly acknowledges the privacy boundary in desktop Settings. It is only
+triggered by the user through the Settings button, tray menu, or configured global shortcut.
+
+When triggered, Kinagent hides its own window if needed and captures the display nearest the pointer. Clicking Analyze
+sends that screenshot image to the configured Hermes endpoint for analysis; if that Hermes service routes vision requests
+to a cloud model or another remote service, the screenshot follows that Hermes routing. The local review step gates what
+analysis is sent on to the selected Kin. It does not gate the screenshot being sent to Hermes for analysis.
+
+Kinagent keeps the raw screenshot in memory only for the analysis request, scrubs the in-memory buffer afterward, and does
+not intentionally write screenshot files to disk. Reviewed analysis may be held in memory until it is sent, discarded, or
+the desktop app exits. Auto-send only applies after Hermes returns analysis and is blocked for text-heavy or sensitive
+captures.
+
 ## Kindroid API Boundary
 
 Kindroid now documents a public `kn_` API-key surface at
