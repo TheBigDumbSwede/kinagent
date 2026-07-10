@@ -31,8 +31,9 @@ Working in this first milestone:
 
 Not complete yet:
 
-- Installer/signing/start-with-Windows packaging.
-- Broader Hermes tool/action coverage beyond the current-scene proof of concept.
+- Start-with-Windows support.
+- Signing remains optional and depends on the release environment's Azure Trusted Signing configuration.
+- Broader Hermes tool/action coverage beyond the currently registered reviewed and immediate actions.
 
 The listener command uses Firestore's gRPC Listen API, not timer polling. It emits lightweight `kindroid.chat.changed`
 notifications; historical recent-message probes use Kindroid's documented `/v1/get-chat-messages` API, and
@@ -501,6 +502,15 @@ npm run check
 ```
 
 `npm run check` runs the local secret scan, ESLint, Prettier check, TypeScript typecheck, unit tests, and build. GitHub Actions runs the same check on pushes and pull requests.
+
+Generate a local HTML and text coverage report when evaluating test gaps:
+
+```powershell
+npm run test:coverage
+```
+
+Coverage is reported for visibility rather than enforced as a repository-wide threshold. New thresholds should be based
+on the observed subsystem baseline instead of an arbitrary percentage.
 
 The current unit tests cover Kindroid `!enc:` decryption, Firestore message normalization, config loading/env overrides, and outbound SQLite dedupe behavior. They do not call live Kindroid, Firestore, Playwright, or Electron.
 

@@ -25,7 +25,6 @@ import type { BrowserStorageState } from "../auth/firebaseSession.js";
 import { ensureSessionDir } from "../auth/tokenStore.js";
 import { loadConfig, saveConfig } from "../config/loadConfig.js";
 import type { AppConfig, LogLevel, VoiceProvider } from "../config/types.js";
-import { readCapturedGroup, readCapturedKin } from "../capture/captureReader.js";
 import {
   exportGroupChatTranscript,
   exportKinChatTranscript,
@@ -93,6 +92,7 @@ import {
   type ScreenContextCaptureMetadata,
   type ScreenContextDetailLevel
 } from "../screenContext/screenContextAnalysis.js";
+import { registerCaptureIpcHandlers } from "./ipc/captureIpc.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -263,6 +263,7 @@ function createMainWindow(): void {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
       preload: path.join(__dirname, "preload.cjs")
     }
   });
@@ -277,6 +278,13 @@ function createMainWindow(): void {
     }
 
     return { action: "deny" };
+  });
+
+  mainWindow.webContents.on("will-navigate", (event, url) => {
+    const rendererUrl = pathToFileURL(path.join(__dirname, "renderer", "index.html")).toString();
+    if (url !== rendererUrl) {
+      event.preventDefault();
+    }
   });
 
   mainWindow.once("ready-to-show", () => {
@@ -431,50 +439,7 @@ function registerIpcHandlers(): void {
     await requireRuntime().refreshGroups();
     return { ok: true };
   });
-  ipcMain.handle("capture:get-kin", async (_event, input: { kinId?: string } = {}) => {
-    const kinId = input.kinId ?? "";
-    const startedAt = Date.now();
-    logger.info("Reading captured Kin state for desktop.", { kinId });
-    try {
-      const result = await readCapturedKin(kinId);
-      logger.info("Read captured Kin state for desktop.", {
-        kinId,
-        ok: result.ok,
-        fields: result.fields.length,
-        durationMs: Date.now() - startedAt
-      });
-      return result;
-    } catch (error) {
-      logger.error("Failed to read captured Kin state for desktop.", {
-        kinId,
-        error: error instanceof Error ? error.message : String(error),
-        durationMs: Date.now() - startedAt
-      });
-      throw error;
-    }
-  });
-  ipcMain.handle("capture:get-group", async (_event, input: { groupId?: string } = {}) => {
-    const groupId = input.groupId ?? "";
-    const startedAt = Date.now();
-    logger.info("Reading captured Group state for desktop.", { groupId });
-    try {
-      const result = await readCapturedGroup(groupId);
-      logger.info("Read captured Group state for desktop.", {
-        groupId,
-        ok: result.ok,
-        fields: result.fields.length,
-        durationMs: Date.now() - startedAt
-      });
-      return result;
-    } catch (error) {
-      logger.error("Failed to read captured Group state for desktop.", {
-        groupId,
-        error: error instanceof Error ? error.message : String(error),
-        durationMs: Date.now() - startedAt
-      });
-      throw error;
-    }
-  });
+  registerCaptureIpcHandlers(logger);
   ipcMain.handle("journal:list-suggestions", async () => requireRuntime().pendingJournalSuggestions());
   ipcMain.handle("journal:accept-suggestion", async (_event, input: { id?: string } = {}) =>
     acceptJournalSuggestion(input.id ?? "")

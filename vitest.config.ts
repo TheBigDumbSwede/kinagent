@@ -5,6 +5,11 @@ export default defineConfig({
     environment: "node",
     include: ["test/**/*.test.ts"],
     exclude: ["test/live/**/*.test.ts"],
-    restoreMocks: true
+    restoreMocks: true,
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "html"],
+      reportsDirectory: "coverage"
+    }
   }
 });
